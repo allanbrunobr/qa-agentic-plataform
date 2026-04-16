@@ -54,7 +54,13 @@ export interface InstallLocalResponse {
   launcherPath: string
   anthropicEnvWritten: boolean
   anthropicEnvValidated: boolean
-  anthropicEnvSource: 'ANTHROPIC_API_KEY' | 'ANTHROPIC_API' | 'missing'
+  anthropicEnvSource:
+    | 'ANTHROPIC_API_KEY_OVERRIDE'
+    | 'agentic-platform/.env.local'
+    | 'ANTHROPIC_API_KEY'
+    | 'ANTHROPIC_API'
+    | 'target/.agentic-qa/.env.local'
+    | 'missing'
   anthropicEnvValidationMessage?: string
   envLocalPath: string
   envExamplePath: string

@@ -5,3 +5,7 @@ data/
 dist/
 coverage/
 *.tsbuildinfo
+.claude/
+.env
+.env.*
+!.env.example

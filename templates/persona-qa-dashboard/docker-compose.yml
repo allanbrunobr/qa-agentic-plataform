@@ -1,0 +1,26 @@
+services:
+  api:
+    build: ./packages/api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-3001}:3001"
+    environment:
+      PORT: 3001
+      PERSONA_QA_PROJECT_DIR: /persona-qa-project
+      PERSONA_QA_DATA_DIR: /persona-qa-project/integration-test/persona-tests
+      DATABASE_URL: /app/data/persona-qa.db
+    volumes:
+      - ./packages/api/src:/app/src
+      - ./data:/app/data
+      - ${PERSONA_QA_PROJECT_DIR:-../}:/persona-qa-project:ro
+
+  web:
+    build: ./packages/web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-5173}:5173"
+    volumes:
+      - ./packages/web/src:/app/src
+      - ./packages/web/index.html:/app/index.html
+    depends_on:
+      - api

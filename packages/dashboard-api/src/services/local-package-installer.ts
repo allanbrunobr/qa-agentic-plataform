@@ -1,7 +1,13 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const TEMPLATE_ROOT = path.resolve('/path/to/projects/reference-store/reference-store-frontend/persona-qa-dashboard')
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const PLATFORM_ROOT = path.resolve(__dirname, '../../../..')
+const DEFAULT_TEMPLATE_ROOT = path.join(PLATFORM_ROOT, 'templates', 'persona-qa-dashboard')
+const LEGACY_TEMPLATE_ROOT = '/path/to/projects/reference-store/reference-store-frontend/persona-qa-dashboard'
+const CONFIGURED_TEMPLATE_ROOT = path.resolve(process.env.AGENTIC_QA_TEMPLATE_ROOT ?? DEFAULT_TEMPLATE_ROOT)
 const LOCAL_PACKAGE_DIRNAME = '.agentic-qa'
 
 const COPY_ROOT_FILES = [
@@ -104,7 +110,88 @@ async function validateAnthropicApiKey(apiKey: string) {
   }
 }
 
-async function patchInstalledRuntime(installedPath: string) {
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await fs.access(targetPath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function resolveTemplateRoot(): Promise<string> {
+  if (await pathExists(CONFIGURED_TEMPLATE_ROOT)) return CONFIGURED_TEMPLATE_ROOT
+  if (!process.env.AGENTIC_QA_TEMPLATE_ROOT && await pathExists(LEGACY_TEMPLATE_ROOT)) {
+    return LEGACY_TEMPLATE_ROOT
+  }
+
+  throw new Error(
+    `Agentic QA template not found at ${CONFIGURED_TEMPLATE_ROOT}. `
+    + 'Set AGENTIC_QA_TEMPLATE_ROOT to a valid persona-qa-dashboard template path.',
+  )
+}
+
+async function readEnvFile(filePath: string): Promise<Record<string, string>> {
+  try {
+    const text = await fs.readFile(filePath, 'utf8')
+    const values: Record<string, string> = {}
+    for (const rawLine of text.split(/\r?\n/)) {
+      const line = rawLine.trim()
+      if (!line || line.startsWith('#')) continue
+      const index = line.indexOf('=')
+      if (index === -1) continue
+      const key = line.slice(0, index).trim()
+      let value = line.slice(index + 1).trim()
+      if (
+        (value.startsWith('"') && value.endsWith('"'))
+        || (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1)
+      }
+      values[key] = value
+    }
+    return values
+  } catch {
+    return {}
+  }
+}
+
+async function resolveAnthropicKey(repoPath: string): Promise<{
+  key: string
+  source:
+    | 'ANTHROPIC_API_KEY_OVERRIDE'
+    | 'agentic-platform/.env.local'
+    | 'ANTHROPIC_API_KEY'
+    | 'ANTHROPIC_API'
+    | 'target/.agentic-qa/.env.local'
+    | 'missing'
+}> {
+  if (process.env.ANTHROPIC_API_KEY_OVERRIDE) {
+    return { key: process.env.ANTHROPIC_API_KEY_OVERRIDE, source: 'ANTHROPIC_API_KEY_OVERRIDE' }
+  }
+
+  const platformEnv = await readEnvFile(path.resolve(process.cwd(), '.env.local'))
+  if (platformEnv.ANTHROPIC_API_KEY) {
+    return { key: platformEnv.ANTHROPIC_API_KEY, source: 'agentic-platform/.env.local' }
+  }
+
+  if (process.env.ANTHROPIC_API_KEY) {
+    return { key: process.env.ANTHROPIC_API_KEY, source: 'ANTHROPIC_API_KEY' }
+  }
+
+  if (process.env.ANTHROPIC_API) {
+    return { key: process.env.ANTHROPIC_API, source: 'ANTHROPIC_API' }
+  }
+
+  const targetEnv = await readEnvFile(path.join(repoPath, LOCAL_PACKAGE_DIRNAME, '.env.local'))
+  if (targetEnv.ANTHROPIC_API_KEY) {
+    return { key: targetEnv.ANTHROPIC_API_KEY, source: 'target/.agentic-qa/.env.local' }
+  }
+
+  return { key: '', source: 'missing' }
+}
+
+async function patchInstalledRuntime(installedPath: string, repoPath: string) {
   const rootPackageJsonPath = path.join(installedPath, 'package.json')
   const envLocalPath = path.join(installedPath, '.env.local')
   const envExamplePath = path.join(installedPath, '.env.example')
@@ -127,12 +214,8 @@ async function patchInstalledRuntime(installedPath: string) {
     // ignore missing lockfile
   }
 
-  const anthropicEnvSource = process.env.ANTHROPIC_API_KEY
-    ? 'ANTHROPIC_API_KEY'
-    : process.env.ANTHROPIC_API
-      ? 'ANTHROPIC_API'
-      : 'missing'
-  const resolvedAnthropicKey = process.env.ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_API ?? ''
+  const resolvedAnthropic = await resolveAnthropicKey(repoPath)
+  const resolvedAnthropicKey = resolvedAnthropic.key
   const anthropicValidation = await validateAnthropicApiKey(resolvedAnthropicKey)
   await fs.writeFile(
     envExamplePath,
@@ -142,7 +225,7 @@ async function patchInstalledRuntime(installedPath: string) {
     ].join('\n') + '\n',
     'utf8',
   )
-  if (resolvedAnthropicKey && anthropicValidation.ok) {
+  if (resolvedAnthropicKey) {
     await fs.writeFile(
       envLocalPath,
       [
@@ -423,31 +506,40 @@ export async function validateAnthropicApiKey(apiKey: string): Promise<{ ok: boo
   }
 
   const runnerSource = await fs.readFile(runnerPath, 'utf8')
-  const runnerPatched = runnerSource.replace(
-    "import { getSessionService } from './sessions.js'",
-    "import { getSessionService } from './sessions.js'\nimport { validateAnthropicApiKey } from '../providers/anthropic-provider.js'",
-  ).replace(
-    "    const scenario = loadScenario(parsed.data.scenario_id)",
-    `    const anthropicValidation = await validateAnthropicApiKey(process.env.ANTHROPIC_API_KEY ?? '')
-    if (!anthropicValidation.ok) {
-      return reply.status(503).send({
-        error: 'invalid_anthropic_api_key',
-        message: 'The configured ANTHROPIC_API_KEY is invalid for the local .agentic-qa runtime.',
-        details: anthropicValidation,
-      })
+  let runnerPatched = runnerSource
+  if (!runnerPatched.includes("validateAnthropicApiKey } from '../providers/anthropic-provider.js'")) {
+    runnerPatched = runnerPatched.replace(
+      "import { getSessionService } from './sessions.js'",
+      "import { getSessionService } from './sessions.js'\nimport { validateAnthropicApiKey } from '../providers/anthropic-provider.js'",
+    )
+  }
+  if (!runnerPatched.includes('const anthropicValidation = await validateAnthropicApiKey')) {
+    runnerPatched = runnerPatched.replace(
+      "    const scenario = loadScenario(parsed.data.scenario_id)",
+      `    if (process.env.STRICT_ANTHROPIC_VALIDATION === '1') {
+      const anthropicValidation = await validateAnthropicApiKey(process.env.ANTHROPIC_API_KEY ?? '')
+      if (!anthropicValidation.ok) {
+        return reply.status(503).send({
+          error: 'invalid_anthropic_api_key',
+          message: 'The configured ANTHROPIC_API_KEY is invalid for the local .agentic-qa runtime.',
+          details: anthropicValidation,
+        })
+      }
     }
 
     const scenario = loadScenario(parsed.data.scenario_id)`,
-  ).replace(
+    )
+  }
+  runnerPatched = runnerPatched.replace(
     "    void (async () => {\n      const { chromium } = await import('@playwright/test')\n      const browser = await chromium.launch({ headless: process.env.HEADLESS !== 'false' })\n      const page = await browser.newPage({ baseURL: baseUrl })\n\n      try {\n        await runtime.orchestrator.executeRunInSession(session.id, scenario, {\n          page,\n          customerName,\n          customerPhone: parsed.data.customer_phone ?? '11999990000',\n          orderType: parsed.data.order_type ?? 'Primeira Pedido',\n        })\n      } catch (error) {\n        runtime.sessionService.updateStatus(session.id, 'failed')\n        runtime.sessionService.addEvent(session.id, 'run_failed', {\n          scenarioId: scenario.id,\n          error: error instanceof Error ? error.message : String(error),\n        })\n      } finally {\n        await page.close().catch(() => {})\n        await browser.close().catch(() => {})\n      }\n    })()",
     "    void (async () => {\n      let browser: { close(): Promise<void> } | null = null\n      let page: { close(): Promise<void> } | null = null\n\n      try {\n        const { chromium } = await import('@playwright/test')\n        browser = await chromium.launch({ headless: process.env.HEADLESS !== 'false' })\n        page = await browser.newPage({ baseURL: baseUrl })\n\n        await runtime.orchestrator.executeRunInSession(session.id, scenario, {\n          page,\n          customerName,\n          customerPhone: parsed.data.customer_phone ?? '11999990000',\n          orderType: parsed.data.order_type ?? 'Primeira Pedido',\n        })\n      } catch (error) {\n        runtime.sessionService.updateStatus(session.id, 'failed')\n        runtime.sessionService.addEvent(session.id, 'run_failed', {\n          scenarioId: scenario.id,\n          error: error instanceof Error ? error.message : String(error),\n        })\n      } finally {\n        await page?.close().catch(() => {})\n        await browser?.close().catch(() => {})\n      }\n    })()",
   )
   await fs.writeFile(runnerPath, runnerPatched, 'utf8')
 
   return {
-    anthropicEnvWritten: Boolean(resolvedAnthropicKey && anthropicValidation.ok),
+    anthropicEnvWritten: Boolean(resolvedAnthropicKey),
     anthropicEnvValidated: anthropicValidation.ok,
-    anthropicEnvSource,
+    anthropicEnvSource: resolvedAnthropic.source,
     anthropicEnvValidationMessage: anthropicValidation.message,
     envLocalPath,
     envExamplePath,
@@ -459,26 +551,27 @@ export async function installLocalPackage(input: { repoPath: string }) {
     throw new Error('repoPath is required')
   }
 
+  const templateRoot = await resolveTemplateRoot()
   const installedPath = path.join(input.repoPath, LOCAL_PACKAGE_DIRNAME)
   await fs.mkdir(installedPath, { recursive: true })
 
   for (const relativePath of COPY_ROOT_FILES) {
-    await copyTemplateEntry(TEMPLATE_ROOT, installedPath, relativePath)
+    await copyTemplateEntry(templateRoot, installedPath, relativePath)
   }
 
   for (const relativePath of COPY_ROOT_DIRS) {
-    await copyTemplateEntry(TEMPLATE_ROOT, installedPath, relativePath)
+    await copyTemplateEntry(templateRoot, installedPath, relativePath)
   }
 
   for (const relativePath of COPY_EXTRA_FILES) {
-    await copyTemplateEntry(TEMPLATE_ROOT, installedPath, relativePath)
+    await copyTemplateEntry(templateRoot, installedPath, relativePath)
   }
 
   for (const relativePath of EMPTY_DIRS) {
     await fs.mkdir(path.join(installedPath, relativePath), { recursive: true })
   }
 
-  const runtimePatchResult = await patchInstalledRuntime(installedPath)
+  const runtimePatchResult = await patchInstalledRuntime(installedPath, input.repoPath)
 
   const metadataPath = path.join(installedPath, 'adapter', 'config', 'install-metadata.generated.json')
   const launcherPath = path.join(installedPath, 'scripts', 'start-local-dashboard.generated.sh')
@@ -587,7 +680,7 @@ export async function installLocalPackage(input: { repoPath: string }) {
 
   const metadata = {
     installedAt: new Date().toISOString(),
-    templateSource: TEMPLATE_ROOT,
+    templateSource: templateRoot,
     installedPath,
     localPackageDirname: LOCAL_PACKAGE_DIRNAME,
     mode: 'host-local-runtime',

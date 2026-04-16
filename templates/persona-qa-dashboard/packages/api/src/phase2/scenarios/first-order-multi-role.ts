@@ -1,0 +1,56 @@
+import type { ScenarioContract } from '../types/scenario-types.js'
+import { firstOrderMultiRoleWorkflowContract } from '../workflow-contracts/first-order-multi-role.js'
+
+export const firstOrderMultiRole: ScenarioContract = {
+  id: 'first_order_multi_role',
+  name: 'First order Multi-Role',
+  description: 'Cenario multi-agente: sales-associate cadastra e agenda; fulfillment-agent assume o registro e conclui o atendimento.',
+  steps: [
+    {
+      id: 'create_customer',
+      name: 'Cadastrar Customer',
+      description: 'Agente sales-associate cadastra um novo customer no sistema.',
+      agentId: 'sales-associate',
+      capabilityId: 'createCustomer',
+      order: 0,
+      requiredArtifacts: [],
+      producedArtifacts: ['customerId'],
+      timeoutMs: 90000,
+      retryPolicy: { maxAttempts: 1, backoffMs: 0 },
+    },
+    {
+      id: 'schedule_order',
+      name: 'Agendar Pedido',
+      description: 'Agente sales-associate agenda a pedido para o customer cadastrado.',
+      agentId: 'sales-associate',
+      capabilityId: 'scheduleOrder',
+      order: 1,
+      requiredArtifacts: ['customerId'],
+      producedArtifacts: ['eventId'],
+      timeoutMs: 90000,
+      retryPolicy: { maxAttempts: 1, backoffMs: 0 },
+      handoff: {
+        nextAgentId: 'fulfillment-agent',
+        reason: 'Customer cadastrado e pedido agendada. O fulfillment-agent deve assumir o registro e concluir o atendimento.',
+        requiredArtifacts: ['customerId', 'eventId'],
+        expectedOutput: 'Registro aberto e pedido concluida pelo fulfillment-agent.',
+      },
+    },
+    {
+      id: 'complete_fulfillment',
+      name: 'Concluir Atendimento',
+      description: 'Agente fulfillment-agent abre o registro e conclui o atendimento da pedido agendada.',
+      agentId: 'fulfillment-agent',
+      capabilityId: 'completeFulfillment',
+      order: 2,
+      requiredArtifacts: ['customerId', 'eventId'],
+      producedArtifacts: ['fulfillmentCompleted'],
+      timeoutMs: 180000,
+      retryPolicy: { maxAttempts: 1, backoffMs: 0 },
+    },
+  ],
+  workflowContract: firstOrderMultiRoleWorkflowContract,
+  roles: ['sales-associate', 'fulfillment-agent'],
+  requiredArtifacts: ['customerId', 'eventId', 'fulfillmentCompleted'],
+  allowedTools: ['createCustomer', 'scheduleOrder', 'openOrderDetails', 'completeFulfillment'],
+}
