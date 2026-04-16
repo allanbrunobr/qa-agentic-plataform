@@ -1,0 +1,20 @@
+{
+  "name": "agentic-platform",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "adapters/*"
+  ],
+  "scripts": {
+    "discover:reference-store": "tsx packages/dashboard-api/src/cli.ts discover /path/to/projects/reference-store/reference-store-frontend",
+    "bootstrap:reference-store": "tsx packages/dashboard-api/src/cli.ts bootstrap /path/to/projects/reference-store/reference-store-frontend",
+    "review:reference-store": "tsx packages/dashboard-api/src/cli.ts review /path/to/projects/reference-store/reference-store-frontend",
+    "install-local:reference-store": "tsx packages/dashboard-api/src/cli.ts install-local /path/to/projects/reference-store/reference-store-frontend",
+    "discover-local:reference-store": "tsx packages/dashboard-api/src/cli.ts discover-local /path/to/projects/reference-store/reference-store-frontend",
+    "dev:api": "tsx packages/dashboard-api/src/server.ts",
+    "dev:web": "tsx packages/dashboard-web/src/server.ts",
+    "build": "echo 'scaffold only'",
+    "dev": "echo 'run npm run dev:api and npm run dev:web in separate terminals'"
+  }
+}
