@@ -127,6 +127,9 @@ export type LearningProposalStatus = 'proposed' | 'approved' | 'applied' | 'reje
 export type LearningProposalPatchKind = 'none' | 'prompt_overlay' | 'capability_patch' | 'environment_check'
 export type ScenarioDraftStatus = 'pending' | 'approved' | 'rejected' | 'revised'
 export type HealingActionStatus = 'proposed' | 'applied' | 'blocked'
+export type GovernanceSubjectType = 'learning_proposal' | 'scenario_draft' | 'healing_action'
+export type GovernanceAction = 'generate' | 'approve' | 'apply' | 'reject' | 'evaluate'
+export type GovernanceVerdict = 'allowed' | 'blocked'
 
 export interface LearningProposalInput {
   recommendationId: string
@@ -179,6 +182,22 @@ export interface HealingActionInput {
 }
 
 export interface HealingAction extends HealingActionInput {
+  id: string
+  createdAt: string
+}
+
+export interface GovernanceDecisionInput {
+  subjectType: GovernanceSubjectType
+  subjectId: string
+  action: GovernanceAction
+  verdict: GovernanceVerdict
+  reason: string
+  actor?: string
+  requirements?: string[]
+  metadata?: Record<string, unknown>
+}
+
+export interface GovernanceDecision extends GovernanceDecisionInput {
   id: string
   createdAt: string
 }
@@ -258,6 +277,19 @@ type HealingActionRow = {
   reason: string
   automatic: number
   status: HealingActionStatus
+  metadata: string | null
+  created_at: string
+}
+
+type GovernanceDecisionRow = {
+  decision_id: string
+  subject_type: GovernanceSubjectType
+  subject_id: string
+  action: GovernanceAction
+  verdict: GovernanceVerdict
+  reason: string
+  actor: string | null
+  requirements: string | null
   metadata: string | null
   created_at: string
 }
@@ -1093,6 +1125,63 @@ export class SessionService {
     return row.total
   }
 
+  recordGovernanceDecision(input: GovernanceDecisionInput): GovernanceDecision {
+    const id = randomUUID()
+    const createdAt = new Date().toISOString()
+    this.sqlite
+      .prepare(
+        `INSERT INTO p2_governance_decisions (
+           decision_id, subject_type, subject_id, action, verdict, reason,
+           actor, requirements, metadata, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.subjectType,
+        input.subjectId,
+        input.action,
+        input.verdict,
+        input.reason,
+        input.actor ?? null,
+        input.requirements ? JSON.stringify(input.requirements) : null,
+        input.metadata ? JSON.stringify(input.metadata) : null,
+        createdAt,
+      )
+
+    return { ...input, id, createdAt }
+  }
+
+  listGovernanceDecisions(filter: {
+    subjectType?: GovernanceSubjectType
+    subjectId?: string
+    limit?: number
+  } = {}): GovernanceDecision[] {
+    const where: string[] = []
+    const params: unknown[] = []
+    if (filter.subjectType) {
+      where.push('subject_type = ?')
+      params.push(filter.subjectType)
+    }
+    if (filter.subjectId) {
+      where.push('subject_id = ?')
+      params.push(filter.subjectId)
+    }
+
+    const limit = Math.max(1, Math.min(filter.limit ?? 100, 500))
+    const rows = this.sqlite
+      .prepare(
+        `SELECT decision_id, subject_type, subject_id, action, verdict, reason,
+                actor, requirements, metadata, created_at
+         FROM p2_governance_decisions
+         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(...params, limit) as GovernanceDecisionRow[]
+
+    return rows.map((row) => this.mapGovernanceDecision(row))
+  }
+
   private mapLearningProposal(row: LearningProposalRow): LearningProposal {
     return {
       id: row.proposal_id,
@@ -1140,6 +1229,21 @@ export class SessionService {
       reason: row.reason,
       automatic: row.automatic === 1,
       status: row.status,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      createdAt: row.created_at,
+    }
+  }
+
+  private mapGovernanceDecision(row: GovernanceDecisionRow): GovernanceDecision {
+    return {
+      id: row.decision_id,
+      subjectType: row.subject_type,
+      subjectId: row.subject_id,
+      action: row.action,
+      verdict: row.verdict,
+      reason: row.reason,
+      actor: row.actor ?? undefined,
+      requirements: row.requirements ? JSON.parse(row.requirements) : undefined,
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       createdAt: row.created_at,
     }
@@ -1357,6 +1461,19 @@ export class SessionService {
         created_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS p2_governance_decisions (
+        decision_id TEXT PRIMARY KEY,
+        subject_type TEXT NOT NULL,
+        subject_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        verdict TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        actor TEXT,
+        requirements TEXT,
+        metadata TEXT,
+        created_at TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_p2_sessions_scenario ON p2_sessions(scenario_id);
       CREATE INDEX IF NOT EXISTS idx_p2_events_session_sequence ON p2_session_events(session_id, sequence);
       CREATE INDEX IF NOT EXISTS idx_p2_findings_session_created ON p2_session_findings(session_id, created_at);
@@ -1365,6 +1482,7 @@ export class SessionService {
       CREATE INDEX IF NOT EXISTS idx_p2_learning_proposals_status ON p2_learning_proposals(status, scenario_id);
       CREATE INDEX IF NOT EXISTS idx_p2_scenario_drafts_status ON p2_scenario_drafts(status, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_healing_actions_created ON p2_healing_actions(created_at);
+      CREATE INDEX IF NOT EXISTS idx_p2_governance_subject ON p2_governance_decisions(subject_type, subject_id, created_at);
     `)
   }
 }

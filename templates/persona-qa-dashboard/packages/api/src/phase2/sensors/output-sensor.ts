@@ -6,14 +6,24 @@ import type { SensorFn } from '../services/sensor-runner.js';
  * If the agent profile declares an outputContract schema, validates the step output against it.
  */
 export const outputSensor: SensorFn = async (context) => {
-  const { stepOutput, agentId, scenario, step } = context;
+  const { stepOutput, agentId, step, session } = context;
 
   // Try to find outputContract from context — agent profiles provide this
   // For now, validate that the output is a valid record and success flag is consistent
   const errors: string[] = [];
+  const availableArtifacts = {
+    ...session.artifacts,
+    ...stepOutput.output,
+  };
+  const satisfiedBySessionArtifacts: string[] = [];
 
   if (stepOutput.success && Object.keys(stepOutput.output).length === 0 && step.producedArtifacts.length > 0) {
-    errors.push(`Agent "${agentId}" reported success but produced empty output while step requires artifacts: ${step.producedArtifacts.join(', ')}`);
+    const missingFromAvailableArtifacts = step.producedArtifacts.filter(
+      (artifact) => availableArtifacts[artifact] === undefined,
+    );
+    if (missingFromAvailableArtifacts.length > 0) {
+      errors.push(`Agent "${agentId}" reported success but produced empty output while step requires artifacts: ${step.producedArtifacts.join(', ')}`);
+    }
   }
 
   if (!stepOutput.success && !stepOutput.error) {
@@ -22,9 +32,13 @@ export const outputSensor: SensorFn = async (context) => {
 
   // Validate produced artifacts are present in output
   for (const artifact of step.producedArtifacts) {
-    if (stepOutput.success && stepOutput.output[artifact] === undefined) {
-      errors.push(`Agent "${agentId}" did not produce required artifact "${artifact}"`);
+    if (!stepOutput.success) continue;
+    if (stepOutput.output[artifact] !== undefined) continue;
+    if (session.artifacts[artifact] !== undefined) {
+      satisfiedBySessionArtifacts.push(artifact);
+      continue;
     }
+    errors.push(`Agent "${agentId}" did not produce required artifact "${artifact}"`);
   }
 
   return {
@@ -34,6 +48,7 @@ export const outputSensor: SensorFn = async (context) => {
       agentId,
       outputKeys: Object.keys(stepOutput.output),
       expectedArtifacts: step.producedArtifacts,
+      satisfiedBySessionArtifacts,
       errors,
     },
   };

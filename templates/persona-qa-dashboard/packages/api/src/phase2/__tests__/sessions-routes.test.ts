@@ -117,4 +117,40 @@ describe('Phase 2 Session Routes', () => {
       expect(res.statusCode).toBe(404);
     });
   });
+
+  describe('GET /api/p2/governance/decisions', () => {
+    it('should return learning governance decisions', async () => {
+      const proposal = sessionService.createLearningProposal({
+        recommendationId: 'route-governance',
+        scenarioId: 'test_scenario',
+        stepId: 'step_1',
+        agentId: 'sales-associate',
+        type: 'prompt_patch',
+        severity: 'medium',
+        recommendation: { reason: 'test' },
+        patchKind: 'prompt_overlay',
+        target: 'agent:sales-associate',
+        patchContent: '[LEARNING OVERLAY]',
+      });
+
+      const approve = await app.inject({
+        method: 'POST',
+        url: `/api/p2/learning/proposals/${proposal.id}/approve`,
+      });
+      expect(approve.statusCode).toBe(200);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/p2/governance/decisions?subjectType=learning_proposal&subjectId=${proposal.id}`,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toContainEqual(expect.objectContaining({
+        subjectType: 'learning_proposal',
+        subjectId: proposal.id,
+        action: 'approve',
+        verdict: 'allowed',
+      }));
+    });
+  });
 });

@@ -128,6 +128,34 @@ describe('OutputSensor', () => {
     expect(errors.some((e: string) => e.includes('customerId'))).toBe(true);
   });
 
+  it('should pass when retry output is satisfied by a persisted session artifact', async () => {
+    const context = makeContext({
+      stepOutput: {
+        stepIndex: 0,
+        agentId: 'sales-associate',
+        output: { artifactId: 'artifact_1', type: 'customerId' },
+        toolCalls: [],
+        durationMs: 100,
+        success: true,
+      },
+      session: {
+        id: 'session_1',
+        scenarioId: 'test',
+        status: 'running',
+        startedAt: new Date().toISOString(),
+        events: [],
+        artifacts: { customerId: '123' },
+        findings: [],
+        checkpoint: { lastCompletedStep: -1, cursor: 0 },
+      },
+    });
+
+    const result = await outputSensor(context);
+
+    expect(result.status).toBe('pass');
+    expect(result.details['satisfiedBySessionArtifacts']).toEqual(['customerId']);
+  });
+
   it('should fail when failure has no error message', async () => {
     const context = makeContext({
       stepOutput: {
