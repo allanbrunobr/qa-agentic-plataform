@@ -184,7 +184,37 @@ describe('Phase 2 Session Routes', () => {
         action: 'approve',
         verdict: 'allowed',
         actor: 'qa_lead',
-        requirements: ['human_review'],
+        requirements: expect.arrayContaining(['independent_audit', 'human_review']),
+      }));
+    });
+
+    it('should block scenario draft approval without an explicit reviewer', async () => {
+      const draft = sessionService.createScenarioDraft({
+        scenarioId: 'draft_without_reviewer',
+        name: 'Draft Without Reviewer',
+        description: 'Should not be approved anonymously',
+        contract: { scenario_id: 'draft_without_reviewer' },
+        gapType: 'missing_path',
+      });
+
+      const review = await app.inject({
+        method: 'PATCH',
+        url: `/api/p2/scenarios/drafts/${draft.id}`,
+        payload: { status: 'approved' },
+      });
+
+      expect(review.statusCode).toBe(409);
+      expect(review.json()).toEqual(expect.objectContaining({
+        error: expect.stringContaining('Independent audit failed'),
+      }));
+      expect(sessionService.getScenarioDraft(draft.id)?.status).toBe('pending');
+      expect(sessionService.listGovernanceDecisions({
+        subjectType: 'scenario_draft',
+        subjectId: draft.id,
+      })).toContainEqual(expect.objectContaining({
+        action: 'approve',
+        verdict: 'blocked',
+        requirements: expect.arrayContaining(['independent_audit', 'human_review']),
       }));
     });
   });

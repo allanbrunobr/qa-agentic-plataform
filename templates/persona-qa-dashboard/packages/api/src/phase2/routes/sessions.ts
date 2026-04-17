@@ -264,17 +264,24 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const service = getSessionService();
+      const currentDraft = service.getScenarioDraft(request.params.id);
+      if (!currentDraft) return reply.status(404).send({ error: 'Scenario draft not found' });
+
+      const governanceDecision = new GovernancePolicyService(service).recordScenarioDraftTransitionDecision(
+        currentDraft,
+        request.body.status,
+        request.body.reviewedBy ?? 'human_reviewer',
+      );
+      if (governanceDecision.verdict === 'blocked') {
+        return reply.status(409).send({ error: governanceDecision.reason });
+      }
+
       const draft = service.updateScenarioDraftStatus(
         request.params.id,
         request.body.status,
         request.body.reviewedBy,
       );
       if (!draft) return reply.status(404).send({ error: 'Scenario draft not found' });
-      new GovernancePolicyService(service).recordScenarioDraftDecision(
-        draft,
-        undefined,
-        request.body.reviewedBy ?? 'human_reviewer',
-      );
       return reply.send(draft);
     },
   );

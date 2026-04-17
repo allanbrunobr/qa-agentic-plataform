@@ -7,6 +7,7 @@ import type {
   ScenarioDraft,
   SessionService,
 } from './session-service.js'
+import { IndependentAuditorService, type GovernanceAuditEvaluation } from './independent-auditor-service.js'
 
 type LearningGovernanceAction = 'approve' | 'apply' | 'reject'
 type HealingGovernanceAction = 'apply' | 'evaluate'
@@ -16,8 +17,11 @@ const HUMAN_REVIEW_REQUIREMENTS = ['human_review']
 const APPLY_REQUIREMENTS = ['human_review', 'approved_learning_proposal']
 const APPLY_SAFE_PATCH_KINDS: LearningProposalPatchKind[] = ['none', 'prompt_overlay']
 const BOUNDED_POLICY_REQUIREMENTS = ['bounded_policy']
+const INDEPENDENT_AUDIT_REQUIREMENTS = ['independent_audit']
 
 export class GovernancePolicyService {
+  private readonly auditor = new IndependentAuditorService()
+
   constructor(private readonly sessionService: SessionService) {}
 
   recordLearningProposalDecision(
@@ -45,36 +49,68 @@ export class GovernancePolicyService {
 
     if (action === 'approve') {
       if (proposal.status === 'rejected') {
-        return blocked(proposal, action, actor, 'Rejected learning proposals cannot be approved', metadata)
+        return this.withIndependentAudit(
+          blocked(proposal, action, actor, 'Rejected learning proposals cannot be approved', metadata),
+          proposal,
+          actor,
+        )
       }
       if (proposal.status === 'applied') {
-        return blocked(proposal, action, actor, 'Applied learning proposals cannot be re-approved', metadata)
+        return this.withIndependentAudit(
+          blocked(proposal, action, actor, 'Applied learning proposals cannot be re-approved', metadata),
+          proposal,
+          actor,
+        )
       }
-      return allowed(proposal, action, actor, 'Learning proposal approved for human-reviewed application', HUMAN_REVIEW_REQUIREMENTS, metadata)
+      return this.withIndependentAudit(
+        allowed(proposal, action, actor, 'Learning proposal approved for human-reviewed application', HUMAN_REVIEW_REQUIREMENTS, metadata),
+        proposal,
+        actor,
+      )
     }
 
     if (action === 'reject') {
       if (proposal.status === 'applied') {
-        return blocked(proposal, action, actor, 'Applied learning proposals cannot be rejected', metadata)
+        return this.withIndependentAudit(
+          blocked(proposal, action, actor, 'Applied learning proposals cannot be rejected', metadata),
+          proposal,
+          actor,
+        )
       }
-      return allowed(proposal, action, actor, 'Learning proposal rejected by human review', HUMAN_REVIEW_REQUIREMENTS, metadata)
-    }
-
-    if (proposal.status !== 'approved' && proposal.status !== 'applied') {
-      return blocked(proposal, action, actor, 'Learning proposal must be approved before apply', metadata)
-    }
-
-    if (!APPLY_SAFE_PATCH_KINDS.includes(proposal.patchKind)) {
-      return blocked(
+      return this.withIndependentAudit(
+        allowed(proposal, action, actor, 'Learning proposal rejected by human review', HUMAN_REVIEW_REQUIREMENTS, metadata),
         proposal,
-        action,
         actor,
-        `Patch kind ${proposal.patchKind} requires manual implementation outside automatic apply`,
-        metadata,
       )
     }
 
-    return allowed(proposal, action, actor, 'Learning proposal apply permitted by governance policy', APPLY_REQUIREMENTS, metadata)
+    if (proposal.status !== 'approved' && proposal.status !== 'applied') {
+      return this.withIndependentAudit(
+        blocked(proposal, action, actor, 'Learning proposal must be approved before apply', metadata),
+        proposal,
+        actor,
+      )
+    }
+
+    if (!APPLY_SAFE_PATCH_KINDS.includes(proposal.patchKind)) {
+      return this.withIndependentAudit(
+        blocked(
+          proposal,
+          action,
+          actor,
+          `Patch kind ${proposal.patchKind} requires manual implementation outside automatic apply`,
+          metadata,
+        ),
+        proposal,
+        actor,
+      )
+    }
+
+    return this.withIndependentAudit(
+      allowed(proposal, action, actor, 'Learning proposal apply permitted by governance policy', APPLY_REQUIREMENTS, metadata),
+      proposal,
+      actor,
+    )
   }
 
   recordHealingActionDecision(
@@ -101,7 +137,7 @@ export class GovernancePolicyService {
     }
 
     if (action.status === 'blocked') {
-      return {
+      return this.withIndependentAudit({
         subjectType: 'healing_action',
         subjectId: action.id,
         action: governanceAction,
@@ -110,11 +146,11 @@ export class GovernancePolicyService {
         actor,
         requirements: BOUNDED_POLICY_REQUIREMENTS,
         metadata,
-      }
+      }, action, actor)
     }
 
     if (action.automatic && action.status === 'applied') {
-      return {
+      return this.withIndependentAudit({
         subjectType: 'healing_action',
         subjectId: action.id,
         action: governanceAction,
@@ -123,10 +159,10 @@ export class GovernancePolicyService {
         actor,
         requirements: BOUNDED_POLICY_REQUIREMENTS,
         metadata,
-      }
+      }, action, actor)
     }
 
-    return {
+    return this.withIndependentAudit({
       subjectType: 'healing_action',
       subjectId: action.id,
       action: governanceAction,
@@ -135,7 +171,7 @@ export class GovernancePolicyService {
       actor,
       requirements: HUMAN_REVIEW_REQUIREMENTS,
       metadata,
-    }
+    }, action, actor)
   }
 
   recordScenarioDraftDecision(
@@ -145,6 +181,16 @@ export class GovernancePolicyService {
   ): GovernanceDecision {
     return this.sessionService.recordGovernanceDecision(
       this.decideScenarioDraftAction(draft, governanceAction, actor),
+    )
+  }
+
+  recordScenarioDraftTransitionDecision(
+    draft: ScenarioDraft,
+    status: ScenarioDraft['status'],
+    actor = 'human_reviewer',
+  ): GovernanceDecision {
+    return this.sessionService.recordGovernanceDecision(
+      this.decideScenarioDraftAction({ ...draft, status, reviewedBy: actor }, inferScenarioDraftGovernanceAction({ ...draft, status }), actor),
     )
   }
 
@@ -160,7 +206,7 @@ export class GovernancePolicyService {
       reviewedBy: draft.reviewedBy,
     }
 
-    return {
+    return this.withIndependentAudit({
       subjectType: 'scenario_draft',
       subjectId: draft.id,
       action: governanceAction,
@@ -169,7 +215,60 @@ export class GovernancePolicyService {
       actor,
       requirements: HUMAN_REVIEW_REQUIREMENTS,
       metadata,
+    }, draft, actor)
+  }
+
+  private withIndependentAudit(
+    decision: GovernanceDecisionInput,
+    subject: LearningProposal | ScenarioDraft | HealingAction,
+    actor?: string,
+  ): GovernanceDecisionInput {
+    const audit = this.auditor.evaluateGovernanceAction({
+      subjectType: decision.subjectType,
+      subject,
+      action: decision.action,
+      actor,
+      sessionService: this.sessionService,
+    })
+    const requirements = mergeRequirements(INDEPENDENT_AUDIT_REQUIREMENTS, decision.requirements)
+    const metadata = {
+      ...(decision.metadata ?? {}),
+      independentAudit: serializeAudit(audit),
     }
+
+    if (audit.verdict === 'failed') {
+      return {
+        ...decision,
+        verdict: 'blocked',
+        reason: `Independent audit failed: ${audit.findings.map((finding) => finding.code).join(', ')}`,
+        requirements,
+        metadata,
+      }
+    }
+
+    return {
+      ...decision,
+      requirements,
+      metadata,
+    }
+  }
+}
+
+function mergeRequirements(...groups: (string[] | undefined)[]): string[] {
+  return [...new Set(groups.flatMap((group) => group ?? []))]
+}
+
+function serializeAudit(audit: GovernanceAuditEvaluation): Record<string, unknown> {
+  return {
+    verdict: audit.verdict,
+    checkedAt: audit.checkedAt,
+    findings: audit.findings.map((finding) => ({
+      severity: finding.severity,
+      code: finding.code,
+      message: finding.message,
+      evidence: finding.evidence,
+    })),
+    requirements: audit.summary.requirements,
   }
 }
 

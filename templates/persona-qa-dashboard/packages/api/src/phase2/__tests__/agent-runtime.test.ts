@@ -163,6 +163,55 @@ describe('AgentRuntime', () => {
       expect(result.status).toBe('timeout')
       expect(result.error).toContain('timeout')
     })
+
+    it('completes from tool output when required produced artifacts exist before model follow-up timeout', async () => {
+      registry.register('createCustomer', async () => ({
+        ok: true,
+        output: { customerId: 'customer-1', customerName: 'Maria' },
+      }), {
+        name: 'createCustomer',
+        description: 'Create customer',
+        requiresBrowser: true,
+        tags: [],
+      })
+
+      const provider: ModelProvider = {
+        chat: vi.fn(async () => ({
+          toolCalls: [{ id: 'c1', name: 'createCustomer', input: { name: 'Maria' } }],
+          stopReason: 'tool_use' as const,
+          usage: { inputTokens: 5, outputTokens: 3 },
+        })),
+      }
+      vi.mocked(provider.chat).mockImplementationOnce(async () => ({
+        toolCalls: [{ id: 'c1', name: 'createCustomer', input: { name: 'Maria' } }],
+        stopReason: 'tool_use',
+        usage: { inputTokens: 5, outputTokens: 3 },
+      }))
+      vi.mocked(provider.chat).mockImplementationOnce(async () => new Promise(() => {}))
+
+      const runtime = new AgentRuntime(provider, registry, sessionService)
+      runtime.registerAgent(makeProfile({
+        id: 'sales-associate',
+        timeoutMs: 20,
+        toolPolicy: { browserAccess: true, allowedTools: ['createCustomer'] },
+        evidencePolicy: { requireScreenshotForFinding: false, requireDomSnippetForFinding: false },
+      }))
+
+      const result = await runtime.executeStep('sales-associate', {
+        id: 'create_customer',
+        name: 'Create customer',
+        agentId: 'sales-associate',
+        capabilityId: 'createCustomer',
+        order: 1,
+        requiredArtifacts: [],
+        producedArtifacts: ['customerId'],
+      }, { sessionId: 'sess-1' })
+
+      expect(result.status).toBe('completed')
+      expect(result.success).toBe(true)
+      expect(result.output).toMatchObject({ customerId: 'customer-1' })
+      expect(provider.chat).toHaveBeenCalledTimes(2)
+    })
   })
 
   describe('executeStep — policy enforcement', () => {

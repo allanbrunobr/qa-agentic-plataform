@@ -25,6 +25,13 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const REPO_ROOT = path.resolve(__dirname, '../../../../../..')
 
+class ModelDeadlineExceededError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Agent timeout after ${timeoutMs}ms`)
+    this.name = 'ModelDeadlineExceededError'
+  }
+}
+
 export class AgentRuntime {
   private readonly agents = new Map<string, AgentProfile>()
 
@@ -98,6 +105,7 @@ export class AgentRuntime {
     const collectedFindings: AgentStepOutput['findings'] = []
     const collectedEvidence: string[] = []
     const accumulatedOutput: Record<string, unknown> = {}
+    const expectedArtifacts = this.extractExpectedArtifacts(messages)
 
     const allTools = this.toolRegistry.listTools()
     const toolDefs: ToolDefinition[] = allTools
@@ -132,6 +140,18 @@ export class AgentRuntime {
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       if (Date.now() > deadline) {
+        const completedFromToolOutput = this.completeFromToolOutputIfValid(
+          profile,
+          sessionId,
+          responseTextFromArtifacts(accumulatedOutput),
+          accumulatedOutput,
+          collectedFindings,
+          collectedEvidence,
+          expectedArtifacts,
+          startedAt,
+        )
+        if (completedFromToolOutput) return completedFromToolOutput
+
         this.sessionService.appendEvent(sessionId, {
           type: 'error',
           agentRole: profile.role,
@@ -150,11 +170,24 @@ export class AgentRuntime {
 
       let response
       try {
-        response = await this.provider.chat(messages, toolDefs, { maxTokens: 4096, model: profile.model })
+        response = await this.chatBeforeDeadline(messages, toolDefs, profile, deadline)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
+        if (error instanceof ModelDeadlineExceededError) {
+          const completedFromToolOutput = this.completeFromToolOutputIfValid(
+            profile,
+            sessionId,
+            message,
+            accumulatedOutput,
+            collectedFindings,
+            collectedEvidence,
+            expectedArtifacts,
+            startedAt,
+          )
+          if (completedFromToolOutput) return completedFromToolOutput
+        }
         return {
-          status: 'failed',
+          status: error instanceof ModelDeadlineExceededError ? 'timeout' : 'failed',
           toolCalls: [],
           findings: collectedFindings,
           output: accumulatedOutput,
@@ -334,4 +367,103 @@ export class AgentRuntime {
       ...content,
     ].join('\n\n')
   }
+
+  private async chatBeforeDeadline(
+    messages: ModelMessage[],
+    toolDefs: ToolDefinition[],
+    profile: AgentProfile,
+    deadline: number,
+  ) {
+    const remainingMs = deadline - Date.now()
+    if (remainingMs <= 0) {
+      throw new ModelDeadlineExceededError(profile.timeoutMs)
+    }
+
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        this.provider!.chat(messages, toolDefs, { maxTokens: 4096, model: profile.model }),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new ModelDeadlineExceededError(profile.timeoutMs)), remainingMs)
+        }),
+      ])
+    } finally {
+      if (timeout) clearTimeout(timeout)
+    }
+  }
+
+  private completeFromToolOutputIfValid(
+    profile: AgentProfile,
+    sessionId: string,
+    text: string,
+    accumulatedOutput: Record<string, unknown>,
+    collectedFindings: AgentStepOutput['findings'],
+    collectedEvidence: string[],
+    expectedArtifacts: string[],
+    startedAt: number,
+  ): AgentStepOutput | undefined {
+    if (!this.hasExpectedArtifacts(accumulatedOutput, expectedArtifacts)) {
+      return undefined
+    }
+
+    const evidenceValidation = this.validateFindingEvidence(profile, collectedEvidence)
+    if (!evidenceValidation.valid && collectedFindings.length > 0) {
+      return {
+        status: 'failed',
+        toolCalls: [],
+        findings: [],
+        output: accumulatedOutput,
+        durationMs: Date.now() - startedAt,
+        success: false,
+        error: evidenceValidation.reason,
+      }
+    }
+
+    this.sessionService?.appendEvent(sessionId, {
+      type: 'info',
+      agentRole: profile.role,
+      payload: {
+        event: 'completed_from_tool_output',
+        reason: 'model_followup_deadline_exceeded_after_required_artifacts',
+        expectedArtifacts,
+      },
+    })
+
+    return {
+      status: 'completed',
+      text,
+      toolCalls: [],
+      findings: collectedFindings,
+      output: accumulatedOutput,
+      durationMs: Date.now() - startedAt,
+      success: true,
+    }
+  }
+
+  private extractExpectedArtifacts(messages: ModelMessage[]): string[] {
+    for (const message of messages) {
+      if (message.role !== 'user') continue
+
+      try {
+        const parsed = JSON.parse(message.content)
+        const producedArtifacts = Array.isArray(parsed?.producedArtifacts) ? parsed.producedArtifacts : []
+        const requiredArtifacts = Array.isArray(parsed?.requiredArtifacts) ? parsed.requiredArtifacts : []
+        const artifacts = producedArtifacts.length > 0 ? producedArtifacts : requiredArtifacts
+        return artifacts.filter((item: unknown): item is string => typeof item === 'string' && item.length > 0)
+      } catch {
+        continue
+      }
+    }
+
+    return []
+  }
+
+  private hasExpectedArtifacts(output: Record<string, unknown>, expectedArtifacts: string[]): boolean {
+    if (expectedArtifacts.length === 0) return false
+    return expectedArtifacts.every((artifact) => output[artifact] !== undefined && output[artifact] !== null)
+  }
+}
+
+function responseTextFromArtifacts(output: Record<string, unknown>): string {
+  return `Completed using tool output: ${JSON.stringify(output)}`
 }

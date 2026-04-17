@@ -102,7 +102,7 @@ describe('L5 controlled feedback services', () => {
     })).toContainEqual(expect.objectContaining({
       action: 'apply',
       verdict: 'allowed',
-      requirements: ['bounded_policy'],
+      requirements: expect.arrayContaining(['independent_audit', 'bounded_policy']),
     }))
   })
 
@@ -146,7 +146,7 @@ describe('L5 controlled feedback services', () => {
     })).toContainEqual(expect.objectContaining({
       action: 'apply',
       verdict: 'blocked',
-      requirements: ['bounded_policy'],
+      requirements: expect.arrayContaining(['independent_audit', 'bounded_policy']),
     }))
   })
 
@@ -181,7 +181,7 @@ describe('L5 controlled feedback services', () => {
     })).toContainEqual(expect.objectContaining({
       action: 'evaluate',
       verdict: 'allowed',
-      requirements: ['human_review'],
+      requirements: expect.arrayContaining(['independent_audit', 'human_review']),
     }))
   })
 
