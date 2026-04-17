@@ -1,16 +1,19 @@
 import type {
   GovernanceDecision,
   GovernanceDecisionInput,
+  HealingAction,
   LearningProposal,
   LearningProposalPatchKind,
   SessionService,
 } from './session-service.js'
 
 type LearningGovernanceAction = 'approve' | 'apply' | 'reject'
+type HealingGovernanceAction = 'apply' | 'evaluate'
 
 const HUMAN_REVIEW_REQUIREMENTS = ['human_review']
 const APPLY_REQUIREMENTS = ['human_review', 'approved_learning_proposal']
 const APPLY_SAFE_PATCH_KINDS: LearningProposalPatchKind[] = ['none', 'prompt_overlay']
+const BOUNDED_POLICY_REQUIREMENTS = ['bounded_policy']
 
 export class GovernancePolicyService {
   constructor(private readonly sessionService: SessionService) {}
@@ -71,6 +74,71 @@ export class GovernancePolicyService {
 
     return allowed(proposal, action, actor, 'Learning proposal apply permitted by governance policy', APPLY_REQUIREMENTS, metadata)
   }
+
+  recordHealingActionDecision(
+    action: HealingAction,
+    governanceAction: HealingGovernanceAction = inferHealingGovernanceAction(action),
+    actor = 'self_healing',
+  ): GovernanceDecision {
+    return this.sessionService.recordGovernanceDecision(
+      this.decideHealingAction(action, governanceAction, actor),
+    )
+  }
+
+  decideHealingAction(
+    action: HealingAction,
+    governanceAction: HealingGovernanceAction = inferHealingGovernanceAction(action),
+    actor = 'self_healing',
+  ): GovernanceDecisionInput {
+    const metadata = {
+      healingType: action.type,
+      target: action.target,
+      automatic: action.automatic,
+      status: action.status,
+      ...action.metadata,
+    }
+
+    if (action.status === 'blocked') {
+      return {
+        subjectType: 'healing_action',
+        subjectId: action.id,
+        action: governanceAction,
+        verdict: 'blocked',
+        reason: action.reason,
+        actor,
+        requirements: BOUNDED_POLICY_REQUIREMENTS,
+        metadata,
+      }
+    }
+
+    if (action.automatic && action.status === 'applied') {
+      return {
+        subjectType: 'healing_action',
+        subjectId: action.id,
+        action: governanceAction,
+        verdict: 'allowed',
+        reason: 'Automatic healing action permitted by bounded policy',
+        actor,
+        requirements: BOUNDED_POLICY_REQUIREMENTS,
+        metadata,
+      }
+    }
+
+    return {
+      subjectType: 'healing_action',
+      subjectId: action.id,
+      action: governanceAction,
+      verdict: 'allowed',
+      reason: 'Healing action requires human review before application',
+      actor,
+      requirements: HUMAN_REVIEW_REQUIREMENTS,
+      metadata,
+    }
+  }
+}
+
+function inferHealingGovernanceAction(action: HealingAction): HealingGovernanceAction {
+  return action.status === 'applied' || action.status === 'blocked' ? 'apply' : 'evaluate'
 }
 
 function allowed(

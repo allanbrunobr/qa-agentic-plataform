@@ -96,6 +96,14 @@ describe('L5 controlled feedback services', () => {
       automatic: true,
     }))
     expect(healing.listLog()).toHaveLength(1)
+    expect(service.listGovernanceDecisions({
+      subjectType: 'healing_action',
+      subjectId: actions[0]?.id,
+    })).toContainEqual(expect.objectContaining({
+      action: 'apply',
+      verdict: 'allowed',
+      requirements: ['bounded_policy'],
+    }))
   })
 
   it('blocks automatic self-healing when hourly bounds are exceeded', () => {
@@ -132,6 +140,49 @@ describe('L5 controlled feedback services', () => {
       status: 'blocked',
       automatic: false,
     }))
+    expect(service.listGovernanceDecisions({
+      subjectType: 'healing_action',
+      subjectId: actions[0]?.id,
+    })).toContainEqual(expect.objectContaining({
+      action: 'apply',
+      verdict: 'blocked',
+      requirements: ['bounded_policy'],
+    }))
+  })
+
+  it('records human-review governance decisions for proposed quarantine actions', () => {
+    const service = new SessionService(':memory:')
+    const session = service.createSession('first_order')
+
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      service.recordStepPerformance({
+        sessionId: session.id,
+        scenarioId: 'first_order',
+        stepId: 'schedule_order',
+        agentId: 'sales-associate',
+        status: attempt <= 4 ? 'failed' : 'completed',
+        success: attempt > 4,
+        attempt,
+        durationMs: 1_000,
+        errorMessage: attempt <= 4 ? 'sensor validation failed' : undefined,
+      })
+    }
+
+    const actions = new SelfHealingService(service).evaluateRecentFailures()
+
+    expect(actions).toContainEqual(expect.objectContaining({
+      type: 'quarantine_step',
+      status: 'proposed',
+      automatic: false,
+    }))
+    expect(service.listGovernanceDecisions({
+      subjectType: 'healing_action',
+      subjectId: actions[0]?.id,
+    })).toContainEqual(expect.objectContaining({
+      action: 'evaluate',
+      verdict: 'allowed',
+      requirements: ['human_review'],
+    }))
   })
 
   it('does not duplicate self-healing actions for unchanged failure evidence', () => {
@@ -160,5 +211,12 @@ describe('L5 controlled feedback services', () => {
     expect(second).toHaveLength(1)
     expect(second[0]?.id).toBe(first[0]?.id)
     expect(healing.listLog()).toHaveLength(1)
+    expect(service.listGovernanceDecisions({
+      subjectType: 'healing_action',
+      subjectId: first[0]?.id,
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: 'apply', verdict: 'allowed' }),
+      expect.objectContaining({ action: 'evaluate', verdict: 'allowed' }),
+    ]))
   })
 })

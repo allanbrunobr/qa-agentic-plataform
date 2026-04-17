@@ -156,6 +156,40 @@ describe('OutputSensor', () => {
     expect(result.details['satisfiedBySessionArtifacts']).toEqual(['customerId']);
   });
 
+  it('should pass when persisted artifact is stored under a generated artifact key', async () => {
+    const context = makeContext({
+      stepOutput: {
+        stepIndex: 0,
+        agentId: 'sales-associate',
+        output: {},
+        toolCalls: [],
+        durationMs: 100,
+        success: true,
+      },
+      session: {
+        id: 'session_1',
+        scenarioId: 'test',
+        status: 'running',
+        startedAt: new Date().toISOString(),
+        events: [],
+        artifacts: {
+          artifact_uuid: {
+            content: JSON.stringify({ customerId: '123' }),
+            metadata: { artifactType: 'customerId' },
+            description: 'Domain artifact: customerId',
+          },
+        },
+        findings: [],
+        checkpoint: { lastCompletedStep: -1, cursor: 0 },
+      },
+    });
+
+    const result = await outputSensor(context);
+
+    expect(result.status).toBe('pass');
+    expect(result.details['satisfiedBySessionArtifacts']).toEqual(['customerId']);
+  });
+
   it('should fail when failure has no error message', async () => {
     const context = makeContext({
       stepOutput: {

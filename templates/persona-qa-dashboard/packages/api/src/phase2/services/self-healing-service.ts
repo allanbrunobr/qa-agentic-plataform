@@ -1,4 +1,5 @@
 import type { HealingAction, SessionService, StepPerformanceRecord } from './session-service.js'
+import { GovernancePolicyService } from './governance-policy-service.js'
 
 export interface HealingBounds {
   maxTimeoutIncreasePercent: number
@@ -19,10 +20,14 @@ export const DEFAULT_HEALING_BOUNDS: HealingBounds = {
 }
 
 export class SelfHealingService {
+  private readonly governance: GovernancePolicyService
+
   constructor(
     private readonly sessionService: SessionService,
     private readonly bounds: HealingBounds = DEFAULT_HEALING_BOUNDS,
-  ) {}
+  ) {
+    this.governance = new GovernancePolicyService(sessionService)
+  }
 
   evaluateRecentFailures(): HealingAction[] {
     const actions: HealingAction[] = []
@@ -77,12 +82,12 @@ export class SelfHealingService {
     metadata?: Record<string, unknown>
   }): HealingAction {
     const existing = this.findRecentAction(input.type, input.target)
-    if (existing) return existing
+    if (existing) return this.recordReuseDecision(existing)
 
     const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString()
     const recentActions = this.sessionService.countAutomaticHealingActionsSince(oneHourAgo)
     if (recentActions >= this.bounds.maxAutoHealingActionsPerHour) {
-      return this.sessionService.recordHealingAction({
+      return this.recordGovernedAction({
         ...input,
         automatic: false,
         status: 'blocked',
@@ -94,7 +99,7 @@ export class SelfHealingService {
       })
     }
 
-    return this.sessionService.recordHealingAction({
+    return this.recordGovernedAction({
       ...input,
       automatic: true,
       status: 'applied',
@@ -110,8 +115,26 @@ export class SelfHealingService {
     metadata?: Record<string, unknown>
   }): HealingAction {
     const existing = this.findRecentAction(input.type, input.target)
-    if (existing) return existing
-    return this.sessionService.recordHealingAction(input)
+    if (existing) return this.recordReuseDecision(existing)
+    return this.recordGovernedAction(input)
+  }
+
+  private recordGovernedAction(input: {
+    type: string
+    target: string
+    reason: string
+    automatic: boolean
+    status: HealingAction['status']
+    metadata?: Record<string, unknown>
+  }): HealingAction {
+    const action = this.sessionService.recordHealingAction(input)
+    this.governance.recordHealingActionDecision(action)
+    return action
+  }
+
+  private recordReuseDecision(action: HealingAction): HealingAction {
+    this.governance.recordHealingActionDecision(action, 'evaluate')
+    return action
   }
 
   private findRecentAction(type: string, target: string): HealingAction | undefined {
