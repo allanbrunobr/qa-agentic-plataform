@@ -158,6 +158,15 @@ A passing run prints:
 [verify-install-local] PASS session=...
 ```
 
+Run the release gate before merging installer, template, runtime, or dashboard changes:
+
+```bash
+cd '/path/to/projects/agentic-platform'
+npm run verify:release
+```
+
+The release gate runs syntax validation for the clean-room verifier, the API L4/L5 release Vitest set, the web release Vitest set, the web production build, and the full clean-room install/runtime/dashboard smoke. Override `API_PORT`, `WEB_PORT`, or `RELEASE_PORT_SEED` if local ports are busy.
+
 ## Guardrail
 
 This baseline must continue to work for the Reference Store frontend flow before broader generalization is attempted.
