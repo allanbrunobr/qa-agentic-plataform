@@ -6,6 +6,7 @@ export interface HealingBounds {
   modelRotationCooldownMs: number
   quarantineRequiresHuman: boolean
   maxAutoHealingActionsPerHour: number
+  duplicateActionCooldownMs: number
 }
 
 export const DEFAULT_HEALING_BOUNDS: HealingBounds = {
@@ -14,6 +15,7 @@ export const DEFAULT_HEALING_BOUNDS: HealingBounds = {
   modelRotationCooldownMs: 3_600_000,
   quarantineRequiresHuman: true,
   maxAutoHealingActionsPerHour: 10,
+  duplicateActionCooldownMs: 3_600_000,
 }
 
 export class SelfHealingService {
@@ -50,7 +52,7 @@ export class SelfHealingService {
         recentFive.length === 5
         && recentFive.filter((record) => !record.success).length / recentFive.length >= 0.8
       ) {
-        actions.push(this.sessionService.recordHealingAction({
+        actions.push(this.recordActionOnce({
           type: 'quarantine_step',
           target,
           reason: 'Step success rate is below safety threshold in the latest executions.',
@@ -74,6 +76,9 @@ export class SelfHealingService {
     reason: string
     metadata?: Record<string, unknown>
   }): HealingAction {
+    const existing = this.findRecentAction(input.type, input.target)
+    if (existing) return existing
+
     const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString()
     const recentActions = this.sessionService.countAutomaticHealingActionsSince(oneHourAgo)
     if (recentActions >= this.bounds.maxAutoHealingActionsPerHour) {
@@ -94,6 +99,28 @@ export class SelfHealingService {
       automatic: true,
       status: 'applied',
     })
+  }
+
+  private recordActionOnce(input: {
+    type: string
+    target: string
+    reason: string
+    automatic: boolean
+    status: HealingAction['status']
+    metadata?: Record<string, unknown>
+  }): HealingAction {
+    const existing = this.findRecentAction(input.type, input.target)
+    if (existing) return existing
+    return this.sessionService.recordHealingAction(input)
+  }
+
+  private findRecentAction(type: string, target: string): HealingAction | undefined {
+    const cutoff = Date.now() - this.bounds.duplicateActionCooldownMs
+    return this.sessionService.listHealingActions({ limit: 500 }).find((action) => (
+      action.type === type
+      && action.target === target
+      && Date.parse(action.createdAt) >= cutoff
+    ))
   }
 }
 

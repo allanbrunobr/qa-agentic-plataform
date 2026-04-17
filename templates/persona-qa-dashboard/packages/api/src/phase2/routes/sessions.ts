@@ -3,12 +3,14 @@ import type { FastifyInstance } from 'fastify';
 import { buildContractEvaluation } from '../services/contract-evaluation.js';
 import { CoverageAnalysisService } from '../services/coverage-analysis-service.js';
 import { FailurePatternService } from '../services/failure-pattern-service.js';
+import { IndependentAuditorService } from '../services/independent-auditor-service.js';
 import { LearningControlService } from '../services/learning-control-service.js';
 import { LearningPlaybookService } from '../services/learning-playbook-service.js';
 import { MetaOrchestrator } from '../services/meta-orchestrator.js';
 import { ProfileTuningService } from '../services/profile-tuning-service.js';
 import { SelfHealingService } from '../services/self-healing-service.js';
 import { resolvePhase2ArtifactPath, SessionService } from '../services/session-service.js';
+import type { Session } from '../types/session-types.js';
 
 // Singleton session service instance for Phase 2 routes
 let _sessionService: SessionService | null = null;
@@ -59,6 +61,19 @@ function extractLastError(session: ReturnType<SessionService['getSession']>): st
   return message.replace(/\s+/g, ' ').trim().slice(0, 180)
 }
 
+function safeBuildContractEvaluation(session: Session) {
+  try {
+    return buildContractEvaluation(session);
+  } catch (error) {
+    return {
+      workflowContract: null,
+      workflowContractYaml: null,
+      contractEvaluation: null,
+      contractEvaluationError: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export function getSessionService(): SessionService {
   if (!_sessionService) {
     _sessionService = new SessionService();
@@ -77,7 +92,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     const sessions = service.getAllSessions();
 
     const summaries = sessions.map((s) => {
-      const evaluation = buildContractEvaluation(s).contractEvaluation;
+      const evaluation = safeBuildContractEvaluation(s).contractEvaluation;
       return {
         id: s.id,
         runId: s.runId ?? null,
@@ -109,7 +124,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
 
     return reply.send({
       ...session,
-      ...buildContractEvaluation(session),
+      ...safeBuildContractEvaluation(session),
     });
   });
 
@@ -127,6 +142,17 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     );
 
     return reply.send(sorted);
+  });
+
+  app.get<{ Params: { id: string } }>('/api/p2/sessions/:id/audit', async (request, reply) => {
+    const service = getSessionService();
+    const session = service.getSession(request.params.id);
+
+    if (!session) {
+      return reply.status(404).send({ error: 'Sessão não encontrada' });
+    }
+
+    return reply.send(new IndependentAuditorService().evaluateSession(session));
   });
 
   // GET /api/p2/sessions/:id/findings — all findings with details

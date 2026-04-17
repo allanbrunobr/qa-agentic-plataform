@@ -133,4 +133,32 @@ describe('L5 controlled feedback services', () => {
       automatic: false,
     }))
   })
+
+  it('does not duplicate self-healing actions for unchanged failure evidence', () => {
+    const service = new SessionService(':memory:')
+    const session = service.createSession('first_order')
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      service.recordStepPerformance({
+        sessionId: session.id,
+        scenarioId: 'first_order',
+        stepId: 'create_customer',
+        agentId: 'sales-associate',
+        status: 'timeout',
+        success: false,
+        attempt,
+        durationMs: 90_000,
+        errorMessage: 'timeout',
+      })
+    }
+
+    const healing = new SelfHealingService(service)
+    const first = healing.evaluateRecentFailures()
+    const second = healing.evaluateRecentFailures()
+
+    expect(first).toHaveLength(1)
+    expect(second).toHaveLength(1)
+    expect(second[0]?.id).toBe(first[0]?.id)
+    expect(healing.listLog()).toHaveLength(1)
+  })
 })

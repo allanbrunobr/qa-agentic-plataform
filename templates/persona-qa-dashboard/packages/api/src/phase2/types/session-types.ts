@@ -5,6 +5,10 @@ export type SessionStatus = z.infer<typeof SessionStatusSchema>
 
 export const SessionEventTypeSchema = z.enum([
   'session_started',
+  'session_completed',
+  'session_failed',
+  'agent_started',
+  'agent_stopped',
   'step_started',
   'step_completed',
   'step_failed',

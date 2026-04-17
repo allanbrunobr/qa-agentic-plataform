@@ -118,10 +118,37 @@ describe('Orchestrator', () => {
       const eventTypes = session.events.map((event) => event.type);
 
       expect(eventTypes).toContain('session_started');
+      expect(eventTypes).toContain('agent_started');
+      expect(eventTypes).toContain('agent_stopped');
       expect(eventTypes).toContain('orchestrator_decision');
       expect(eventTypes).toContain('step_started');
       expect(eventTypes).toContain('step_completed');
+      expect(eventTypes).toContain('session_completed');
       expect(eventTypes).toContain('run_completed');
+    });
+
+    it('should emit balanced agent lifecycle events around runtime execution', async () => {
+      const scenario = makeScenario();
+      vi.spyOn(agentRuntime, 'executeStep').mockResolvedValue(makeSuccessOutput(0));
+
+      const result = await orchestrator.executeRun(scenario);
+      const session = sessionService.getSession(result.sessionId)!;
+      const agentStarted = session.events.filter((event) => event.type === 'agent_started');
+      const agentStopped = session.events.filter((event) => event.type === 'agent_stopped');
+
+      expect(agentStarted).toHaveLength(2);
+      expect(agentStopped).toHaveLength(2);
+      expect(agentStarted[0]?.payload).toMatchObject({
+        agentId: 'sales-associate',
+        stepId: 'step_1',
+        attempt: 1,
+      });
+      expect(agentStopped[0]?.payload).toMatchObject({
+        agentId: 'sales-associate',
+        stepId: 'step_1',
+        attempt: 1,
+        status: 'completed',
+      });
     });
 
     it('should emit handoff events when control moves between agents with a valid contract', async () => {

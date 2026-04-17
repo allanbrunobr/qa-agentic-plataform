@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { AgentStepOutput } from '../types/agent-types.js';
 import type { ScenarioContract, RunResult, OrchestratorDecision, DecisionType, StepExecutionStatus } from '../types/scenario-types.js';
 import type { AgentRuntime } from './agent-runtime.js';
 import { AdaptiveDecisionEngine } from './adaptive-decision-engine.js';
@@ -74,11 +75,11 @@ export class Orchestrator {
 
         try {
           const artifacts = this.sessionService.getSession(sessionId)?.artifacts ?? {};
-          const result = await this.agentRuntime.executeStep(adaptedStep.agentId, adaptedStep, {
+          const result = await this.executeAgentStepWithLifecycle(sessionId, adaptedStep, {
             ...artifacts,
             ...runtimeContext,
             sessionId,
-          });
+          }, attempt);
 
           let hasCriticalSensorFailure = false;
           if (this.sensorRunner) {
@@ -139,6 +140,12 @@ export class Orchestrator {
                 attempt,
               });
               this.sessionService.updateStatus(sessionId, 'failed');
+              this.sessionService.addEvent(sessionId, 'session_failed', {
+                scenarioId: scenario.id,
+                failedStep: step.id,
+                stepsCompleted,
+                reason: handoffError,
+              });
               this.sessionService.addEvent(sessionId, 'run_failed', {
                 scenarioId: scenario.id,
                 failedStep: step.id,
@@ -252,6 +259,12 @@ export class Orchestrator {
         });
 
         this.sessionService.updateStatus(sessionId, 'failed');
+        this.sessionService.addEvent(sessionId, 'session_failed', {
+          scenarioId: scenario.id,
+          failedStep: step.id,
+          stepsCompleted,
+          reason: failDecision.reason,
+        });
         this.sessionService.addEvent(sessionId, 'run_failed', {
           scenarioId: scenario.id,
           failedStep: step.id,
@@ -272,6 +285,11 @@ export class Orchestrator {
     }
 
     this.sessionService.updateStatus(sessionId, 'complete');
+    this.sessionService.addEvent(sessionId, 'session_completed', {
+      scenarioId: scenario.id,
+      stepsCompleted,
+      totalSteps: executableSteps.length,
+    });
     this.sessionService.addEvent(sessionId, 'run_completed', {
       scenarioId: scenario.id,
       stepsCompleted,
@@ -345,11 +363,11 @@ export class Orchestrator {
 
         try {
           const artifacts = this.sessionService.getSession(sessionId)?.artifacts ?? {};
-          const result = await this.agentRuntime.executeStep(adaptedStep.agentId, adaptedStep, {
+          const result = await this.executeAgentStepWithLifecycle(sessionId, adaptedStep, {
             ...artifacts,
             ...runtimeContext,
             sessionId,
-          });
+          }, attempt);
 
           let hasCriticalSensorFailure = false;
           if (this.sensorRunner) {
@@ -394,6 +412,12 @@ export class Orchestrator {
                 attempt,
               });
               this.sessionService.updateStatus(sessionId, 'failed');
+              this.sessionService.addEvent(sessionId, 'session_failed', {
+                scenarioId: scenario.id,
+                failedStep: step.id,
+                stepsCompleted,
+                reason: handoffError,
+              });
               this.sessionService.addEvent(sessionId, 'run_failed', {
                 failedStep: step.id,
                 stepsCompleted,
@@ -440,6 +464,12 @@ export class Orchestrator {
 
       if (!stepSucceeded) {
         this.sessionService.updateStatus(sessionId, 'failed');
+        this.sessionService.addEvent(sessionId, 'session_failed', {
+          scenarioId: scenario.id,
+          failedStep: step.id,
+          stepsCompleted,
+          reason: `Step ${step.id} failed after ${retryPolicy.maxAttempts} attempt(s)`,
+        });
         this.sessionService.addEvent(sessionId, 'run_failed', {
           failedStep: step.id,
           stepsCompleted,
@@ -459,6 +489,12 @@ export class Orchestrator {
     }
 
     this.sessionService.updateStatus(sessionId, 'complete');
+    this.sessionService.addEvent(sessionId, 'session_completed', {
+      scenarioId: scenario.id,
+      stepsCompleted,
+      totalSteps: executableSteps.length,
+      resumed: true,
+    });
     this.sessionService.addEvent(sessionId, 'run_completed', {
       scenarioId: scenario.id,
       stepsCompleted,
@@ -513,6 +549,57 @@ export class Orchestrator {
 
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private async executeAgentStepWithLifecycle(
+    sessionId: string,
+    step: ScenarioContract['steps'][number],
+    context: Record<string, unknown>,
+    attempt: number,
+  ): Promise<AgentStepOutput> {
+    const startedAt = new Date().toISOString();
+    const startedMs = Date.now();
+
+    this.sessionService.addEvent(sessionId, 'agent_started', {
+      agentId: step.agentId,
+      agentRole: step.agentId,
+      stepId: step.id,
+      capabilityId: step.capabilityId,
+      attempt,
+      timeoutMs: step.timeoutMs,
+      startedAt,
+    });
+
+    try {
+      const result = await this.agentRuntime.executeStep(step.agentId, step, context);
+      this.sessionService.addEvent(sessionId, 'agent_stopped', {
+        agentId: step.agentId,
+        agentRole: step.agentId,
+        stepId: step.id,
+        capabilityId: step.capabilityId,
+        attempt,
+        status: result.success ? 'completed' : result.status ?? 'failed',
+        durationMs: result.durationMs || Date.now() - startedMs,
+        error: result.error,
+        startedAt,
+        stoppedAt: new Date().toISOString(),
+      });
+      return result;
+    } catch (error) {
+      this.sessionService.addEvent(sessionId, 'agent_stopped', {
+        agentId: step.agentId,
+        agentRole: step.agentId,
+        stepId: step.id,
+        capabilityId: step.capabilityId,
+        attempt,
+        status: 'error',
+        durationMs: Date.now() - startedMs,
+        error: error instanceof Error ? error.message : String(error),
+        startedAt,
+        stoppedAt: new Date().toISOString(),
+      });
+      throw error;
+    }
   }
 
   private async captureStepScreenshot(
