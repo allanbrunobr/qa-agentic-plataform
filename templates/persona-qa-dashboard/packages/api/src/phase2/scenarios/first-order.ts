@@ -15,7 +15,7 @@ export const firstOrder: ScenarioContract = {
       order: 0,
       requiredArtifacts: [],
       producedArtifacts: ['customerId'],
-      timeoutMs: 60000,
+      timeoutMs: 90_000,
       retryPolicy: { maxAttempts: 2, backoffMs: 1000 },
     },
     {
@@ -27,7 +27,7 @@ export const firstOrder: ScenarioContract = {
       order: 1,
       requiredArtifacts: ['customerId'],
       producedArtifacts: ['eventId'],
-      timeoutMs: 60000,
+      timeoutMs: 90_000,
       retryPolicy: { maxAttempts: 2, backoffMs: 1000 },
     },
   ],

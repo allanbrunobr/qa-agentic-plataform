@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +9,13 @@ const repoRoot = path.resolve(scriptDir, '..')
 const dashboardRoot = path.join(repoRoot, 'templates/persona-qa-dashboard')
 const apiRoot = path.join(dashboardRoot, 'packages/api')
 const webRoot = path.join(dashboardRoot, 'packages/web')
+const preferredNodeBin = process.env.AGENTIC_RELEASE_NODE_BIN
+  ?? path.join(process.env.HOME ?? '', '.nvm/versions/node/v22.13.1/bin')
+const preferredNodePath = path.join(preferredNodeBin, 'node')
+const releaseNodePath = fs.existsSync(preferredNodePath) ? preferredNodePath : process.execPath
+const releasePath = fs.existsSync(preferredNodePath)
+  ? `${preferredNodeBin}${path.delimiter}${process.env.PATH ?? ''}`
+  : process.env.PATH
 
 const apiReleaseTests = [
   'src/phase2/__tests__/adaptive-history.test.ts',
@@ -42,12 +50,13 @@ const releaseEnv = {
   API_PORT: process.env.API_PORT ?? String(portSeed),
   WEB_PORT: process.env.WEB_PORT ?? String(portSeed + 2000),
   NODE_NO_WARNINGS: process.env.NODE_NO_WARNINGS ?? '1',
+  PATH: releasePath,
 }
 
 const steps = [
   {
     name: 'syntax: clean-room verifier',
-    command: process.execPath,
+    command: releaseNodePath,
     args: ['--check', 'scripts/verify-install-local-reference-store.mjs'],
     cwd: repoRoot,
   },
@@ -83,9 +92,13 @@ function log(message) {
 }
 
 function assertNodeVersion() {
-  const major = Number(process.versions.node.split('.')[0])
+  const result = spawnSync(releaseNodePath, ['-p', 'process.versions.node'], {
+    encoding: 'utf8',
+  })
+  const version = result.stdout.trim() || process.versions.node
+  const major = Number(version.split('.')[0])
   if (!Number.isFinite(major) || major < 22) {
-    throw new Error(`Node 22+ is required for release verification; current=${process.versions.node}`)
+    throw new Error(`Node 22+ is required for release verification; current=${version}`)
   }
 }
 
@@ -94,7 +107,7 @@ function runStep(step) {
   const startedAt = Date.now()
   const result = spawnSync(step.command, step.args, {
     cwd: step.cwd,
-    env: step.env ?? process.env,
+    env: { ...releaseEnv, ...(step.env ?? {}) },
     stdio: 'inherit',
   })
 
@@ -107,6 +120,7 @@ function runStep(step) {
 
 function main() {
   assertNodeVersion()
+  log(`node=${releaseNodePath}`)
   log(`ports api=${releaseEnv.API_PORT} web=${releaseEnv.WEB_PORT}`)
   for (const step of steps) runStep(step)
   log('PASS release verification')

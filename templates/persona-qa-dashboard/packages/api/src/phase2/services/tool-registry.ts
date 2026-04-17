@@ -4,8 +4,9 @@ import type {
   ToolPolicy,
   ToolResult,
   ToolContext,
+  ToolRiskLevel,
 } from '../types/tool-types.js'
-import { SENSITIVE_PATTERNS } from '../types/tool-types.js'
+import { SENSITIVE_PATTERNS, ToolMetadataSchema } from '../types/tool-types.js'
 
 interface RegisteredTool {
   handler: ToolHandler
@@ -19,7 +20,8 @@ export class ToolRegistry {
     if (this.tools.has(name)) {
       throw new Error(`Tool "${name}" is already registered`)
     }
-    this.tools.set(name, { handler, metadata })
+    const storedMetadata = freezeMetadata(ToolMetadataSchema.parse(metadata))
+    this.tools.set(name, { handler, metadata: storedMetadata })
   }
 
   async execute(
@@ -63,6 +65,16 @@ export class ToolRegistry {
     return this.tools.get(name)?.metadata
   }
 
+  getRiskLevel(name: string): ToolRiskLevel | undefined {
+    const metadata = this.tools.get(name)?.metadata
+    if (!metadata) return undefined
+    return metadata.riskLevel ?? 'read'
+  }
+
+  getByRiskLevel(riskLevel: ToolRiskLevel): ToolMetadata[] {
+    return this.listTools().filter((metadata) => (metadata.riskLevel ?? 'read') === riskLevel)
+  }
+
   private isPolicyAllowed(name: string, metadata: ToolMetadata, policy: ToolPolicy): boolean {
     // Browser access check
     if (metadata.requiresBrowser && !policy.browserAccess) {
@@ -81,6 +93,13 @@ export class ToolRegistry {
 
     return true
   }
+}
+
+function freezeMetadata(metadata: ToolMetadata): ToolMetadata {
+  return Object.freeze({
+    ...metadata,
+    tags: Object.freeze([...(metadata.tags ?? [])]) as unknown as string[],
+  }) as ToolMetadata
 }
 
 function sanitizeOutput(output: unknown): unknown {

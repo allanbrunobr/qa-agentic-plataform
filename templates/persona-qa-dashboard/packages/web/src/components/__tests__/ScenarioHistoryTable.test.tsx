@@ -73,13 +73,14 @@ describe('ScenarioHistoryTable', () => {
       json: () => Promise.resolve(mockResponse),
     } as Response)
 
-    render(<ScenarioHistoryTable scenarioId="s1" />)
+    const { container } = render(<ScenarioHistoryTable scenarioId="s1" />)
 
     await waitFor(() => {
       // 2 passed + 1 failed
-      expect(screen.getAllByText('Passed').length).toBe(2)
+      const bodyCells = Array.from(container.querySelectorAll('tbody td'))
+      expect(bodyCells.filter(cell => cell.textContent?.trim() === 'Passed').length).toBe(2)
+      expect(bodyCells.filter(cell => cell.textContent?.trim() === 'Failed').length).toBe(1)
     })
-    expect(screen.getByText('Failed')).toBeDefined()
   })
 
   it('renders mapped source badges (dashboard, cli, unknown)', async () => {

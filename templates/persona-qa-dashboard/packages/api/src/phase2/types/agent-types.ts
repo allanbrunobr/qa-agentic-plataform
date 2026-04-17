@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ToolPolicySchema } from './tool-types.js'
+import { ToolPolicySchema, ToolRiskLevelSchema } from './tool-types.js'
 
 export const AgentRoleSchema = z.enum([
   'orchestrator',
@@ -27,6 +27,44 @@ export const EvidencePolicySchema = z.object({
 
 export type EvidencePolicy = z.infer<typeof EvidencePolicySchema>
 
+export const RiskPolicySchema = z.object({
+  allowedRiskLevels: z.array(ToolRiskLevelSchema).default(['read']),
+  requireApprovalFor: z.array(ToolRiskLevelSchema).default([]),
+  denyRiskLevels: z.array(ToolRiskLevelSchema).default([]),
+})
+
+export type RiskPolicy = z.infer<typeof RiskPolicySchema>
+
+export enum InstructionPrecedence {
+  GLOBAL = 10,
+  AGENT_PROFILE = 20,
+  STEP = 30,
+  HISTORICAL = 40,
+}
+
+export const LAYER_MARKERS = {
+  [InstructionPrecedence.GLOBAL]: '[GLOBAL CONSTRAINTS]',
+  [InstructionPrecedence.AGENT_PROFILE]: '[ROLE INSTRUCTIONS]',
+  [InstructionPrecedence.STEP]: '[STEP CONTEXT]',
+  [InstructionPrecedence.HISTORICAL]: '[HISTORICAL HINTS]',
+} as const
+
+export const InstructionLayerSchema = z.object({
+  precedence: z.nativeEnum(InstructionPrecedence),
+  content: z.string(),
+  source: z.string(),
+})
+
+export type InstructionLayer = z.infer<typeof InstructionLayerSchema>
+
+export const AssembledPromptSchema = z.object({
+  layers: z.array(InstructionLayerSchema),
+  renderedText: z.string(),
+  assembledAt: z.string().datetime(),
+})
+
+export type AssembledPrompt = z.infer<typeof AssembledPromptSchema>
+
 export const AgentProfileSchema = z.object({
   id: z.string().optional(),
   name: z.string().optional(),
@@ -39,6 +77,7 @@ export const AgentProfileSchema = z.object({
     requireScreenshotForFinding: true,
     requireDomSnippetForFinding: false,
   }),
+  riskPolicy: RiskPolicySchema.optional(),
   canBlockRun: z.boolean().default(false),
   outputContract: z.record(z.unknown()).optional(),
   promptPath: z.string().optional(),

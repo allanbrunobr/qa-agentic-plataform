@@ -11,7 +11,7 @@ export const firstOrderWorkflowContract: WorkflowContract = {
       capabilityId: 'createCustomer',
       requiredArtifacts: [],
       producedArtifacts: ['customerId'],
-      timeoutMs: 60000,
+      timeoutMs: 90_000,
       retryPolicy: { maxAttempts: 2, backoffMs: 1000 },
     },
     {
@@ -21,7 +21,7 @@ export const firstOrderWorkflowContract: WorkflowContract = {
       capabilityId: 'scheduleOrder',
       requiredArtifacts: ['customerId'],
       producedArtifacts: ['eventId'],
-      timeoutMs: 60000,
+      timeoutMs: 90_000,
       retryPolicy: { maxAttempts: 2, backoffMs: 1000 },
     },
   ],

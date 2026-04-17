@@ -7,9 +7,10 @@ describe('DataExport', () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
-    fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(new Blob(['test-data'], { type: 'text/plain' })),
-    )
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      blob: () => Promise.resolve(new Blob(['test-data'], { type: 'text/plain' })),
+    } as Response)
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test')
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
   })

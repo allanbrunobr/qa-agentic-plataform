@@ -1,4 +1,5 @@
 import type { SensorFn } from '../services/sensor-runner.js';
+import { hasArtifactEvidence } from './artifact-evidence.js';
 
 /**
  * Artifact Completeness Sensor: checks all required artifacts are present in the session.
@@ -12,7 +13,7 @@ export const artifactSensor: SensorFn = async (context) => {
   };
 
   for (const required of step.requiredArtifacts) {
-    if (availableArtifacts[required] === undefined) {
+    if (!hasArtifactEvidence(availableArtifacts, required)) {
       missing.push(required);
     }
   }

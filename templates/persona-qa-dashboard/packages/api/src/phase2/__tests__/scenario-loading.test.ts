@@ -33,7 +33,7 @@ describe('Scenario Loading', () => {
           capabilityId: 'createCustomer',
           requiredArtifacts: [],
           producedArtifacts: ['customerId'],
-          timeoutMs: 60000,
+          timeoutMs: 90000,
           retryPolicy: { maxAttempts: 2, backoffMs: 1000 },
         },
         {
@@ -43,7 +43,7 @@ describe('Scenario Loading', () => {
           capabilityId: 'scheduleOrder',
           requiredArtifacts: ['customerId'],
           producedArtifacts: ['eventId'],
-          timeoutMs: 60000,
+          timeoutMs: 90000,
           retryPolicy: { maxAttempts: 2, backoffMs: 1000 },
         },
       ],

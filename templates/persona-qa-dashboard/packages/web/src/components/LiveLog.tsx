@@ -197,7 +197,7 @@ export function LiveLog({ events, className, totalExpected, runStatus }: LiveLog
         ))}
         <span className="ml-auto text-[10px] text-[var(--text-muted)] tabular-nums">
           {events.length}{totalExpected ? ` de ${totalExpected}` : ''} evento{events.length !== 1 ? 's' : ''}
-          {filter !== 'all' && ` (${filtered.length} visível${filtered.length !== 1 ? 'eis' : ''})`}
+          {filter !== 'all' && ` (${filtered.length} visíve${filtered.length !== 1 ? 'is' : 'l'})`}
         </span>
       </div>
 

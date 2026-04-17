@@ -217,12 +217,22 @@ export class AgentRuntime {
           artifacts: accumulatedOutput,
         }
 
-        const result = await this.toolRegistry.execute(
-          toolCall.name ?? toolCall.tool ?? 'unknown',
-          toolCall.input ?? toolCall.args ?? {},
-          profile.toolPolicy,
-          toolContext,
-        )
+        const toolName = toolCall.name ?? toolCall.tool ?? 'unknown'
+        const result = this.isToolAllowed(toolName, profile)
+          ? await this.toolRegistry.execute(
+            toolName,
+            toolCall.input ?? toolCall.args ?? {},
+            profile.toolPolicy,
+            toolContext,
+          )
+          : {
+            ok: false as const,
+            error: {
+              code: 'tool_not_allowed',
+              message: `Agent policy does not allow tool "${toolName}"`,
+              retryable: false,
+            },
+          }
 
         this.sessionService.appendEvent(sessionId, {
           type: 'tool_result',
@@ -282,6 +292,15 @@ export class AgentRuntime {
     const policy = profile.toolPolicy
     if (policy.deniedTools?.includes(toolName)) return false
     if (policy.allowedTools && !policy.allowedTools.includes(toolName)) return false
+
+    const riskPolicy = profile.riskPolicy
+    if (!riskPolicy) return true
+
+    const riskLevel = this.toolRegistry?.getRiskLevel(toolName) ?? 'read'
+    if (riskPolicy.denyRiskLevels.includes(riskLevel)) return false
+    if (riskPolicy.requireApprovalFor.includes(riskLevel)) return false
+    if (!riskPolicy.allowedRiskLevels.includes(riskLevel)) return false
+
     return true
   }
 

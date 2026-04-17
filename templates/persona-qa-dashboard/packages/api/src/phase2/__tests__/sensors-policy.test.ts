@@ -64,6 +64,47 @@ describe('ArtifactSensor', () => {
     expect(result.details['missing']).toEqual([]);
   });
 
+  it('should pass when required artifacts are inside persisted artifact payloads', async () => {
+    const context = makeContext({
+      step: {
+        id: 'step_2',
+        name: 'Schedule Order',
+        agentId: 'sales-associate',
+        order: 1,
+        requiredArtifacts: ['customerId'],
+        producedArtifacts: ['eventId'],
+        timeoutMs: 30000,
+      },
+      stepOutput: {
+        stepIndex: 1,
+        agentId: 'sales-associate',
+        output: { eventId: '456' },
+        toolCalls: [],
+        durationMs: 100,
+        success: true,
+      },
+      session: {
+        id: 'session_1',
+        scenarioId: 'test',
+        status: 'running',
+        startedAt: new Date().toISOString(),
+        events: [],
+        artifacts: {
+          generated_artifact: {
+            type: 'customerId',
+            payload: { customerId: '123' },
+          },
+        },
+        findings: [],
+        checkpoint: { lastCompletedStep: -1, cursor: 0 },
+      },
+    });
+
+    const result = await artifactSensor(context);
+    expect(result.status).toBe('pass');
+    expect(result.details['missing']).toEqual([]);
+  });
+
   it('should fail when the current step is missing its required artifacts', async () => {
     const context = makeContext({
       step: {

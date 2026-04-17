@@ -15,12 +15,17 @@ export const ToolResultSchema = z.discriminatedUnion('ok', [
 
 export type ToolResult = z.infer<typeof ToolResultSchema>
 
+export const ToolRiskLevelSchema = z.enum(['read', 'write', 'destructive'])
+
+export type ToolRiskLevel = z.infer<typeof ToolRiskLevelSchema>
+
 export const ToolMetadataSchema = z.object({
   name: z.string(),
   description: z.string(),
   inputSchema: z.record(z.unknown()).optional(),
   outputSchema: z.record(z.unknown()).optional(),
   requiresBrowser: z.boolean().default(false),
+  riskLevel: ToolRiskLevelSchema.optional(),
   tags: z.array(z.string()).default([]),
 })
 
