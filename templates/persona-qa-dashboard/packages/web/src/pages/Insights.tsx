@@ -3,9 +3,10 @@ import { motion } from 'framer-motion'
 import { Monitor, FlaskConical, Server, Lightbulb } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { SeverityBadge } from '@/components/ui/Badge'
+import { L5GovernancePanel } from '@/components/L5GovernancePanel'
 import type { ApiInsight } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
-import { api } from '@/lib/api'
+import { api, type Phase2GovernanceDecision, type Phase2HealingAction, type Phase2LearningProposal, type Phase2ScenarioDraft } from '@/lib/api'
 
 type SpecialistId = ApiInsight['specialist'] | 'all'
 
@@ -68,13 +69,28 @@ function EmptyState({ message }: { message: string }) {
 
 export function Insights() {
   const [insights, setInsights] = useState<ApiInsight[]>([])
+  const [healingActions, setHealingActions] = useState<Phase2HealingAction[]>([])
+  const [governanceDecisions, setGovernanceDecisions] = useState<Phase2GovernanceDecision[]>([])
+  const [learningProposals, setLearningProposals] = useState<Phase2LearningProposal[]>([])
+  const [scenarioDrafts, setScenarioDrafts] = useState<Phase2ScenarioDraft[]>([])
   const [loading, setLoading] = useState(true)
   const [activeSpecialist, setActiveSpecialist] = useState<SpecialistId>('all')
 
   useEffect(() => {
-    api.getInsights()
-      .then(d => setInsights(d as ApiInsight[]))
-      .catch(() => {})
+    Promise.all([
+      api.getInsights().catch(() => [] as ApiInsight[]),
+      api.getPhase2HealingLog(20).catch(() => [] as Phase2HealingAction[]),
+      api.getPhase2GovernanceDecisions({ limit: 30 }).catch(() => [] as Phase2GovernanceDecision[]),
+      api.getPhase2LearningProposals({ limit: 20 }).catch(() => [] as Phase2LearningProposal[]),
+      api.getPhase2ScenarioDrafts({ limit: 20 }).catch(() => [] as Phase2ScenarioDraft[]),
+    ])
+      .then(([nextInsights, nextHealingActions, nextGovernanceDecisions, nextLearningProposals, nextScenarioDrafts]) => {
+        setInsights(nextInsights as ApiInsight[])
+        setHealingActions(nextHealingActions)
+        setGovernanceDecisions(nextGovernanceDecisions)
+        setLearningProposals(nextLearningProposals)
+        setScenarioDrafts(nextScenarioDrafts)
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -89,11 +105,27 @@ export function Insights() {
     return counts
   }, [insights])
 
+  const hasL5Activity = (
+    healingActions.length > 0
+    || governanceDecisions.length > 0
+    || learningProposals.length > 0
+    || scenarioDrafts.length > 0
+  )
+
   if (loading) return <LoadingState />
-  if (insights.length === 0) return <EmptyState message="No insights yet. Run tests to generate insights." />
+  if (insights.length === 0 && !hasL5Activity) return <EmptyState message="No insights yet. Run tests to generate insights." />
 
   return (
     <div className="p-6">
+      <L5GovernancePanel
+        healingActions={healingActions}
+        governanceDecisions={governanceDecisions}
+        learningProposals={learningProposals}
+        scenarioDrafts={scenarioDrafts}
+      />
+
+      {insights.length > 0 && (
+        <>
       {/* Specialist cards */}
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         {SPECIALISTS.map(spec => {
@@ -235,6 +267,8 @@ export function Insights() {
           )
         })}
       </motion.div>
+        </>
+      )}
     </div>
   )
 }

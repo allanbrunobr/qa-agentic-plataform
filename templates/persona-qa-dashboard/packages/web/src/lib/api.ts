@@ -185,6 +185,73 @@ export interface DashboardStats {
   }
 }
 
+export type Phase2LearningProposalStatus = 'proposed' | 'approved' | 'applied' | 'rejected'
+export type Phase2LearningProposalPatchKind = 'none' | 'prompt_overlay' | 'capability_patch' | 'environment_check'
+export type Phase2HealingActionStatus = 'proposed' | 'applied' | 'blocked'
+export type Phase2GovernanceSubjectType = 'learning_proposal' | 'scenario_draft' | 'healing_action'
+export type Phase2GovernanceAction = 'generate' | 'approve' | 'apply' | 'reject' | 'evaluate'
+export type Phase2GovernanceVerdict = 'allowed' | 'blocked'
+export type Phase2ScenarioDraftStatus = 'pending' | 'approved' | 'rejected' | 'revised'
+
+export interface Phase2LearningProposal {
+  id: string
+  recommendationId: string
+  scenarioId: string
+  stepId: string
+  agentId?: string
+  type: string
+  severity: string
+  status: Phase2LearningProposalStatus
+  recommendation: Record<string, unknown>
+  patchKind: Phase2LearningProposalPatchKind
+  target?: string
+  patchContent?: string
+  metadata?: Record<string, unknown>
+  createdAt: string
+  approvedAt?: string
+  appliedAt?: string
+  rejectedAt?: string
+}
+
+export interface Phase2HealingAction {
+  id: string
+  type: string
+  target: string
+  reason: string
+  automatic: boolean
+  status: Phase2HealingActionStatus
+  metadata?: Record<string, unknown>
+  createdAt: string
+}
+
+export interface Phase2GovernanceDecision {
+  id: string
+  subjectType: Phase2GovernanceSubjectType
+  subjectId: string
+  action: Phase2GovernanceAction
+  verdict: Phase2GovernanceVerdict
+  reason: string
+  actor?: string
+  requirements?: string[]
+  metadata?: Record<string, unknown>
+  createdAt: string
+}
+
+export interface Phase2ScenarioDraft {
+  id: string
+  scenarioId: string
+  name: string
+  description?: string
+  contract: Record<string, unknown>
+  gapType: string
+  gapEvidence?: unknown[]
+  status: Phase2ScenarioDraftStatus
+  reviewedBy?: string
+  reviewedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export const api = {
   getRuns: () => fetchJSON(`${API_BASE}/api/runs`),
   getRun: (id: number) => fetchJSON(`${API_BASE}/api/runs/${id}`),
@@ -216,6 +283,38 @@ export const api = {
   getPhase2SessionArtifacts: (id: string) => fetchJSON<Phase2SessionArtifact[]>(`${API_BASE}/api/p2/sessions/${id}/artifacts`),
   getPhase2ArtifactContentUrl: (artifactId: string) => `${API_BASE}/api/p2/artifacts/${artifactId}/content`,
   getPhase2SessionWsUrl: (sessionId: string) => `${WS_BASE}/ws/p2/sessions/${sessionId}`,
+  getPhase2HealingLog: (limit = 100) =>
+    fetchJSON<Phase2HealingAction[]>(`${API_BASE}/api/p2/healing/log?${new URLSearchParams({ limit: String(limit) })}`),
+  evaluatePhase2Healing: () =>
+    fetchJSON<Phase2HealingAction[]>(`${API_BASE}/api/p2/healing/evaluate`, { method: 'POST' }),
+  getPhase2LearningProposals: (params?: {
+    scenarioId?: string
+    status?: Phase2LearningProposalStatus
+    limit?: number
+  }) =>
+    fetchJSON<Phase2LearningProposal[]>(`${API_BASE}/api/p2/learning/proposals?${new URLSearchParams(compactParams({
+      scenarioId: params?.scenarioId,
+      status: params?.status,
+      limit: params?.limit ? String(params.limit) : undefined,
+    }))}`),
+  getPhase2GovernanceDecisions: (params?: {
+    subjectType?: Phase2GovernanceSubjectType
+    subjectId?: string
+    limit?: number
+  }) =>
+    fetchJSON<Phase2GovernanceDecision[]>(`${API_BASE}/api/p2/governance/decisions?${new URLSearchParams(compactParams({
+      subjectType: params?.subjectType,
+      subjectId: params?.subjectId,
+      limit: params?.limit ? String(params.limit) : undefined,
+    }))}`),
+  getPhase2ScenarioDrafts: (params?: {
+    status?: Phase2ScenarioDraftStatus
+    limit?: number
+  }) =>
+    fetchJSON<Phase2ScenarioDraft[]>(`${API_BASE}/api/p2/scenarios/drafts?${new URLSearchParams(compactParams({
+      status: params?.status,
+      limit: params?.limit ? String(params.limit) : undefined,
+    }))}`),
   startPhase2Run: (payload: {
     scenario_id: string
     customer_name?: string
@@ -231,4 +330,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+}
+
+function compactParams(params: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(params).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  )
 }
