@@ -9,7 +9,7 @@ import { LearningPlaybookService } from '../services/learning-playbook-service.j
 import { MetaOrchestrator } from '../services/meta-orchestrator.js';
 import { ProfileTuningService } from '../services/profile-tuning-service.js';
 import { SelfHealingService } from '../services/self-healing-service.js';
-import { resolvePhase2ArtifactPath, SessionService } from '../services/session-service.js';
+import { resolvePhase2ArtifactPath, SessionService, type GovernanceSubjectType } from '../services/session-service.js';
 import type { Session } from '../types/session-types.js';
 
 // Singleton session service instance for Phase 2 routes
@@ -310,6 +310,18 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  app.get<{ Querystring: { subjectType?: string; subjectId?: string; limit?: string } }>(
+    '/api/p2/governance/decisions',
+    async (request, reply) => {
+      const service = getSessionService();
+      return reply.send(service.listGovernanceDecisions({
+        subjectType: isGovernanceSubjectType(request.query.subjectType) ? request.query.subjectType : undefined,
+        subjectId: request.query.subjectId,
+        limit: request.query.limit ? Number(request.query.limit) : 100,
+      }));
+    },
+  );
+
   app.post<{ Body: { scenarioId?: string; limit?: number } }>(
     '/api/p2/learning/proposals/generate',
     async (request, reply) => {
@@ -438,4 +450,8 @@ function isLearningStatus(value: unknown): value is 'proposed' | 'approved' | 'a
 
 function isScenarioDraftStatus(value: unknown): value is 'pending' | 'approved' | 'rejected' | 'revised' {
   return value === 'pending' || value === 'approved' || value === 'rejected' || value === 'revised';
+}
+
+function isGovernanceSubjectType(value: unknown): value is GovernanceSubjectType {
+  return value === 'learning_proposal' || value === 'scenario_draft' || value === 'healing_action';
 }

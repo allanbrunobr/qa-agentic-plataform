@@ -4,10 +4,15 @@ import type {
   LearningProposalPatchKind,
   SessionService,
 } from './session-service.js'
+import { GovernancePolicyService } from './governance-policy-service.js'
 import { LearningPlaybookService, type LearningRecommendation } from './learning-playbook-service.js'
 
 export class LearningControlService {
-  constructor(private readonly sessionService: SessionService) {}
+  private readonly governance: GovernancePolicyService
+
+  constructor(private readonly sessionService: SessionService) {
+    this.governance = new GovernancePolicyService(sessionService)
+  }
 
   generateProposals(filter: { scenarioId?: string; limit?: number } = {}): LearningProposal[] {
     const playbook = new LearningPlaybookService(this.sessionService).buildPlaybook(filter)
@@ -18,9 +23,7 @@ export class LearningControlService {
 
   approveProposal(id: string): LearningProposal {
     const proposal = this.requireProposal(id)
-    if (proposal.status === 'rejected') {
-      throw new Error(`Cannot approve rejected learning proposal ${id}`)
-    }
+    this.enforceGovernance(proposal, 'approve')
 
     const updated = this.sessionService.updateLearningProposalStatus(id, 'approved')
     if (!updated) throw new Error(`Learning proposal ${id} not found after approval`)
@@ -29,9 +32,7 @@ export class LearningControlService {
 
   rejectProposal(id: string): LearningProposal {
     const proposal = this.requireProposal(id)
-    if (proposal.status === 'applied') {
-      throw new Error(`Cannot reject applied learning proposal ${id}`)
-    }
+    this.enforceGovernance(proposal, 'reject')
 
     const updated = this.sessionService.updateLearningProposalStatus(id, 'rejected')
     if (!updated) throw new Error(`Learning proposal ${id} not found after rejection`)
@@ -40,13 +41,21 @@ export class LearningControlService {
 
   applyProposal(id: string): LearningProposal {
     const proposal = this.requireProposal(id)
-    if (proposal.status !== 'approved' && proposal.status !== 'applied') {
-      throw new Error(`Learning proposal ${id} must be approved before apply`)
-    }
+    this.enforceGovernance(proposal, 'apply')
 
     const updated = this.sessionService.updateLearningProposalStatus(id, 'applied')
     if (!updated) throw new Error(`Learning proposal ${id} not found after apply`)
     return updated
+  }
+
+  private enforceGovernance(
+    proposal: LearningProposal,
+    action: 'approve' | 'apply' | 'reject',
+  ): void {
+    const decision = this.governance.recordLearningProposalDecision(proposal, action)
+    if (decision.verdict === 'blocked') {
+      throw new Error(decision.reason)
+    }
   }
 
   private requireProposal(id: string): LearningProposal {
