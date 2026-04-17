@@ -139,6 +139,7 @@ export function L5GovernancePanel({
                 description={String(proposal.recommendation['description'] ?? proposal.recommendation['action'] ?? proposal.type)}
                 status={proposal.status}
                 pending={actionPendingId === `proposal:${proposal.id}`}
+                testId={`l5-proposal-${proposal.id}`}
                 actions={[
                   proposal.status === 'proposed' && onApproveProposal
                     ? { label: 'Approve', onClick: () => onApproveProposal(proposal.id), tone: 'success' as const }
@@ -161,6 +162,7 @@ export function L5GovernancePanel({
                 description={draft.description ?? `Coverage gap: ${draft.gapType}`}
                 status={draft.status}
                 pending={actionPendingId === `draft:${draft.id}`}
+                testId={`l5-draft-${draft.id}`}
                 actions={[
                   onApproveDraft ? { label: 'Approve', onClick: () => onApproveDraft(draft.id), tone: 'success' as const } : null,
                   onRejectDraft ? { label: 'Reject', onClick: () => onRejectDraft(draft.id), tone: 'danger' as const } : null,
@@ -224,6 +226,7 @@ function ReviewItem({
   status,
   actions,
   pending,
+  testId,
 }: {
   label: string
   title: string
@@ -231,9 +234,10 @@ function ReviewItem({
   status: string
   actions: ReviewAction[]
   pending: boolean
+  testId?: string
 }) {
   return (
-    <div className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
+    <div data-testid={testId} className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <span className="rounded-md border border-[var(--border)] px-2 py-0.5 text-[10px] font-semibold uppercase text-[var(--text-muted)]">
           {label}
