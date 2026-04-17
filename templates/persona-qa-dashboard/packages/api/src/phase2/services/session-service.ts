@@ -1097,6 +1097,44 @@ export class SessionService {
     return { ...input, id, createdAt }
   }
 
+  updateHealingActionStatus(
+    id: string,
+    status: HealingActionStatus,
+    metadata?: Record<string, unknown>,
+  ): HealingAction | undefined {
+    if (metadata) {
+      this.sqlite
+        .prepare(
+          `UPDATE p2_healing_actions
+           SET status = ?, metadata = ?
+           WHERE action_id = ?`,
+        )
+        .run(status, JSON.stringify(metadata), id)
+    } else {
+      this.sqlite
+        .prepare(
+          `UPDATE p2_healing_actions
+           SET status = ?
+           WHERE action_id = ?`,
+        )
+        .run(status, id)
+    }
+
+    return this.getHealingAction(id)
+  }
+
+  getHealingAction(id: string): HealingAction | undefined {
+    const row = this.sqlite
+      .prepare(
+        `SELECT action_id, action_type, target, reason, automatic, status, metadata, created_at
+         FROM p2_healing_actions
+         WHERE action_id = ?`,
+      )
+      .get(id) as HealingActionRow | undefined
+
+    return row ? this.mapHealingAction(row) : undefined
+  }
+
   listHealingActions(filter: { limit?: number } = {}): HealingAction[] {
     const limit = Math.max(1, Math.min(filter.limit ?? 100, 500))
     const rows = this.sqlite

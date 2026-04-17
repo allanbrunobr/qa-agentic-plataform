@@ -128,7 +128,14 @@ export class SelfHealingService {
     metadata?: Record<string, unknown>
   }): HealingAction {
     const action = this.sessionService.recordHealingAction(input)
-    this.governance.recordHealingActionDecision(action)
+    const decision = this.governance.recordHealingActionDecision(action)
+    if (decision.verdict === 'blocked' && action.status !== 'blocked') {
+      return this.sessionService.updateHealingActionStatus(action.id, 'blocked', {
+        ...(action.metadata ?? {}),
+        governanceBlocked: true,
+        governanceReason: decision.reason,
+      }) ?? action
+    }
     return action
   }
 
