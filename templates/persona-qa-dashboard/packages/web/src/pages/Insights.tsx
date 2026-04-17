@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, type CSSProperties } from 'react'
+import { useState, useMemo, useEffect, useCallback, type CSSProperties } from 'react'
 import { motion } from 'framer-motion'
 import { Monitor, FlaskConical, Server, Lightbulb } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
@@ -74,25 +74,38 @@ export function Insights() {
   const [learningProposals, setLearningProposals] = useState<Phase2LearningProposal[]>([])
   const [scenarioDrafts, setScenarioDrafts] = useState<Phase2ScenarioDraft[]>([])
   const [loading, setLoading] = useState(true)
+  const [actionPendingId, setActionPendingId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [activeSpecialist, setActiveSpecialist] = useState<SpecialistId>('all')
 
-  useEffect(() => {
-    Promise.all([
-      api.getInsights().catch(() => [] as ApiInsight[]),
+  const loadL5Data = useCallback(async () => {
+    const [
+      nextHealingActions,
+      nextGovernanceDecisions,
+      nextLearningProposals,
+      nextScenarioDrafts,
+    ] = await Promise.all([
       api.getPhase2HealingLog(20).catch(() => [] as Phase2HealingAction[]),
       api.getPhase2GovernanceDecisions({ limit: 30 }).catch(() => [] as Phase2GovernanceDecision[]),
       api.getPhase2LearningProposals({ limit: 20 }).catch(() => [] as Phase2LearningProposal[]),
       api.getPhase2ScenarioDrafts({ limit: 20 }).catch(() => [] as Phase2ScenarioDraft[]),
     ])
-      .then(([nextInsights, nextHealingActions, nextGovernanceDecisions, nextLearningProposals, nextScenarioDrafts]) => {
+    setHealingActions(nextHealingActions)
+    setGovernanceDecisions(nextGovernanceDecisions)
+    setLearningProposals(nextLearningProposals)
+    setScenarioDrafts(nextScenarioDrafts)
+  }, [])
+
+  useEffect(() => {
+    Promise.all([
+      api.getInsights().catch(() => [] as ApiInsight[]),
+      loadL5Data(),
+    ])
+      .then(([nextInsights]) => {
         setInsights(nextInsights as ApiInsight[])
-        setHealingActions(nextHealingActions)
-        setGovernanceDecisions(nextGovernanceDecisions)
-        setLearningProposals(nextLearningProposals)
-        setScenarioDrafts(nextScenarioDrafts)
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [loadL5Data])
 
   const filtered = useMemo(() => {
     if (activeSpecialist === 'all') return insights
@@ -115,13 +128,38 @@ export function Insights() {
   if (loading) return <LoadingState />
   if (insights.length === 0 && !hasL5Activity) return <EmptyState message="No insights yet. Run tests to generate insights." />
 
+  const runL5Action = async (pendingId: string, action: () => Promise<unknown>) => {
+    setActionPendingId(pendingId)
+    setActionError(null)
+    try {
+      await action()
+      await loadL5Data()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setActionPendingId(null)
+    }
+  }
+
   return (
     <div className="p-6">
+      {actionError && (
+        <div className="mb-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
+          {actionError}
+        </div>
+      )}
+
       <L5GovernancePanel
         healingActions={healingActions}
         governanceDecisions={governanceDecisions}
         learningProposals={learningProposals}
         scenarioDrafts={scenarioDrafts}
+        actionPendingId={actionPendingId}
+        onApproveProposal={(id) => runL5Action(`proposal:${id}`, () => api.approvePhase2LearningProposal(id))}
+        onApplyProposal={(id) => runL5Action(`proposal:${id}`, () => api.applyPhase2LearningProposal(id))}
+        onRejectProposal={(id) => runL5Action(`proposal:${id}`, () => api.rejectPhase2LearningProposal(id))}
+        onApproveDraft={(id) => runL5Action(`draft:${id}`, () => api.updatePhase2ScenarioDraft(id, { status: 'approved', reviewedBy: 'dashboard' }))}
+        onRejectDraft={(id) => runL5Action(`draft:${id}`, () => api.updatePhase2ScenarioDraft(id, { status: 'rejected', reviewedBy: 'dashboard' }))}
       />
 
       {insights.length > 0 && (

@@ -152,5 +152,40 @@ describe('Phase 2 Session Routes', () => {
         verdict: 'allowed',
       }));
     });
+
+    it('should record scenario draft governance decisions on review', async () => {
+      const draft = sessionService.createScenarioDraft({
+        scenarioId: 'draft_scenario',
+        name: 'Draft Scenario',
+        description: 'Covers a missing workflow path',
+        contract: { scenario_id: 'draft_scenario' },
+        gapType: 'missing_path',
+      });
+
+      const review = await app.inject({
+        method: 'PATCH',
+        url: `/api/p2/scenarios/drafts/${draft.id}`,
+        payload: {
+          status: 'approved',
+          reviewedBy: 'qa_lead',
+        },
+      });
+      expect(review.statusCode).toBe(200);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/p2/governance/decisions?subjectType=scenario_draft&subjectId=${draft.id}`,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toContainEqual(expect.objectContaining({
+        subjectType: 'scenario_draft',
+        subjectId: draft.id,
+        action: 'approve',
+        verdict: 'allowed',
+        actor: 'qa_lead',
+        requirements: ['human_review'],
+      }));
+    });
   });
 });

@@ -4,11 +4,13 @@ import type {
   HealingAction,
   LearningProposal,
   LearningProposalPatchKind,
+  ScenarioDraft,
   SessionService,
 } from './session-service.js'
 
 type LearningGovernanceAction = 'approve' | 'apply' | 'reject'
 type HealingGovernanceAction = 'apply' | 'evaluate'
+type ScenarioDraftGovernanceAction = 'approve' | 'reject' | 'evaluate'
 
 const HUMAN_REVIEW_REQUIREMENTS = ['human_review']
 const APPLY_REQUIREMENTS = ['human_review', 'approved_learning_proposal']
@@ -135,10 +137,57 @@ export class GovernancePolicyService {
       metadata,
     }
   }
+
+  recordScenarioDraftDecision(
+    draft: ScenarioDraft,
+    governanceAction: ScenarioDraftGovernanceAction = inferScenarioDraftGovernanceAction(draft),
+    actor = draft.reviewedBy ?? 'human_reviewer',
+  ): GovernanceDecision {
+    return this.sessionService.recordGovernanceDecision(
+      this.decideScenarioDraftAction(draft, governanceAction, actor),
+    )
+  }
+
+  decideScenarioDraftAction(
+    draft: ScenarioDraft,
+    governanceAction: ScenarioDraftGovernanceAction = inferScenarioDraftGovernanceAction(draft),
+    actor = draft.reviewedBy ?? 'human_reviewer',
+  ): GovernanceDecisionInput {
+    const metadata = {
+      scenarioId: draft.scenarioId,
+      draftStatus: draft.status,
+      gapType: draft.gapType,
+      reviewedBy: draft.reviewedBy,
+    }
+
+    return {
+      subjectType: 'scenario_draft',
+      subjectId: draft.id,
+      action: governanceAction,
+      verdict: 'allowed',
+      reason: scenarioDraftReason(draft.status),
+      actor,
+      requirements: HUMAN_REVIEW_REQUIREMENTS,
+      metadata,
+    }
+  }
 }
 
 function inferHealingGovernanceAction(action: HealingAction): HealingGovernanceAction {
   return action.status === 'applied' || action.status === 'blocked' ? 'apply' : 'evaluate'
+}
+
+function inferScenarioDraftGovernanceAction(draft: ScenarioDraft): ScenarioDraftGovernanceAction {
+  if (draft.status === 'approved') return 'approve'
+  if (draft.status === 'rejected') return 'reject'
+  return 'evaluate'
+}
+
+function scenarioDraftReason(status: ScenarioDraft['status']): string {
+  if (status === 'approved') return 'Scenario draft approved by human review'
+  if (status === 'rejected') return 'Scenario draft rejected by human review'
+  if (status === 'revised') return 'Scenario draft marked for revision by human review'
+  return 'Scenario draft returned to review queue'
 }
 
 function allowed(

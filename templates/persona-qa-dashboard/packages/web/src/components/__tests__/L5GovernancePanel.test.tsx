@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { L5GovernancePanel } from '../L5GovernancePanel'
 import type {
   Phase2GovernanceDecision,
@@ -39,7 +39,7 @@ describe('L5GovernancePanel', () => {
     expect(screen.getByText('Bounded actions')).toBeInTheDocument()
     expect(screen.getAllByText('increase_timeout_pool on scenario:step').length).toBeGreaterThan(0)
     expect(screen.getAllByText('prompt_overlay for sales-associate').length).toBeGreaterThan(0)
-    expect(screen.getByText('Missing coverage')).toBeInTheDocument()
+    expect(screen.getAllByText('Missing coverage').length).toBeGreaterThan(0)
   })
 
   it('renders an empty governance activity state', () => {
@@ -53,6 +53,28 @@ describe('L5GovernancePanel', () => {
     )
 
     expect(screen.getByText('No L5 governance activity yet.')).toBeInTheDocument()
+  })
+
+  it('invokes review action callbacks', () => {
+    const onApproveProposal = vi.fn()
+    const onRejectDraft = vi.fn()
+
+    render(
+      <L5GovernancePanel
+        healingActions={[]}
+        governanceDecisions={[]}
+        learningProposals={[learningProposal({ id: 'proposal-2', status: 'proposed' })]}
+        scenarioDrafts={[scenarioDraft({ id: 'draft-1', status: 'pending' })]}
+        onApproveProposal={onApproveProposal}
+        onRejectDraft={onRejectDraft}
+      />,
+    )
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Approve' })[0]!)
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+
+    expect(onApproveProposal).toHaveBeenCalledWith('proposal-2')
+    expect(onRejectDraft).toHaveBeenCalledWith('draft-1')
   })
 })
 

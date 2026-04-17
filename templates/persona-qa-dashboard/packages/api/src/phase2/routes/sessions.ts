@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildContractEvaluation } from '../services/contract-evaluation.js';
 import { CoverageAnalysisService } from '../services/coverage-analysis-service.js';
 import { FailurePatternService } from '../services/failure-pattern-service.js';
+import { GovernancePolicyService } from '../services/governance-policy-service.js';
 import { IndependentAuditorService } from '../services/independent-auditor-service.js';
 import { LearningControlService } from '../services/learning-control-service.js';
 import { LearningPlaybookService } from '../services/learning-playbook-service.js';
@@ -269,6 +270,11 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
         request.body.reviewedBy,
       );
       if (!draft) return reply.status(404).send({ error: 'Scenario draft not found' });
+      new GovernancePolicyService(service).recordScenarioDraftDecision(
+        draft,
+        undefined,
+        request.body.reviewedBy ?? 'human_reviewer',
+      );
       return reply.send(draft);
     },
   );

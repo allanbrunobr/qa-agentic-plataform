@@ -15,6 +15,12 @@ interface L5GovernancePanelProps {
   learningProposals: Phase2LearningProposal[]
   scenarioDrafts: Phase2ScenarioDraft[]
   loading?: boolean
+  actionPendingId?: string | null
+  onApproveProposal?: (proposalId: string) => void
+  onApplyProposal?: (proposalId: string) => void
+  onRejectProposal?: (proposalId: string) => void
+  onApproveDraft?: (draftId: string) => void
+  onRejectDraft?: (draftId: string) => void
 }
 
 type ActivityKind = 'governance' | 'healing' | 'learning' | 'draft'
@@ -41,6 +47,12 @@ export function L5GovernancePanel({
   learningProposals,
   scenarioDrafts,
   loading = false,
+  actionPendingId = null,
+  onApproveProposal,
+  onApplyProposal,
+  onRejectProposal,
+  onApproveDraft,
+  onRejectDraft,
 }: L5GovernancePanelProps) {
   const appliedHealing = healingActions.filter((action) => action.status === 'applied').length
   const blockedHealing = healingActions.filter((action) => action.status === 'blocked').length
@@ -58,6 +70,10 @@ export function L5GovernancePanel({
     && decision.requirements?.includes('bounded_policy')
   )).length
   const appliedLearning = learningProposals.filter((proposal) => proposal.status === 'applied').length
+  const reviewableProposals = learningProposals.filter((proposal) => (
+    proposal.status === 'proposed' || proposal.status === 'approved'
+  ))
+  const reviewableDrafts = scenarioDrafts.filter((draft) => draft.status === 'pending')
 
   const activity = buildActivity({
     healingActions,
@@ -111,6 +127,50 @@ export function L5GovernancePanel({
         />
       </div>
 
+      {(reviewableProposals.length > 0 || reviewableDrafts.length > 0) && (
+        <div className="mt-5 border-t border-[var(--border)] pt-4">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Review actions</h3>
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {reviewableProposals.slice(0, 4).map((proposal) => (
+              <ReviewItem
+                key={proposal.id}
+                label="Learning proposal"
+                title={`${proposal.patchKind} for ${proposal.agentId ?? proposal.target ?? proposal.stepId}`}
+                description={String(proposal.recommendation['description'] ?? proposal.recommendation['action'] ?? proposal.type)}
+                status={proposal.status}
+                pending={actionPendingId === `proposal:${proposal.id}`}
+                actions={[
+                  proposal.status === 'proposed' && onApproveProposal
+                    ? { label: 'Approve', onClick: () => onApproveProposal(proposal.id), tone: 'success' as const }
+                    : null,
+                  proposal.status === 'approved' && onApplyProposal
+                    ? { label: 'Apply', onClick: () => onApplyProposal(proposal.id), tone: 'success' as const }
+                    : null,
+                  onRejectProposal
+                    ? { label: 'Reject', onClick: () => onRejectProposal(proposal.id), tone: 'danger' as const }
+                    : null,
+                ].filter((action): action is ReviewAction => Boolean(action))}
+              />
+            ))}
+
+            {reviewableDrafts.slice(0, 4).map((draft) => (
+              <ReviewItem
+                key={draft.id}
+                label="Scenario draft"
+                title={draft.name}
+                description={draft.description ?? `Coverage gap: ${draft.gapType}`}
+                status={draft.status}
+                pending={actionPendingId === `draft:${draft.id}`}
+                actions={[
+                  onApproveDraft ? { label: 'Approve', onClick: () => onApproveDraft(draft.id), tone: 'success' as const } : null,
+                  onRejectDraft ? { label: 'Reject', onClick: () => onRejectDraft(draft.id), tone: 'danger' as const } : null,
+                ].filter((action): action is ReviewAction => Boolean(action))}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-5 border-t border-[var(--border)] pt-4">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Recent L5 activity</h3>
@@ -148,6 +208,62 @@ export function L5GovernancePanel({
         )}
       </div>
     </Card>
+  )
+}
+
+interface ReviewAction {
+  label: string
+  onClick: () => void
+  tone: 'success' | 'danger'
+}
+
+function ReviewItem({
+  label,
+  title,
+  description,
+  status,
+  actions,
+  pending,
+}: {
+  label: string
+  title: string
+  description: string
+  status: string
+  actions: ReviewAction[]
+  pending: boolean
+}) {
+  return (
+    <div className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="rounded-md border border-[var(--border)] px-2 py-0.5 text-[10px] font-semibold uppercase text-[var(--text-muted)]">
+          {label}
+        </span>
+        <span className={cn('rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase', statusClass(status))}>
+          {status.replace(/_/g, ' ')}
+        </span>
+      </div>
+      <p className="truncate text-sm font-medium text-[var(--text-primary)]">{title}</p>
+      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-[var(--text-secondary)]">{description}</p>
+      {actions.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              disabled={pending}
+              onClick={action.onClick}
+              className={cn(
+                'rounded-md border px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50',
+                action.tone === 'success' && 'border-emerald-500/30 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/20',
+                action.tone === 'danger' && 'border-red-500/30 bg-red-500/15 text-red-400 hover:bg-red-500/20',
+              )}
+            >
+              {pending ? 'Working...' : action.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

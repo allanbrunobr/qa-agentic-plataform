@@ -315,6 +315,20 @@ export const api = {
       status: params?.status,
       limit: params?.limit ? String(params.limit) : undefined,
     }))}`),
+  approvePhase2LearningProposal: (id: string) =>
+    fetchJSON<Phase2LearningProposal>(`${API_BASE}/api/p2/learning/proposals/${id}/approve`, { method: 'POST' }),
+  applyPhase2LearningProposal: (id: string) =>
+    fetchJSON<Phase2LearningProposal>(`${API_BASE}/api/p2/learning/proposals/${id}/apply`, { method: 'POST' }),
+  rejectPhase2LearningProposal: (id: string) =>
+    fetchJSON<Phase2LearningProposal>(`${API_BASE}/api/p2/learning/proposals/${id}/reject`, { method: 'POST' }),
+  updatePhase2ScenarioDraft: (id: string, payload: {
+    status: Phase2ScenarioDraftStatus
+    reviewedBy?: string
+  }) =>
+    fetchJSON<Phase2ScenarioDraft>(`${API_BASE}/api/p2/scenarios/drafts/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
   startPhase2Run: (payload: {
     scenario_id: string
     customer_name?: string
