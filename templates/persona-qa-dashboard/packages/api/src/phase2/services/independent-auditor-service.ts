@@ -160,9 +160,9 @@ export class IndependentAuditorService {
     if (input.subjectType === 'learning_proposal') {
       auditLearningProposal(input.subject as LearningProposal, input.action, input.sessionService, findings)
     } else if (input.subjectType === 'scenario_draft') {
-      auditScenarioDraft(input.subject as ScenarioDraft, input.action, input.actor, findings)
+      auditScenarioDraft(input.subject as ScenarioDraft, input.action, input.actor, input.sessionService, findings)
     } else if (input.subjectType === 'healing_action') {
-      auditHealingAction(input.subject as HealingAction, findings)
+      auditHealingAction(input.subject as HealingAction, input.action, findings)
     }
 
     return {
@@ -238,9 +238,10 @@ function auditScenarioDraft(
   draft: ScenarioDraft,
   action: GovernanceAction,
   actor: string | undefined,
+  sessionService: SessionService | undefined,
   findings: AuditorFinding[],
 ): void {
-  if (action === 'approve' || action === 'reject') {
+  if (action === 'approve' || action === 'reject' || action === 'promote') {
     if (!actor || actor === 'system' || actor === 'human_reviewer') {
       findings.push(errorFinding('scenario_draft_explicit_reviewer_required', 'Scenario draft review requires an explicit human reviewer.', {
         draftId: draft.id,
@@ -249,7 +250,7 @@ function auditScenarioDraft(
     }
   }
 
-  if (action === 'approve') {
+  if (action === 'approve' || action === 'promote') {
     if (!draft.scenarioId || !draft.name) {
       findings.push(errorFinding('scenario_draft_identity_missing', 'Scenario draft must include scenario identity before approval.', {
         draftId: draft.id,
@@ -264,9 +265,23 @@ function auditScenarioDraft(
       }))
     }
   }
+
+  if (action === 'promote') {
+    const approvals = sessionService?.listGovernanceDecisions({
+      subjectType: 'scenario_draft',
+      subjectId: draft.id,
+      limit: 100,
+    }).filter((decision) => decision.action === 'approve' && decision.verdict === 'allowed') ?? []
+
+    if (approvals.length === 0) {
+      findings.push(errorFinding('scenario_draft_promote_without_approval_decision', 'Scenario draft promotion requires a prior allowed approval decision.', {
+        draftId: draft.id,
+      }))
+    }
+  }
 }
 
-function auditHealingAction(action: HealingAction, findings: AuditorFinding[]): void {
+function auditHealingAction(action: HealingAction, governanceAction: GovernanceAction, findings: AuditorFinding[]): void {
   if (!action.type || !action.target || !action.reason) {
     findings.push(errorFinding('healing_action_identity_missing', 'Healing action must include type, target, and reason.', {
       actionId: action.id,
@@ -288,6 +303,21 @@ function auditHealingAction(action: HealingAction, findings: AuditorFinding[]): 
       findings.push(errorFinding('healing_auto_action_unbounded', 'Automatic timeout healing must carry bounded timeout metadata.', {
         actionId: action.id,
         maxTimeoutIncreasePercent,
+      }))
+    }
+  }
+
+  if (governanceAction === 'rollback') {
+    if (action.status !== 'applied') {
+      findings.push(errorFinding('healing_rollback_without_applied_status', 'Healing rollback requires an applied healing action.', {
+        actionId: action.id,
+        status: action.status,
+      }))
+    }
+
+    if ((action.metadata ?? {})['rollbackAvailable'] === false) {
+      findings.push(errorFinding('healing_rollback_not_available', 'Healing action explicitly disables rollback.', {
+        actionId: action.id,
       }))
     }
   }

@@ -6,12 +6,14 @@ import type {
   AgentStepOutput,
   ModelMessage,
   ModelProvider,
+  SyntheticToolResult,
   ToolDefinition,
 } from '../types/agent-types.js'
 import type { ScenarioStep } from '../types/scenario-types.js'
-import type { ToolContext } from '../types/tool-types.js'
+import type { ToolContext, ToolResult } from '../types/tool-types.js'
 import { buildStepInstructionEnvelope, getGlobalAgenticInstructions } from './instruction-layer.js'
 import type { SessionService } from './session-service.js'
+import { defaultRuntimeHookBus, type RuntimeHookBus } from './runtime-hooks.js'
 import type { ToolRegistry } from './tool-registry.js'
 
 export interface StepContext {
@@ -25,6 +27,12 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const REPO_ROOT = path.resolve(__dirname, '../../../../../..')
 
+interface PendingToolCall {
+  toolCallId: string
+  toolName: string
+  originalStartedAt: string
+}
+
 class ModelDeadlineExceededError extends Error {
   constructor(timeoutMs: number) {
     super(`Agent timeout after ${timeoutMs}ms`)
@@ -34,11 +42,13 @@ class ModelDeadlineExceededError extends Error {
 
 export class AgentRuntime {
   private readonly agents = new Map<string, AgentProfile>()
+  private readonly pendingToolCalls = new Map<string, Map<string, PendingToolCall>>()
 
   constructor(
     private readonly provider?: ModelProvider,
     private readonly toolRegistry?: ToolRegistry,
     private readonly sessionService?: SessionService,
+    private readonly hooks: RuntimeHookBus = defaultRuntimeHookBus,
   ) {}
 
   registerAgent(profile: AgentProfile): void {
@@ -48,6 +58,54 @@ export class AgentRuntime {
 
   getAgent(agentId: string): AgentProfile | undefined {
     return this.agents.get(agentId)
+  }
+
+  closePendingToolCalls(sessionId: string, reason: SyntheticToolResult['reason']): SyntheticToolResult[] {
+    if (!this.sessionService) return []
+
+    const pending = this.pendingToolCalls.get(sessionId)
+    if (!pending || pending.size === 0) return []
+
+    const closed: SyntheticToolResult[] = []
+    for (const call of pending.values()) {
+      if (this.sessionService.isToolCallClosed(sessionId, call.toolCallId)) continue
+
+      const closedAt = new Date().toISOString()
+      const recorded = this.sessionService.recordToolClosure(
+        sessionId,
+        call.toolCallId,
+        call.toolName,
+        reason,
+        call.originalStartedAt,
+      )
+      if (!recorded) continue
+
+      const syntheticResult: SyntheticToolResult = {
+        toolCallId: call.toolCallId,
+        toolName: call.toolName,
+        reason,
+        closedAt,
+        originalStartedAt: call.originalStartedAt,
+      }
+      this.sessionService.appendEvent(sessionId, {
+        type: 'tool_result',
+        payload: {
+          toolName: call.toolName,
+          toolCallId: call.toolCallId,
+          ok: false,
+          synthetic: true,
+          error: {
+            code: 'synthetic_tool_result',
+            message: `Tool call closed synthetically because the agent step ended by ${reason}.`,
+            retryable: reason === 'timeout',
+          },
+        },
+      })
+      closed.push(syntheticResult)
+    }
+
+    this.pendingToolCalls.delete(sessionId)
+    return closed
   }
 
   async executeStep(profile: AgentProfile, stepContext: StepContext): Promise<AgentStepOutput>
@@ -150,14 +208,20 @@ export class AgentRuntime {
           expectedArtifacts,
           startedAt,
         )
-        if (completedFromToolOutput) return completedFromToolOutput
+        if (completedFromToolOutput) return this.finishStep(sessionId, profile, completedFromToolOutput)
 
+        const syntheticClosures = this.closePendingToolCalls(sessionId, 'timeout')
+        await this.hooks.emit('onTimeout', {
+          sessionId,
+          agentRole: profile.role,
+          payload: { reason: 'deadline_exceeded_before_model_call', round, syntheticClosures },
+        })
         this.sessionService.appendEvent(sessionId, {
           type: 'error',
           agentRole: profile.role,
           payload: { reason: 'timeout', round },
         })
-        return {
+        return this.finishStep(sessionId, profile, {
           status: 'timeout',
           toolCalls: [],
           findings: collectedFindings,
@@ -165,11 +229,16 @@ export class AgentRuntime {
           durationMs: Date.now() - startedAt,
           success: false,
           error: `Agent timeout after ${profile.timeoutMs}ms`,
-        }
+        })
       }
 
       let response
       try {
+        await this.hooks.emit('beforeModelCall', {
+          sessionId,
+          agentRole: profile.role,
+          payload: { round, toolCount: toolDefs.length },
+        })
         response = await this.chatBeforeDeadline(messages, toolDefs, profile, deadline)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -184,9 +253,16 @@ export class AgentRuntime {
             expectedArtifacts,
             startedAt,
           )
-          if (completedFromToolOutput) return completedFromToolOutput
+          if (completedFromToolOutput) return this.finishStep(sessionId, profile, completedFromToolOutput)
+
+          const syntheticClosures = this.closePendingToolCalls(sessionId, 'timeout')
+          await this.hooks.emit('onTimeout', {
+            sessionId,
+            agentRole: profile.role,
+            payload: { reason: 'model_deadline_exceeded', syntheticClosures },
+          })
         }
-        return {
+        return this.finishStep(sessionId, profile, {
           status: error instanceof ModelDeadlineExceededError ? 'timeout' : 'failed',
           toolCalls: [],
           findings: collectedFindings,
@@ -194,8 +270,19 @@ export class AgentRuntime {
           durationMs: Date.now() - startedAt,
           success: false,
           error: message,
-        }
+        })
       }
+
+      await this.hooks.emit('afterModelResponse', {
+        sessionId,
+        agentRole: profile.role,
+        payload: {
+          round,
+          stopReason: response.stopReason,
+          toolCallCount: response.toolCalls.length,
+          usage: response.usage,
+        },
+      })
 
       this.sessionService.appendEvent(sessionId, {
         type: 'info',
@@ -211,7 +298,7 @@ export class AgentRuntime {
       if (response.toolCalls.length === 0 || response.stopReason === 'end_turn') {
         const evidenceValidation = this.validateFindingEvidence(profile, collectedEvidence)
         if (!evidenceValidation.valid && collectedFindings.length > 0) {
-          return {
+          return this.finishStep(sessionId, profile, {
             status: 'failed',
             text: response.text,
             toolCalls: response.toolCalls,
@@ -220,10 +307,10 @@ export class AgentRuntime {
             durationMs: Date.now() - startedAt,
             success: false,
             error: evidenceValidation.reason,
-          }
+          })
         }
 
-        return {
+        return this.finishStep(sessionId, profile, {
           status: 'completed',
           text: response.text,
           toolCalls: response.toolCalls,
@@ -231,16 +318,28 @@ export class AgentRuntime {
           output: accumulatedOutput,
           durationMs: Date.now() - startedAt,
           success: true,
-        }
+        })
       }
 
       const toolResultMessages: string[] = []
 
       for (const toolCall of response.toolCalls) {
+        const toolName = toolCall.name ?? toolCall.tool ?? 'unknown'
+        const toolCallId = toolCall.id ?? `${toolName}-${round}-${toolResultMessages.length}`
+        const originalStartedAt = new Date().toISOString()
+        this.trackPendingToolCall(sessionId, { toolCallId, toolName, originalStartedAt })
+
         this.sessionService.appendEvent(sessionId, {
           type: 'tool_call',
           agentRole: profile.role,
-          payload: { toolName: toolCall.name, toolCallId: toolCall.id, input: toolCall.input },
+          payload: { toolName, toolCallId, input: toolCall.input ?? toolCall.args ?? {} },
+        })
+        await this.hooks.emit('beforeToolCall', {
+          sessionId,
+          agentRole: profile.role,
+          toolName,
+          toolCallId,
+          payload: { input: toolCall.input ?? toolCall.args ?? {} },
         })
 
         const toolContext: ToolContext = {
@@ -250,15 +349,17 @@ export class AgentRuntime {
           artifacts: accumulatedOutput,
         }
 
-        const toolName = toolCall.name ?? toolCall.tool ?? 'unknown'
-        const result = this.isToolAllowed(toolName, profile)
-          ? await this.toolRegistry.execute(
-            toolName,
-            toolCall.input ?? toolCall.args ?? {},
-            profile.toolPolicy,
-            toolContext,
-          )
-          : {
+        let result: ToolResult
+        try {
+          result = this.isToolAllowed(toolName, profile)
+            ? await this.executeToolBeforeDeadline(
+              toolName,
+              toolCall.input ?? toolCall.args ?? {},
+              profile,
+              toolContext,
+              deadline,
+            )
+            : {
             ok: false as const,
             error: {
               code: 'tool_not_allowed',
@@ -266,16 +367,46 @@ export class AgentRuntime {
               retryable: false,
             },
           }
+        } catch (error) {
+          if (error instanceof ModelDeadlineExceededError) {
+            const syntheticClosures = this.closePendingToolCalls(sessionId, 'timeout')
+            await this.hooks.emit('onTimeout', {
+              sessionId,
+              agentRole: profile.role,
+              toolName,
+              toolCallId,
+              payload: { reason: 'tool_deadline_exceeded', syntheticClosures },
+            })
+            return this.finishStep(sessionId, profile, {
+              status: 'timeout',
+              toolCalls: response.toolCalls,
+              findings: collectedFindings,
+              output: accumulatedOutput,
+              durationMs: Date.now() - startedAt,
+              success: false,
+              error: error.message,
+            })
+          }
+          throw error
+        }
 
         this.sessionService.appendEvent(sessionId, {
           type: 'tool_result',
           agentRole: profile.role,
           payload: {
-            toolName: toolCall.name ?? toolCall.tool,
-            toolCallId: toolCall.id,
+            toolName,
+            toolCallId,
             ok: result.ok,
             ...(result.ok ? { output: result.output } : { error: result.error }),
           },
+        })
+        this.markToolCallClosed(sessionId, toolCallId)
+        await this.hooks.emit('afterToolResult', {
+          sessionId,
+          agentRole: profile.role,
+          toolName,
+          toolCallId,
+          payload: { ok: result.ok },
         })
 
         if (result.ok && ['captureScreenshot', 'collectDomSnippet'].includes(toolCall.name ?? '')) {
@@ -290,7 +421,7 @@ export class AgentRuntime {
         }
 
         toolResultMessages.push(
-          `[Tool result for ${toolCall.name ?? toolCall.tool} (${toolCall.id ?? 'no-id'})]: ${JSON.stringify(result.ok ? result.output : result.error)}`,
+          `[Tool result for ${toolName} (${toolCallId})]: ${JSON.stringify(result.ok ? result.output : result.error)}`,
         )
       }
 
@@ -300,7 +431,8 @@ export class AgentRuntime {
       messages.push({ role: 'user', content: toolResultMessages.join('\n\n') })
     }
 
-    return {
+    this.closePendingToolCalls(sessionId, 'interruption')
+    return this.finishStep(sessionId, profile, {
       status: 'failed',
       toolCalls: [],
       findings: [],
@@ -308,6 +440,64 @@ export class AgentRuntime {
       durationMs: Date.now() - startedAt,
       success: false,
       error: `Exceeded maximum tool rounds (${MAX_TOOL_ROUNDS})`,
+    })
+  }
+
+  private async finishStep(
+    sessionId: string,
+    profile: AgentProfile,
+    output: AgentStepOutput,
+  ): Promise<AgentStepOutput> {
+    await this.hooks.emit('beforeStepComplete', {
+      sessionId,
+      agentRole: profile.role,
+      payload: { status: output.status, success: output.success },
+    })
+    await this.hooks.emit('afterStepComplete', {
+      sessionId,
+      agentRole: profile.role,
+      payload: { status: output.status, success: output.success },
+    })
+    return output
+  }
+
+  private trackPendingToolCall(sessionId: string, call: PendingToolCall): void {
+    const bucket = this.pendingToolCalls.get(sessionId) ?? new Map<string, PendingToolCall>()
+    bucket.set(call.toolCallId, call)
+    this.pendingToolCalls.set(sessionId, bucket)
+  }
+
+  private markToolCallClosed(sessionId: string, toolCallId: string): void {
+    const bucket = this.pendingToolCalls.get(sessionId)
+    if (!bucket) return
+    bucket.delete(toolCallId)
+    if (bucket.size === 0) {
+      this.pendingToolCalls.delete(sessionId)
+    }
+  }
+
+  private async executeToolBeforeDeadline(
+    toolName: string,
+    input: unknown,
+    profile: AgentProfile,
+    toolContext: ToolContext,
+    deadline: number,
+  ): Promise<ToolResult> {
+    const remainingMs = deadline - Date.now()
+    if (remainingMs <= 0) {
+      throw new ModelDeadlineExceededError(profile.timeoutMs)
+    }
+
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        this.toolRegistry!.execute(toolName, input, profile.toolPolicy, toolContext),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new ModelDeadlineExceededError(profile.timeoutMs)), remainingMs)
+        }),
+      ])
+    } finally {
+      if (timeout) clearTimeout(timeout)
     }
   }
 

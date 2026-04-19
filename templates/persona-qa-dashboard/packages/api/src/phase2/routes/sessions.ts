@@ -286,6 +286,35 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  app.post<{ Params: { id: string }; Body: { reviewedBy?: string } }>(
+    '/api/p2/scenarios/drafts/:id/promote',
+    async (request, reply) => {
+      const service = getSessionService();
+      const currentDraft = service.getScenarioDraft(request.params.id);
+      if (!currentDraft) return reply.status(404).send({ error: 'Scenario draft not found' });
+      if (currentDraft.status !== 'approved') {
+        return reply.status(409).send({ error: 'Scenario draft must be approved before promotion' });
+      }
+
+      const governanceDecision = new GovernancePolicyService(service).recordScenarioDraftTransitionDecision(
+        currentDraft,
+        'promoted',
+        request.body?.reviewedBy ?? 'human_reviewer',
+      );
+      if (governanceDecision.verdict === 'blocked') {
+        return reply.status(409).send({ error: governanceDecision.reason });
+      }
+
+      const draft = service.updateScenarioDraftStatus(
+        request.params.id,
+        'promoted',
+        request.body?.reviewedBy,
+      );
+      if (!draft) return reply.status(404).send({ error: 'Scenario draft not found' });
+      return reply.send(draft);
+    },
+  );
+
   app.get('/api/p2/agents/tuning-recommendations', async (_request, reply) => {
     const service = getSessionService();
     return reply.send(new ProfileTuningService(service).generateRecommendations());
@@ -310,6 +339,32 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     const service = getSessionService();
     return reply.status(201).send(new SelfHealingService(service).evaluateRecentFailures());
   });
+
+  app.post<{ Params: { id: string }; Body: { actor?: string } }>(
+    '/api/p2/healing/actions/:id/apply',
+    async (request, reply) => {
+      try {
+        const service = getSessionService();
+        const action = new SelfHealingService(service).applyAction(request.params.id, request.body?.actor);
+        return reply.send(action);
+      } catch (error) {
+        return reply.status(409).send({ error: error instanceof Error ? error.message : String(error) });
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: { actor?: string } }>(
+    '/api/p2/healing/actions/:id/rollback',
+    async (request, reply) => {
+      try {
+        const service = getSessionService();
+        const action = new SelfHealingService(service).rollbackAction(request.params.id, request.body?.actor);
+        return reply.send(action);
+      } catch (error) {
+        return reply.status(409).send({ error: error instanceof Error ? error.message : String(error) });
+      }
+    },
+  );
 
   app.get<{ Querystring: { scenarioId?: string; status?: string; limit?: string } }>(
     '/api/p2/learning/proposals',
@@ -461,8 +516,8 @@ function isLearningStatus(value: unknown): value is 'proposed' | 'approved' | 'a
   return value === 'proposed' || value === 'approved' || value === 'applied' || value === 'rejected';
 }
 
-function isScenarioDraftStatus(value: unknown): value is 'pending' | 'approved' | 'rejected' | 'revised' {
-  return value === 'pending' || value === 'approved' || value === 'rejected' || value === 'revised';
+function isScenarioDraftStatus(value: unknown): value is 'pending' | 'approved' | 'rejected' | 'revised' | 'promoted' {
+  return value === 'pending' || value === 'approved' || value === 'rejected' || value === 'revised' || value === 'promoted';
 }
 
 function isGovernanceSubjectType(value: unknown): value is GovernanceSubjectType {

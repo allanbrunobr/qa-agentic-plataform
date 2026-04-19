@@ -97,6 +97,16 @@ export const ToolCallSchema = z.object({
 
 export type ToolCall = z.infer<typeof ToolCallSchema>
 
+export const SyntheticToolResultSchema = z.object({
+  toolCallId: z.string(),
+  toolName: z.string(),
+  reason: z.enum(['timeout', 'interruption']),
+  closedAt: z.string().datetime(),
+  originalStartedAt: z.string().datetime(),
+})
+
+export type SyntheticToolResult = z.infer<typeof SyntheticToolResultSchema>
+
 export const ModelResponseSchema = z.object({
   text: z.string().optional(),
   toolCalls: z.array(ToolCallSchema),

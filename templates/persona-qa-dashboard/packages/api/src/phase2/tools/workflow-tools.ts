@@ -143,6 +143,28 @@ export const createCustomerMetadata: ToolMetadata = {
   tags: ['workflow', 'customer', 'phase1'],
 }
 
+export const fakeCreateCustomerHandler: ToolHandler = async (
+  input: unknown,
+  context: ToolContext,
+): Promise<ToolResult> => {
+  const { name, phone } = input as CreateCustomerInput
+  const fallbackName = typeof context.artifacts?.['customerName'] === 'string' ? String(context.artifacts['customerName']) : undefined
+  const fallbackPhone = typeof context.artifacts?.['customerPhone'] === 'string' ? String(context.artifacts['customerPhone']) : undefined
+  const resolvedName = name ?? fallbackName ?? 'Persona QA Customer'
+  const resolvedPhone = phone ?? fallbackPhone ?? null
+
+  return {
+    ok: true,
+    output: {
+      customerId: stableFakeId('customer', resolvedName),
+      customerName: resolvedName,
+      customerPhone: resolvedPhone,
+      phone: resolvedPhone,
+      fakeWorkflowTool: true,
+    },
+  }
+}
+
 // --- scheduleOrder wrapper ---
 
 export interface ScheduleOrderInput {
@@ -216,6 +238,34 @@ export const scheduleOrderMetadata: ToolMetadata = {
   tags: ['workflow', 'order', 'phase1'],
 }
 
+export const fakeScheduleOrderHandler: ToolHandler = async (
+  input: unknown,
+  context: ToolContext,
+): Promise<ToolResult> => {
+  const { customerName, date, time, type } = input as ScheduleOrderInput
+  const resolvedCustomerName = customerName && customerName !== 'Customer'
+    ? customerName
+    : typeof context.artifacts?.['customerName'] === 'string'
+      ? String(context.artifacts['customerName'])
+      : 'Persona QA Customer'
+  const customerId = typeof context.artifacts?.['customerId'] === 'string'
+    ? String(context.artifacts['customerId'])
+    : stableFakeId('customer', resolvedCustomerName)
+
+  return {
+    ok: true,
+    output: {
+      customerId,
+      customerName: resolvedCustomerName,
+      eventId: stableFakeId('event', `${customerId}:${date ?? 'today'}:${time ?? 'next'}`),
+      orderDate: date ?? context.artifacts?.['orderDate'] ?? null,
+      orderTime: time ?? context.artifacts?.['orderTime'] ?? null,
+      orderType: type ?? context.artifacts?.['orderType'] ?? null,
+      fakeWorkflowTool: true,
+    },
+  }
+}
+
 // --- fulfillment-agent tools ---
 
 export interface OpenOrderDetailsInput {
@@ -268,6 +318,25 @@ export const openOrderDetailsMetadata: ToolMetadata = {
   },
   requiresBrowser: true,
   tags: ['workflow', 'order-details', 'phase1'],
+}
+
+export const fakeOpenOrderDetailsHandler: ToolHandler = async (
+  input: unknown,
+  context: ToolContext,
+): Promise<ToolResult> => {
+  const { customerId, eventId } = input as OpenOrderDetailsInput
+  const resolvedCustomerId = customerId ?? (typeof context.artifacts?.['customerId'] === 'string' ? String(context.artifacts['customerId']) : 'customer-fake')
+  const resolvedEventId = eventId ?? (typeof context.artifacts?.['eventId'] === 'string' ? String(context.artifacts['eventId']) : undefined)
+
+  return {
+    ok: true,
+    output: {
+      customerId: resolvedCustomerId,
+      eventId: resolvedEventId ?? null,
+      orderDetailsOpened: true,
+      fakeWorkflowTool: true,
+    },
+  }
 }
 
 export interface CompleteFulfillmentInput {
@@ -324,6 +393,26 @@ export const completeFulfillmentMetadata: ToolMetadata = {
   tags: ['workflow', 'order-details', 'phase1'],
 }
 
+export const fakeCompleteFulfillmentHandler: ToolHandler = async (
+  input: unknown,
+  context: ToolContext,
+): Promise<ToolResult> => {
+  const { customerId, eventId } = input as CompleteFulfillmentInput
+  const resolvedCustomerId = customerId ?? (typeof context.artifacts?.['customerId'] === 'string' ? String(context.artifacts['customerId']) : 'customer-fake')
+  const resolvedEventId = eventId ?? (typeof context.artifacts?.['eventId'] === 'string' ? String(context.artifacts['eventId']) : undefined)
+
+  return {
+    ok: true,
+    output: {
+      customerId: resolvedCustomerId,
+      eventId: resolvedEventId ?? null,
+      orderDetailsOpened: true,
+      fulfillmentCompleted: true,
+      fakeWorkflowTool: true,
+    },
+  }
+}
+
 // --- billing_clerk tools ---
 
 export interface FindBillingGuideByEventIdInput {
@@ -377,6 +466,26 @@ export const findBillingGuideByEventIdMetadata: ToolMetadata = {
   tags: ['workflow', 'billing', 'phase1'],
 }
 
+export const fakeFindBillingGuideByEventIdHandler: ToolHandler = async (
+  input: unknown,
+  context: ToolContext,
+): Promise<ToolResult> => {
+  const { eventId } = input as FindBillingGuideByEventIdInput
+  const resolvedEventId = eventId ?? (typeof context.artifacts?.['eventId'] === 'string' ? String(context.artifacts['eventId']) : 'event-fake')
+
+  return {
+    ok: true,
+    output: {
+      eventId: resolvedEventId,
+      billingGuideReviewed: true,
+      billingGuideFound: true,
+      billingGuideId: stableFakeId('billing', resolvedEventId),
+      billingGuideText: 'Fake Billing guide for deterministic release verification',
+      fakeWorkflowTool: true,
+    },
+  }
+}
+
 // --- gestor tools ---
 
 export interface VerifyFinanceDashboardInput {
@@ -424,6 +533,23 @@ export const verifyFinanceDashboardMetadata: ToolMetadata = {
   tags: ['workflow', 'finance', 'phase1'],
 }
 
+export const fakeVerifyFinanceDashboardHandler: ToolHandler = async (
+  input: unknown,
+  context: ToolContext,
+): Promise<ToolResult> => {
+  const { eventId } = input as VerifyFinanceDashboardInput
+  const resolvedEventId = eventId ?? (typeof context.artifacts?.['eventId'] === 'string' ? String(context.artifacts['eventId']) : undefined)
+
+  return {
+    ok: true,
+    output: {
+      eventId: resolvedEventId ?? null,
+      financeValidated: true,
+      fakeWorkflowTool: true,
+    },
+  }
+}
+
 export interface VerifyReportsPageInput {
   eventId?: string
 }
@@ -469,14 +595,41 @@ export const verifyReportsPageMetadata: ToolMetadata = {
   tags: ['workflow', 'reports', 'phase1'],
 }
 
+export const fakeVerifyReportsPageHandler: ToolHandler = async (
+  input: unknown,
+  context: ToolContext,
+): Promise<ToolResult> => {
+  const { eventId } = input as VerifyReportsPageInput
+  const resolvedEventId = eventId ?? (typeof context.artifacts?.['eventId'] === 'string' ? String(context.artifacts['eventId']) : undefined)
+
+  return {
+    ok: true,
+    output: {
+      eventId: resolvedEventId ?? null,
+      reportsValidated: true,
+      fakeWorkflowTool: true,
+    },
+  }
+}
+
 // --- Registration helper ---
 
 export function registerWorkflowTools(registry: ToolRegistry): void {
-  registry.register('createCustomer', createCustomerHandler, createCustomerMetadata)
-  registry.register('scheduleOrder', scheduleOrderHandler, scheduleOrderMetadata)
-  registry.register('openOrderDetails', openOrderDetailsHandler, openOrderDetailsMetadata)
-  registry.register('completeFulfillment', completeFulfillmentHandler, completeFulfillmentMetadata)
-  registry.register('findBillingGuideByEventId', findBillingGuideByEventIdHandler, findBillingGuideByEventIdMetadata)
-  registry.register('verifyFinanceDashboard', verifyFinanceDashboardHandler, verifyFinanceDashboardMetadata)
-  registry.register('verifyReportsPage', verifyReportsPageHandler, verifyReportsPageMetadata)
+  const fakeMode = process.env.AGENTIC_QA_FAKE_WORKFLOW_TOOLS === '1'
+
+  registry.register('createCustomer', fakeMode ? fakeCreateCustomerHandler : createCustomerHandler, createCustomerMetadata)
+  registry.register('scheduleOrder', fakeMode ? fakeScheduleOrderHandler : scheduleOrderHandler, scheduleOrderMetadata)
+  registry.register('openOrderDetails', fakeMode ? fakeOpenOrderDetailsHandler : openOrderDetailsHandler, openOrderDetailsMetadata)
+  registry.register('completeFulfillment', fakeMode ? fakeCompleteFulfillmentHandler : completeFulfillmentHandler, completeFulfillmentMetadata)
+  registry.register('findBillingGuideByEventId', fakeMode ? fakeFindBillingGuideByEventIdHandler : findBillingGuideByEventIdHandler, findBillingGuideByEventIdMetadata)
+  registry.register('verifyFinanceDashboard', fakeMode ? fakeVerifyFinanceDashboardHandler : verifyFinanceDashboardHandler, verifyFinanceDashboardMetadata)
+  registry.register('verifyReportsPage', fakeMode ? fakeVerifyReportsPageHandler : verifyReportsPageHandler, verifyReportsPageMetadata)
+}
+
+function stableFakeId(prefix: string, seed: string): string {
+  let hash = 0
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(index)) | 0
+  }
+  return `${prefix}-${Math.abs(hash).toString(36)}`
 }

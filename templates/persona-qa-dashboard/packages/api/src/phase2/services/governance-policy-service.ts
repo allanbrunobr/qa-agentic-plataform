@@ -8,10 +8,11 @@ import type {
   SessionService,
 } from './session-service.js'
 import { IndependentAuditorService, type GovernanceAuditEvaluation } from './independent-auditor-service.js'
+import { defaultRuntimeHookBus } from './runtime-hooks.js'
 
 type LearningGovernanceAction = 'approve' | 'apply' | 'reject'
-type HealingGovernanceAction = 'apply' | 'evaluate'
-type ScenarioDraftGovernanceAction = 'approve' | 'reject' | 'evaluate'
+type HealingGovernanceAction = 'apply' | 'evaluate' | 'rollback'
+type ScenarioDraftGovernanceAction = 'approve' | 'reject' | 'evaluate' | 'promote'
 
 const HUMAN_REVIEW_REQUIREMENTS = ['human_review']
 const APPLY_REQUIREMENTS = ['human_review', 'approved_learning_proposal']
@@ -29,7 +30,7 @@ export class GovernancePolicyService {
     action: LearningGovernanceAction,
     actor = 'system',
   ): GovernanceDecision {
-    return this.sessionService.recordGovernanceDecision(
+    return this.recordGovernanceDecision(
       this.decideLearningProposalAction(proposal, action, actor),
     )
   }
@@ -118,7 +119,7 @@ export class GovernancePolicyService {
     governanceAction: HealingGovernanceAction = inferHealingGovernanceAction(action),
     actor = 'self_healing',
   ): GovernanceDecision {
-    return this.sessionService.recordGovernanceDecision(
+    return this.recordGovernanceDecision(
       this.decideHealingAction(action, governanceAction, actor),
     )
   }
@@ -134,6 +135,32 @@ export class GovernancePolicyService {
       automatic: action.automatic,
       status: action.status,
       ...action.metadata,
+    }
+
+    if (governanceAction === 'rollback') {
+      if (action.status !== 'applied') {
+        return this.withIndependentAudit({
+          subjectType: 'healing_action',
+          subjectId: action.id,
+          action: governanceAction,
+          verdict: 'blocked',
+          reason: 'Only applied healing actions can be rolled back',
+          actor,
+          requirements: BOUNDED_POLICY_REQUIREMENTS,
+          metadata,
+        }, action, actor)
+      }
+
+      return this.withIndependentAudit({
+        subjectType: 'healing_action',
+        subjectId: action.id,
+        action: governanceAction,
+        verdict: 'allowed',
+        reason: 'Healing action rollback permitted by governance policy',
+        actor,
+        requirements: mergeRequirements(HUMAN_REVIEW_REQUIREMENTS, BOUNDED_POLICY_REQUIREMENTS),
+        metadata,
+      }, action, actor)
     }
 
     if (action.status === 'blocked') {
@@ -179,7 +206,7 @@ export class GovernancePolicyService {
     governanceAction: ScenarioDraftGovernanceAction = inferScenarioDraftGovernanceAction(draft),
     actor = draft.reviewedBy ?? 'human_reviewer',
   ): GovernanceDecision {
-    return this.sessionService.recordGovernanceDecision(
+    return this.recordGovernanceDecision(
       this.decideScenarioDraftAction(draft, governanceAction, actor),
     )
   }
@@ -189,7 +216,7 @@ export class GovernancePolicyService {
     status: ScenarioDraft['status'],
     actor = 'human_reviewer',
   ): GovernanceDecision {
-    return this.sessionService.recordGovernanceDecision(
+    return this.recordGovernanceDecision(
       this.decideScenarioDraftAction({ ...draft, status, reviewedBy: actor }, inferScenarioDraftGovernanceAction({ ...draft, status }), actor),
     )
   }
@@ -252,6 +279,20 @@ export class GovernancePolicyService {
       metadata,
     }
   }
+
+  private recordGovernanceDecision(input: GovernanceDecisionInput): GovernanceDecision {
+    const decision = this.sessionService.recordGovernanceDecision(input)
+    defaultRuntimeHookBus.emitSync('onGovernanceDecision', {
+      payload: {
+        subjectType: decision.subjectType,
+        subjectId: decision.subjectId,
+        action: decision.action,
+        verdict: decision.verdict,
+        actor: decision.actor,
+      },
+    })
+    return decision
+  }
 }
 
 function mergeRequirements(...groups: (string[] | undefined)[]): string[] {
@@ -279,6 +320,7 @@ function inferHealingGovernanceAction(action: HealingAction): HealingGovernanceA
 function inferScenarioDraftGovernanceAction(draft: ScenarioDraft): ScenarioDraftGovernanceAction {
   if (draft.status === 'approved') return 'approve'
   if (draft.status === 'rejected') return 'reject'
+  if (draft.status === 'promoted') return 'promote'
   return 'evaluate'
 }
 
@@ -286,6 +328,7 @@ function scenarioDraftReason(status: ScenarioDraft['status']): string {
   if (status === 'approved') return 'Scenario draft approved by human review'
   if (status === 'rejected') return 'Scenario draft rejected by human review'
   if (status === 'revised') return 'Scenario draft marked for revision by human review'
+  if (status === 'promoted') return 'Scenario draft promoted into active scenario review set'
   return 'Scenario draft returned to review queue'
 }
 
