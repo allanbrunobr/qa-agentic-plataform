@@ -188,6 +188,65 @@ describe('Phase 2 Session Routes', () => {
       }));
     });
 
+    it('should promote approved scenario drafts with prior approval evidence', async () => {
+      const draft = sessionService.createScenarioDraft({
+        scenarioId: 'promotable_draft',
+        name: 'Promotable Draft',
+        description: 'Ready for active scenario review',
+        contract: { scenario_id: 'promotable_draft' },
+        gapType: 'missing_path',
+      });
+
+      const review = await app.inject({
+        method: 'PATCH',
+        url: `/api/p2/scenarios/drafts/${draft.id}`,
+        payload: {
+          status: 'approved',
+          reviewedBy: 'qa_lead',
+        },
+      });
+      expect(review.statusCode).toBe(200);
+
+      const promote = await app.inject({
+        method: 'POST',
+        url: `/api/p2/scenarios/drafts/${draft.id}/promote`,
+        payload: { reviewedBy: 'qa_lead' },
+      });
+
+      expect(promote.statusCode).toBe(200);
+      expect(promote.json()).toEqual(expect.objectContaining({ status: 'promoted' }));
+      expect(sessionService.listGovernanceDecisions({
+        subjectType: 'scenario_draft',
+        subjectId: draft.id,
+      })).toEqual(expect.arrayContaining([
+        expect.objectContaining({ action: 'approve', verdict: 'allowed' }),
+        expect.objectContaining({ action: 'promote', verdict: 'allowed' }),
+      ]));
+    });
+
+    it('should block scenario draft promotion without approval governance evidence', async () => {
+      const draft = sessionService.createScenarioDraft({
+        scenarioId: 'promote_without_approval',
+        name: 'Promote Without Approval',
+        description: 'Status alone should not be enough',
+        contract: { scenario_id: 'promote_without_approval' },
+        gapType: 'missing_path',
+      });
+      sessionService.updateScenarioDraftStatus(draft.id, 'approved', 'qa_lead');
+
+      const promote = await app.inject({
+        method: 'POST',
+        url: `/api/p2/scenarios/drafts/${draft.id}/promote`,
+        payload: { reviewedBy: 'qa_lead' },
+      });
+
+      expect(promote.statusCode).toBe(409);
+      expect(promote.json()).toEqual(expect.objectContaining({
+        error: expect.stringContaining('Independent audit failed'),
+      }));
+      expect(sessionService.getScenarioDraft(draft.id)?.status).toBe('approved');
+    });
+
     it('should block scenario draft approval without an explicit reviewer', async () => {
       const draft = sessionService.createScenarioDraft({
         scenarioId: 'draft_without_reviewer',

@@ -4,6 +4,8 @@ import { calculateRiskScore, MetaOrchestrator } from '../services/meta-orchestra
 import { ProfileTuningService } from '../services/profile-tuning-service.js'
 import { SelfHealingService } from '../services/self-healing-service.js'
 import { SessionService } from '../services/session-service.js'
+import { ToolRegistry } from '../services/tool-registry.js'
+import { registerWorkflowTools } from '../tools/workflow-tools.js'
 
 describe('L5 controlled feedback services', () => {
   it('detects uncovered scenario capabilities and stores human-reviewed drafts', () => {
@@ -104,6 +106,75 @@ describe('L5 controlled feedback services', () => {
       verdict: 'allowed',
       requirements: expect.arrayContaining(['independent_audit', 'bounded_policy']),
     }))
+  })
+
+  it('enables deterministic fake workflow tools only through explicit verifier mode', async () => {
+    const previous = process.env.AGENTIC_QA_FAKE_WORKFLOW_TOOLS
+    process.env.AGENTIC_QA_FAKE_WORKFLOW_TOOLS = '1'
+
+    try {
+      const registry = new ToolRegistry()
+      registerWorkflowTools(registry)
+
+      const result = await registry.execute(
+        'createCustomer',
+        { name: 'Maria Fake' },
+        { browserAccess: true },
+        {},
+      )
+
+      expect(result).toEqual({
+        ok: true,
+        output: expect.objectContaining({
+          customerId: expect.stringMatching(/^customer-/),
+          customerName: 'Maria Fake',
+          fakeWorkflowTool: true,
+        }),
+      })
+    } finally {
+      if (previous === undefined) {
+        delete process.env.AGENTIC_QA_FAKE_WORKFLOW_TOOLS
+      } else {
+        process.env.AGENTIC_QA_FAKE_WORKFLOW_TOOLS = previous
+      }
+    }
+  })
+
+  it('applies and rolls back governed human self-healing actions', () => {
+    const service = new SessionService(':memory:')
+    const action = service.recordHealingAction({
+      type: 'quarantine_step',
+      target: 'first_order:create_customer',
+      reason: 'Manual quarantine validation',
+      automatic: false,
+      status: 'proposed',
+      metadata: { quarantineRequiresHuman: true },
+    })
+
+    const healing = new SelfHealingService(service)
+    const applied = healing.applyAction(action.id, 'qa_lead')
+    const rolledBack = healing.rollbackAction(action.id, 'qa_lead')
+
+    expect(applied).toEqual(expect.objectContaining({
+      status: 'applied',
+      metadata: expect.objectContaining({
+        rollbackAvailable: true,
+        appliedBy: 'qa_lead',
+      }),
+    }))
+    expect(rolledBack).toEqual(expect.objectContaining({
+      status: 'rolled_back',
+      metadata: expect.objectContaining({
+        rolledBackBy: 'qa_lead',
+      }),
+    }))
+    expect(service.listGovernanceDecisions({
+      subjectType: 'healing_action',
+      subjectId: action.id,
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: 'apply', verdict: 'allowed' }),
+      expect.objectContaining({ action: 'rollback', verdict: 'allowed' }),
+    ]))
   })
 
   it('blocks automatic self-healing when hourly bounds are exceeded', () => {

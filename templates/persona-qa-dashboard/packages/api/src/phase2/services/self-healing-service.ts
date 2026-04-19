@@ -75,6 +75,48 @@ export class SelfHealingService {
     return this.sessionService.listHealingActions({ limit })
   }
 
+  applyAction(id: string, actor = 'human_reviewer'): HealingAction {
+    const action = this.sessionService.getHealingAction(id)
+    if (!action) throw new Error(`Healing action ${id} not found`)
+
+    const decision = this.governance.recordHealingActionDecision(action, 'apply', actor)
+    if (decision.verdict === 'blocked') {
+      throw new Error(decision.reason)
+    }
+
+    if (action.status === 'applied') return action
+
+    const metadata = {
+      ...(action.metadata ?? {}),
+      appliedAt: new Date().toISOString(),
+      appliedBy: actor,
+      rollbackAvailable: true,
+      appliedEffect: describeHealingEffect(action),
+    }
+
+    return this.sessionService.updateHealingActionStatus(action.id, 'applied', metadata) ?? action
+  }
+
+  rollbackAction(id: string, actor = 'human_reviewer'): HealingAction {
+    const action = this.sessionService.getHealingAction(id)
+    if (!action) throw new Error(`Healing action ${id} not found`)
+
+    const decision = this.governance.recordHealingActionDecision(action, 'rollback', actor)
+    if (decision.verdict === 'blocked') {
+      throw new Error(decision.reason)
+    }
+
+    const metadata = {
+      ...(action.metadata ?? {}),
+      rolledBackAt: new Date().toISOString(),
+      rolledBackBy: actor,
+      rollbackOfStatus: action.status,
+      rollbackEffect: describeRollbackEffect(action),
+    }
+
+    return this.sessionService.updateHealingActionStatus(action.id, 'rolled_back', metadata) ?? action
+  }
+
   private recordAutomaticAction(input: {
     type: string
     target: string
@@ -103,6 +145,13 @@ export class SelfHealingService {
       ...input,
       automatic: true,
       status: 'applied',
+      metadata: {
+        ...(input.metadata ?? {}),
+        appliedAt: new Date().toISOString(),
+        appliedBy: 'self_healing',
+        rollbackAvailable: true,
+        appliedEffect: describeHealingEffect(input),
+      },
     })
   }
 
@@ -163,4 +212,34 @@ function groupByStep(records: StepPerformanceRecord[]): Map<string, StepPerforma
     grouped.set(key, bucket)
   }
   return grouped
+}
+
+function describeHealingEffect(action: { type: string; target: string; metadata?: Record<string, unknown> }): Record<string, unknown> {
+  if (action.type === 'increase_timeout_pool') {
+    return {
+      kind: 'timeout_pool_multiplier',
+      target: action.target,
+      maxTimeoutIncreasePercent: action.metadata?.['maxTimeoutIncreasePercent'],
+    }
+  }
+
+  if (action.type === 'quarantine_step') {
+    return {
+      kind: 'step_quarantine',
+      target: action.target,
+    }
+  }
+
+  return {
+    kind: 'manual_review_required',
+    target: action.target,
+  }
+}
+
+function describeRollbackEffect(action: HealingAction): Record<string, unknown> {
+  return {
+    kind: 'metadata_rollback',
+    target: action.target,
+    originalEffect: action.metadata?.['appliedEffect'],
+  }
 }

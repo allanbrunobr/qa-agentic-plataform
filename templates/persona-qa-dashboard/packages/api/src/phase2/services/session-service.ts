@@ -125,11 +125,12 @@ export interface AdaptationEvent extends AdaptationEventInput {
 
 export type LearningProposalStatus = 'proposed' | 'approved' | 'applied' | 'rejected'
 export type LearningProposalPatchKind = 'none' | 'prompt_overlay' | 'capability_patch' | 'environment_check'
-export type ScenarioDraftStatus = 'pending' | 'approved' | 'rejected' | 'revised'
-export type HealingActionStatus = 'proposed' | 'applied' | 'blocked'
+export type ScenarioDraftStatus = 'pending' | 'approved' | 'rejected' | 'revised' | 'promoted'
+export type HealingActionStatus = 'proposed' | 'applied' | 'blocked' | 'rolled_back'
 export type GovernanceSubjectType = 'learning_proposal' | 'scenario_draft' | 'healing_action'
-export type GovernanceAction = 'generate' | 'approve' | 'apply' | 'reject' | 'evaluate'
+export type GovernanceAction = 'generate' | 'approve' | 'apply' | 'reject' | 'evaluate' | 'rollback' | 'promote'
 export type GovernanceVerdict = 'allowed' | 'blocked'
+export type SyntheticToolClosureReason = 'timeout' | 'interruption'
 
 export interface LearningProposalInput {
   recommendationId: string
@@ -292,6 +293,15 @@ type GovernanceDecisionRow = {
   requirements: string | null
   metadata: string | null
   created_at: string
+}
+
+type ToolClosureRow = {
+  session_id: string
+  tool_call_id: string
+  tool_name: string
+  reason: SyntheticToolClosureReason
+  closed_at: string
+  original_started_at: string
 }
 
 function getDefaultDbPath(): string {
@@ -530,6 +540,51 @@ export class SessionService {
     }
 
     return this.addEvent(sessionId, eventType, mergedPayload)
+  }
+
+  recordToolClosure(
+    sessionId: string,
+    toolCallId: string,
+    toolName: string,
+    reason: SyntheticToolClosureReason,
+    originalStartedAt?: string,
+  ): boolean {
+    this.ensureSession(sessionId)
+    const closedAt = new Date().toISOString()
+    const startedAt = originalStartedAt ?? closedAt
+    const result = this.sqlite
+      .prepare(
+        `INSERT OR IGNORE INTO p2_tool_ledger_closures (
+           session_id, tool_call_id, tool_name, reason, closed_at, original_started_at
+         ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(sessionId, toolCallId, toolName, reason, closedAt, startedAt)
+
+    if (result.changes === 0) return false
+
+    this.addEvent(sessionId, 'info', {
+      event: 'tool_synthetic_closure',
+      toolCallId,
+      toolName,
+      reason,
+      closedAt,
+      originalStartedAt: startedAt,
+    })
+
+    return true
+  }
+
+  isToolCallClosed(sessionId: string, toolCallId: string): boolean {
+    const row = this.sqlite
+      .prepare(
+        `SELECT tool_call_id
+         FROM p2_tool_ledger_closures
+         WHERE session_id = ? AND tool_call_id = ?
+         LIMIT 1`,
+      )
+      .get(sessionId, toolCallId) as Pick<ToolClosureRow, 'tool_call_id'> | undefined
+
+    return Boolean(row)
   }
 
   setArtifact(sessionId: string, key: string, value: unknown): void {
@@ -1512,6 +1567,16 @@ export class SessionService {
         created_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS p2_tool_ledger_closures (
+        session_id TEXT NOT NULL REFERENCES p2_sessions(session_id),
+        tool_call_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        closed_at TEXT NOT NULL,
+        original_started_at TEXT NOT NULL,
+        PRIMARY KEY(session_id, tool_call_id)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_p2_sessions_scenario ON p2_sessions(scenario_id);
       CREATE INDEX IF NOT EXISTS idx_p2_events_session_sequence ON p2_session_events(session_id, sequence);
       CREATE INDEX IF NOT EXISTS idx_p2_findings_session_created ON p2_session_findings(session_id, created_at);
@@ -1521,6 +1586,7 @@ export class SessionService {
       CREATE INDEX IF NOT EXISTS idx_p2_scenario_drafts_status ON p2_scenario_drafts(status, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_healing_actions_created ON p2_healing_actions(created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_governance_subject ON p2_governance_decisions(subject_type, subject_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_p2_tool_ledger_closures_session ON p2_tool_ledger_closures(session_id, closed_at);
     `)
   }
 }
