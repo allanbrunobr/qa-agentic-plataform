@@ -4,11 +4,12 @@ import { Activity, AlertTriangle, ArrowRightLeft, Bot, Clock3, Play } from 'luci
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Card, StatCard } from '@/components/ui/Card'
 import { MaturityStatusPanel } from '@/components/MaturityStatusPanel'
+import { L5RunAuditPanel } from '@/components/L5RunAuditPanel'
 import {
   api,
-  type Phase2ClosedLoopLifecycleEvent,
   type Phase2ClosedLoopSchedulerStatus,
   type Phase2ClosedLoopStatusResponse,
+  type Phase2GovernanceDecision,
   type Phase2MaturityStatus,
   type Phase2ScenarioSummary,
   type Phase2SessionSummary,
@@ -78,13 +79,6 @@ function isMultiAgent(session: Phase2SessionSummary) {
   return session.scenarioId.includes('multi_role')
 }
 
-function formatLifecycleLabel(event: Phase2ClosedLoopLifecycleEvent) {
-  const label = event.type.replace(/_/g, ' ')
-  const scope = event.scenarioId ?? event.loop
-  if (!scope) return label
-  return `${label} · ${scope.replace(/_/g, ' ')}`
-}
-
 function parseOverviewHashScenario() {
   const hash = window.location.hash.replace(/^#/, '')
   const [page, query = ''] = hash.split('?')
@@ -110,6 +104,7 @@ export function Overview() {
   const [maturity, setMaturity] = useState<Phase2MaturityStatus | null>(null)
   const [closedLoop, setClosedLoop] = useState<Phase2ClosedLoopStatusResponse | null>(null)
   const [closedLoopScheduler, setClosedLoopScheduler] = useState<Phase2ClosedLoopSchedulerStatus | null>(null)
+  const [governanceDecisions, setGovernanceDecisions] = useState<Phase2GovernanceDecision[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedScenario, setSelectedScenario] = useState(initialScenarioFromHash ?? 'first_order_multi_role')
   const [customerName, setCustomerName] = useState('')
@@ -138,13 +133,14 @@ export function Overview() {
 
     const load = async () => {
       try {
-        const [sessionData, scenarioData, statsData, maturityData, closedLoopData, schedulerData] = await Promise.all([
+        const [sessionData, scenarioData, statsData, maturityData, closedLoopData, schedulerData, governanceData] = await Promise.all([
           api.getPhase2Sessions(),
           api.getPhase2Scenarios(),
           api.getStats(),
           api.getPhase2Maturity().catch(() => null),
           api.getPhase2ClosedLoopStatus().catch(() => null),
           api.getPhase2ClosedLoopSchedulerStatus().catch(() => null),
+          api.getPhase2GovernanceDecisions({ limit: 12 }).catch(() => []),
         ])
         if (!mounted) return
         setSessions(sessionData)
@@ -153,6 +149,7 @@ export function Overview() {
         setMaturity(maturityData)
         setClosedLoop(closedLoopData)
         setClosedLoopScheduler(schedulerData)
+        setGovernanceDecisions(governanceData)
         if (scenarioData.length > 0 && !scenarioData.some((scenario) => scenario.id === selectedScenario)) {
           setSelectedScenario(scenarioData[0]!.id)
         }
@@ -257,7 +254,6 @@ export function Overview() {
   const selectedScenarioSummary = scenarios.find((scenario) => scenario.id === selectedScenario)
   const selectedScenarioGate = selectedScenarioSummary?.quality_gate
   const latestClosedLoop = closedLoop?.latestRun ?? null
-  const latestLifecycle = latestClosedLoop?.metadata?.lifecycle?.slice(-6).reverse() ?? []
   const schedulerEnabled = closedLoopScheduler?.enabled ?? false
 
   if (loading) return <LoadingState />
@@ -513,35 +509,21 @@ export function Overview() {
             </p>
           ) : null}
 
-          {latestLifecycle.length > 0 ? (
-            <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-                Lifecycle recente
-              </p>
-              <div className="mt-3 grid gap-2 md:grid-cols-3">
-                {latestLifecycle.map((event, index) => (
-                  <div
-                    key={`${event.timestamp}-${event.type}-${index}`}
-                    className="rounded-md border border-[var(--border)] px-3 py-2"
-                  >
-                    <p className="truncate text-xs font-medium text-[var(--text-secondary)]">
-                      {formatLifecycleLabel(event)}
-                    </p>
-                    <p className="mt-1 text-[11px] text-[var(--text-muted)]">
-                      {event.status ?? 'registrado'} · {formatRelativeTime(event.timestamp)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
           {closedLoopError && (
             <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
               {closedLoopError}
             </div>
           )}
+
         </Card>
+      </motion.div>
+
+      <motion.div variants={itemVariants}>
+        <L5RunAuditPanel
+          run={latestClosedLoop}
+          guards={closedLoop?.guards ?? []}
+          governanceDecisions={governanceDecisions}
+        />
       </motion.div>
 
       <motion.div variants={itemVariants}>
