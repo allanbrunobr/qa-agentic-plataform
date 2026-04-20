@@ -105,6 +105,7 @@ export function Overview() {
   const [closedLoop, setClosedLoop] = useState<Phase2ClosedLoopStatusResponse | null>(null)
   const [closedLoopScheduler, setClosedLoopScheduler] = useState<Phase2ClosedLoopSchedulerStatus | null>(null)
   const [governanceDecisions, setGovernanceDecisions] = useState<Phase2GovernanceDecision[]>([])
+  const [selectedClosedLoopRunId, setSelectedClosedLoopRunId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedScenario, setSelectedScenario] = useState(initialScenarioFromHash ?? 'first_order_multi_role')
   const [customerName, setCustomerName] = useState('')
@@ -150,6 +151,11 @@ export function Overview() {
         setClosedLoop(closedLoopData)
         setClosedLoopScheduler(schedulerData)
         setGovernanceDecisions(governanceData)
+        setSelectedClosedLoopRunId((current) => {
+          const recentRuns = closedLoopData?.recentRuns ?? []
+          if (current && recentRuns.some((candidate) => candidate.id === current)) return current
+          return closedLoopData?.latestRun?.id ?? recentRuns[0]?.id ?? null
+        })
         if (scenarioData.length > 0 && !scenarioData.some((scenario) => scenario.id === selectedScenario)) {
           setSelectedScenario(scenarioData[0]!.id)
         }
@@ -254,6 +260,11 @@ export function Overview() {
   const selectedScenarioSummary = scenarios.find((scenario) => scenario.id === selectedScenario)
   const selectedScenarioGate = selectedScenarioSummary?.quality_gate
   const latestClosedLoop = closedLoop?.latestRun ?? null
+  const recentClosedLoopRuns = closedLoop?.recentRuns ?? []
+  const selectedClosedLoopRun = selectedClosedLoopRunId
+    ? recentClosedLoopRuns.find((candidate) => candidate.id === selectedClosedLoopRunId) ?? null
+    : null
+  const auditedClosedLoop = selectedClosedLoopRun ?? latestClosedLoop
   const schedulerEnabled = closedLoopScheduler?.enabled ?? false
 
   if (loading) return <LoadingState />
@@ -287,8 +298,13 @@ export function Overview() {
         maxScenarios: selectedScenario ? 1 : 3,
         applyApprovedChanges,
       })
-      const nextStatus = await api.getPhase2ClosedLoopStatus()
+      const [nextStatus, nextGovernance] = await Promise.all([
+        api.getPhase2ClosedLoopStatus(),
+        api.getPhase2GovernanceDecisions({ limit: 12 }).catch(() => governanceDecisions),
+      ])
       setClosedLoop(nextStatus)
+      setGovernanceDecisions(nextGovernance)
+      setSelectedClosedLoopRunId(nextStatus.latestRun?.id ?? null)
     } catch (error) {
       setClosedLoopError(error instanceof Error ? error.message : 'Falha ao executar closed loop L5')
     } finally {
@@ -342,8 +358,11 @@ export function Overview() {
         api.getPhase2ClosedLoopStatus(),
         api.getPhase2ClosedLoopSchedulerStatus(),
       ])
+      const nextGovernance = await api.getPhase2GovernanceDecisions({ limit: 12 }).catch(() => governanceDecisions)
       setClosedLoop(nextStatus)
       setClosedLoopScheduler(nextScheduler)
+      setGovernanceDecisions(nextGovernance)
+      setSelectedClosedLoopRunId(nextStatus.latestRun?.id ?? null)
     } catch (error) {
       setClosedLoopError(error instanceof Error ? error.message : 'Falha ao executar automação L5')
     } finally {
@@ -520,7 +539,10 @@ export function Overview() {
 
       <motion.div variants={itemVariants}>
         <L5RunAuditPanel
-          run={latestClosedLoop}
+          run={auditedClosedLoop}
+          runs={recentClosedLoopRuns}
+          selectedRunId={auditedClosedLoop?.id ?? selectedClosedLoopRunId}
+          onSelectRun={setSelectedClosedLoopRunId}
           guards={closedLoop?.guards ?? []}
           governanceDecisions={governanceDecisions}
         />

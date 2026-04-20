@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { L5RunAuditPanel } from '../L5RunAuditPanel'
 import type { Phase2ClosedLoopRun, Phase2GovernanceDecision } from '@/lib/api'
 
@@ -37,7 +37,7 @@ describe('L5RunAuditPanel', () => {
       />,
     )
 
-    expect(screen.getByText('needs review')).toBeInTheDocument()
+    expect(screen.getAllByText('needs review')).toHaveLength(2)
     expect(screen.getByText('Lifecycle recente')).toBeInTheDocument()
     expect(screen.getByText('loop completed - self healing')).toBeInTheDocument()
     expect(screen.getByText('self healing evaluated')).toBeInTheDocument()
@@ -46,10 +46,43 @@ describe('L5RunAuditPanel', () => {
     expect(screen.getByText('apply - healing action')).toBeInTheDocument()
     expect(screen.getByText('Self-healing action permitted by bounded policy.')).toBeInTheDocument()
   })
+
+  it('renders recent run history and emits selected run changes', () => {
+    const onSelectRun = vi.fn()
+    const currentRun = closedLoopRun({ id: 'run-current' })
+    const historicalRun = closedLoopRun({
+      id: 'run-historical',
+      status: 'completed',
+      scenarioId: 'retorno',
+      actions: [],
+      summary: {
+        statusReason: 'Historical closed loop completed.',
+        pendingReviews: 0,
+        improvedScenarios: 1,
+        regressedScenarios: 0,
+      },
+      completedAt: '2026-04-20T17:00:00.000Z',
+      startedAt: '2026-04-20T17:00:00.000Z',
+    })
+
+    render(
+      <L5RunAuditPanel
+        run={currentRun}
+        runs={[currentRun, historicalRun]}
+        selectedRunId="run-current"
+        onSelectRun={onSelectRun}
+      />,
+    )
+
+    expect(screen.getByText('Histórico L5')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('retorno').closest('button')!)
+
+    expect(onSelectRun).toHaveBeenCalledWith('run-historical')
+  })
 })
 
-function closedLoopRun(): Phase2ClosedLoopRun {
-  return {
+function closedLoopRun(overrides: Partial<Phase2ClosedLoopRun> = {}): Phase2ClosedLoopRun {
+  const run: Phase2ClosedLoopRun = {
     id: 'run-1',
     status: 'needs_review',
     mode: 'observe',
@@ -90,6 +123,23 @@ function closedLoopRun(): Phase2ClosedLoopRun {
     },
     startedAt: now,
     completedAt: now,
+  }
+
+  return {
+    ...run,
+    ...overrides,
+    verification: {
+      ...run.verification,
+      ...overrides.verification,
+    },
+    summary: {
+      ...run.summary,
+      ...overrides.summary,
+    },
+    metadata: {
+      ...run.metadata,
+      ...overrides.metadata,
+    },
   }
 }
 

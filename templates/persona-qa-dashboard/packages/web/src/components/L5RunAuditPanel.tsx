@@ -8,6 +8,9 @@ import { formatRelativeTime } from '@/lib/utils'
 
 interface L5RunAuditPanelProps {
   run: Phase2ClosedLoopRun | null
+  runs?: Phase2ClosedLoopRun[]
+  selectedRunId?: string | null
+  onSelectRun?: (runId: string) => void
   guards?: Array<{
     loop: string
     status: 'open' | 'blocked'
@@ -20,10 +23,19 @@ interface L5RunAuditPanelProps {
 
 export function L5RunAuditPanel({
   run,
+  runs = [],
+  selectedRunId,
+  onSelectRun,
   guards = [],
   governanceDecisions = [],
 }: L5RunAuditPanelProps) {
-  if (!run) {
+  const auditRuns = uniqueRuns(run, runs)
+  const selectedRun = (selectedRunId ? auditRuns.find((candidate) => candidate.id === selectedRunId) : undefined)
+    ?? run
+    ?? auditRuns[0]
+    ?? null
+
+  if (!selectedRun) {
     return (
       <Card className="mt-4">
         <PanelHeader />
@@ -34,21 +46,27 @@ export function L5RunAuditPanel({
     )
   }
 
-  const lifecycle = run.metadata?.lifecycle ?? []
+  const lifecycle = selectedRun.metadata?.lifecycle ?? []
   const visibleLifecycle = lifecycle.slice(-8).reverse()
-  const visibleActions = run.actions.slice(0, 6)
-  const comparisons = arrayValue(run.verification['comparisons'])
+  const visibleActions = selectedRun.actions.slice(0, 6)
+  const comparisons = arrayValue(selectedRun.verification['comparisons'])
   const blockedGuards = guards.filter((guard) => guard.status === 'blocked').length
-  const pendingReviews = numberValue(run.summary['pendingReviews'])
-  const rerunRequired = run.verification['rerunRequired'] === true
+  const pendingReviews = numberValue(selectedRun.summary['pendingReviews'])
+  const rerunRequired = selectedRun.verification['rerunRequired'] === true
 
   return (
     <Card className="mt-4">
       <PanelHeader />
 
+      <RunHistory
+        runs={auditRuns}
+        selectedRunId={selectedRun.id}
+        onSelectRun={onSelectRun}
+      />
+
       <div className="grid gap-3 md:grid-cols-5">
-        <Metric label="Status" value={run.status.replace('_', ' ')} tone={run.status === 'failed' || run.status === 'blocked' ? 'danger' : 'success'} />
-        <Metric label="Modo" value={run.mode.replace('_', ' ')} />
+        <Metric label="Status" value={selectedRun.status.replace('_', ' ')} tone={runStatusTone(selectedRun.status)} />
+        <Metric label="Modo" value={selectedRun.mode.replace('_', ' ')} />
         <Metric label="Lifecycle" value={lifecycle.length} tone={lifecycle.length > 0 ? 'success' : 'neutral'} />
         <Metric label="Pendências" value={pendingReviews} tone={pendingReviews > 0 ? 'warning' : 'success'} />
         <Metric label="Reexecução" value={rerunRequired ? 'necessária' : 'não'} tone={rerunRequired ? 'warning' : 'success'} />
@@ -69,11 +87,11 @@ export function L5RunAuditPanel({
         </section>
 
         <section className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
-          <SectionHeader title="Verificação" detail={String(run.verification['recommendation'] ?? 'sem recomendação')} />
+          <SectionHeader title="Verificação" detail={String(selectedRun.verification['recommendation'] ?? 'sem recomendação')} />
           <div className="mt-3 space-y-2">
             <AuditLine label="Comparações" value={comparisons.length} />
-            <AuditLine label="Cenários melhores" value={numberValue(run.summary['improvedScenarios'])} />
-            <AuditLine label="Cenários regrediram" value={numberValue(run.summary['regressedScenarios'])} />
+            <AuditLine label="Cenários melhores" value={numberValue(selectedRun.summary['improvedScenarios'])} />
+            <AuditLine label="Cenários regrediram" value={numberValue(selectedRun.summary['regressedScenarios'])} />
             <AuditLine label="Circuit breakers bloqueados" value={blockedGuards} tone={blockedGuards > 0 ? 'danger' : 'success'} />
           </div>
         </section>
@@ -81,7 +99,7 @@ export function L5RunAuditPanel({
 
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
         <section className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
-          <SectionHeader title="Ações da iteração" detail={`${run.actions.length} ação(ões)`} />
+          <SectionHeader title="Ações da iteração" detail={`${selectedRun.actions.length} ação(ões)`} />
           {visibleActions.length === 0 ? (
             <EmptyLine>Nenhuma ação registrada.</EmptyLine>
           ) : (
@@ -108,7 +126,7 @@ export function L5RunAuditPanel({
       </div>
 
       <p className="mt-4 text-xs leading-relaxed text-[var(--text-muted)]">
-        {String(run.summary['statusReason'] ?? 'Iteração L5 registrada.')}
+        {String(selectedRun.summary['statusReason'] ?? 'Iteração L5 registrada.')}
       </p>
     </Card>
   )
@@ -119,9 +137,73 @@ function PanelHeader() {
     <div className="mb-4">
       <h3 className="text-sm font-semibold text-[var(--text-primary)]">L5 Run Audit</h3>
       <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-        Trilha operacional da última iteração closed-loop: lifecycle, ações, verificação e governança.
+        Trilha operacional da iteração closed-loop selecionada: lifecycle, ações, verificação e governança.
       </p>
     </div>
+  )
+}
+
+function RunHistory({
+  runs,
+  selectedRunId,
+  onSelectRun,
+}: {
+  runs: Phase2ClosedLoopRun[]
+  selectedRunId: string
+  onSelectRun?: (runId: string) => void
+}) {
+  return (
+    <section className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
+      <SectionHeader title="Histórico L5" detail={`${runs.length} run(s)`} />
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {runs.slice(0, 8).map((candidate) => (
+          <RunHistoryButton
+            key={candidate.id}
+            run={candidate}
+            active={candidate.id === selectedRunId}
+            onSelectRun={onSelectRun}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function RunHistoryButton({
+  run,
+  active,
+  onSelectRun,
+}: {
+  run: Phase2ClosedLoopRun
+  active: boolean
+  onSelectRun?: (runId: string) => void
+}) {
+  const timestamp = formatRunTimestamp(run)
+  const statusTone = runStatusTone(run.status)
+
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      disabled={!onSelectRun || active}
+      onClick={() => onSelectRun?.(run.id)}
+      className={`min-w-0 rounded-md border px-3 py-2 text-left transition ${
+        active
+          ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--text-primary)]'
+          : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text-primary)]'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] uppercase ${historyStatusClass(statusTone)}`}>
+          {run.status.replace('_', ' ')}
+        </span>
+        <span className="truncate text-[11px]">{timestamp ? formatRelativeTime(timestamp) : 'sem data'}</span>
+      </div>
+      <p className="mt-2 truncate text-xs font-medium">{formatRunScope(run)}</p>
+      <p className="mt-1 truncate text-[11px]">
+        {run.metadata?.lifecycle?.length ?? 0} lifecycle / {run.actions.length} ações
+      </p>
+    </button>
   )
 }
 
@@ -241,6 +323,43 @@ function numberValue(value: unknown): number {
 
 function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
+}
+
+function uniqueRuns(run: Phase2ClosedLoopRun | null, runs: Phase2ClosedLoopRun[]): Phase2ClosedLoopRun[] {
+  const byId = new Map<string, Phase2ClosedLoopRun>()
+  for (const candidate of [...runs, run].filter((item): item is Phase2ClosedLoopRun => Boolean(item))) {
+    if (!byId.has(candidate.id)) {
+      byId.set(candidate.id, candidate)
+    }
+  }
+
+  return Array.from(byId.values()).sort((left, right) => {
+    const leftTime = Date.parse(formatRunTimestamp(left) ?? '')
+    const rightTime = Date.parse(formatRunTimestamp(right) ?? '')
+    return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0)
+  })
+}
+
+function formatRunTimestamp(run: Phase2ClosedLoopRun): string | null {
+  return run.completedAt || run.startedAt || null
+}
+
+function formatRunScope(run: Phase2ClosedLoopRun): string {
+  return run.scenarioId ?? run.queuedScenarios[0] ?? 'todos os cenários'
+}
+
+function runStatusTone(status: Phase2ClosedLoopRun['status']): 'success' | 'warning' | 'danger' | 'neutral' {
+  if (status === 'completed') return 'success'
+  if (status === 'needs_review') return 'warning'
+  if (status === 'blocked' || status === 'failed') return 'danger'
+  return 'neutral'
+}
+
+function historyStatusClass(tone: 'success' | 'warning' | 'danger' | 'neutral') {
+  if (tone === 'success') return 'bg-emerald-500/10 text-emerald-200'
+  if (tone === 'warning') return 'bg-amber-500/10 text-amber-200'
+  if (tone === 'danger') return 'bg-red-500/10 text-red-200'
+  return 'bg-[var(--bg-secondary)] text-[var(--text-muted)]'
 }
 
 function toneClass(tone: 'success' | 'warning' | 'danger' | 'neutral') {
