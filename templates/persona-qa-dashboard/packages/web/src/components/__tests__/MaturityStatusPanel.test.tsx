@@ -11,6 +11,7 @@ describe('MaturityStatusPanel', () => {
     expect(screen.getByText('Operacional governado')).toBeInTheDocument()
     expect(screen.getByText('Workflow contracts')).toBeInTheDocument()
     expect(screen.getByText('Independent audit')).toBeInTheDocument()
+    expect(screen.getByText('Runtime learning loads')).toBeInTheDocument()
     expect(screen.getAllByText('95%')).toHaveLength(2)
   })
 })
@@ -56,6 +57,7 @@ function maturityStatus(): Phase2MaturityStatus {
         signals: [
           { label: 'Revisões pendentes', value: 0, tone: 'success' },
           { label: 'Decisões bloqueadas', value: 0, tone: 'success' },
+          { label: 'Runtime learning loads', value: 1, tone: 'success' },
         ],
       },
     },

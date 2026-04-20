@@ -100,6 +100,7 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
   const queuedMetaRuns = queueItems.filter((item) => item.status === 'queued').length
   const completedClosedLoops = closedLoopRuns.filter((run) => run.status === 'completed').length
   const closedLoopsNeedingReview = closedLoopRuns.filter((run) => run.status === 'needs_review').length
+  const runtimeLearningUsage = summarizeRuntimeLearningUsage(sessions)
 
   const l4Status: L4MaturityStatus = restrictedGates > 0 || contractViolations > 0
     ? 'attention'
@@ -203,6 +204,16 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
               : 'Mudanças aplicadas geram artifacts duráveis e rastreáveis.',
           },
           {
+            id: 'runtime_learning',
+            label: 'Runtime learning',
+            state: runtimeLearningUsage.loads > 0 ? 'complete' : verifiedMaterializations > 0 ? 'guarded' : 'beta',
+            evidence: runtimeLearningUsage.loads > 0
+              ? `${runtimeLearningUsage.loads} execução(ões) carregaram ${runtimeLearningUsage.overlayLoads} overlay(s) L5 de ${runtimeLearningUsage.materializations} materialização(ões).`
+              : verifiedMaterializations > 0
+                ? 'Overlays L5 verificados estão materializados e aguardam nova execução para entrar no prompt.'
+                : 'Runtime aceita somente overlays L5 aplicados, materializados e verificados.',
+          },
+          {
             id: 'meta_orchestration',
             label: 'Meta-orchestration',
             state: queuedMetaRuns > 0 ? 'guarded' : 'beta',
@@ -229,15 +240,65 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
           { label: 'Revisões pendentes', value: pendingReviews, tone: pendingReviews > 0 ? 'warning' : 'success' },
           { label: 'Decisões bloqueadas', value: blockedDecisions, tone: blockedDecisions > 0 ? 'danger' : 'success' },
           { label: 'Loops bloqueados', value: blockedLoops, tone: blockedLoops > 0 ? 'danger' : 'success' },
+          {
+            label: 'Runtime learning loads',
+            value: runtimeLearningUsage.loads,
+            tone: runtimeLearningUsage.loads > 0 ? 'success' : verifiedMaterializations > 0 ? 'warning' : 'neutral',
+          },
           { label: 'Auditorias independentes', value: independentAudits, tone: independentAudits > 0 ? 'success' : 'neutral' },
           { label: 'Ações bounded', value: boundedAutomaticActions, tone: boundedAutomaticActions > 0 ? 'success' : 'neutral' },
           { label: 'Materializações ativas', value: activeMaterializations, tone: activeMaterializations > 0 ? 'success' : 'neutral' },
           { label: 'Materializações verificadas', value: verifiedMaterializations, tone: verifiedMaterializations > 0 ? 'success' : 'neutral' },
+          {
+            label: 'Runtime overlays usados',
+            value: runtimeLearningUsage.overlayLoads,
+            tone: runtimeLearningUsage.overlayLoads > 0 ? 'success' : 'neutral',
+          },
           { label: 'Fila meta-orquestrada', value: queuedMetaRuns, tone: queuedMetaRuns > 0 ? 'success' : 'neutral' },
           { label: 'Closed loops completos', value: completedClosedLoops, tone: completedClosedLoops > 0 ? 'success' : 'neutral' },
           { label: 'Closed loops em review', value: closedLoopsNeedingReview, tone: closedLoopsNeedingReview > 0 ? 'warning' : 'success' },
         ],
       },
     },
+  }
+}
+
+function summarizeRuntimeLearningUsage(sessions: ReturnType<SessionService['getAllSessions']>): {
+  loads: number
+  overlayLoads: number
+  materializations: number
+} {
+  const materializationIds = new Set<string>()
+  let loads = 0
+  let overlayLoads = 0
+
+  for (const session of sessions) {
+    for (const event of session.events) {
+      const payload = event.payload ?? event.data
+      if (payload?.['event'] !== 'l5_runtime_learning_loaded') continue
+
+      loads += 1
+      const overlayCount = payload['overlayCount']
+      if (typeof overlayCount === 'number' && Number.isFinite(overlayCount)) {
+        overlayLoads += overlayCount
+      }
+
+      const overlays = payload['overlays']
+      if (!Array.isArray(overlays)) continue
+
+      for (const overlay of overlays) {
+        if (!overlay || typeof overlay !== 'object') continue
+        const materializationId = (overlay as Record<string, unknown>)['materializationId']
+        if (typeof materializationId === 'string' && materializationId.length > 0) {
+          materializationIds.add(materializationId)
+        }
+      }
+    }
+  }
+
+  return {
+    loads,
+    overlayLoads,
+    materializations: materializationIds.size,
   }
 }

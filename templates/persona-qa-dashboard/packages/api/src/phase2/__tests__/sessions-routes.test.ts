@@ -65,6 +65,52 @@ describe('Phase 2 Session Routes', () => {
         id: 'independent_audit',
         state: 'guarded',
       }));
+      expect(body.levels.l5.capabilities).toContainEqual(expect.objectContaining({
+        id: 'runtime_learning',
+        state: 'beta',
+      }));
+      expect(body.levels.l5.signals).toContainEqual(expect.objectContaining({
+        label: 'Runtime learning loads',
+        value: 0,
+      }));
+    });
+
+    it('should expose L5 runtime learning usage from session events', async () => {
+      const session = sessionService.createSession('first_order');
+      sessionService.appendEvent(session.id, {
+        type: 'info',
+        agentRole: 'sales-associate',
+        payload: {
+          event: 'l5_runtime_learning_loaded',
+          scenarioId: 'first_order',
+          stepId: 'create_customer',
+          overlayCount: 2,
+          overlays: [
+            { proposalId: 'proposal-1', materializationId: 'materialization-1', checksum: 'checksum-1' },
+            { proposalId: 'proposal-2', materializationId: 'materialization-2', checksum: 'checksum-2' },
+          ],
+        },
+      });
+
+      const res = await app.inject({ method: 'GET', url: '/api/p2/maturity' });
+      expect(res.statusCode).toBe(200);
+
+      const l5 = res.json().levels.l5;
+      expect(l5.capabilities).toContainEqual(expect.objectContaining({
+        id: 'runtime_learning',
+        state: 'complete',
+        evidence: expect.stringContaining('2 overlay(s) L5'),
+      }));
+      expect(l5.signals).toContainEqual(expect.objectContaining({
+        label: 'Runtime learning loads',
+        value: 1,
+        tone: 'success',
+      }));
+      expect(l5.signals).toContainEqual(expect.objectContaining({
+        label: 'Runtime overlays usados',
+        value: 2,
+        tone: 'success',
+      }));
     });
   });
 
