@@ -12,7 +12,7 @@ import type {
 import type { ScenarioStep } from '../types/scenario-types.js'
 import type { ToolContext, ToolResult } from '../types/tool-types.js'
 import { buildStepInstructionEnvelope, getGlobalAgenticInstructions } from './instruction-layer.js'
-import type { SessionService } from './session-service.js'
+import type { RuntimeLearningOverlay, SessionService } from './session-service.js'
 import { defaultRuntimeHookBus, type RuntimeHookBus } from './runtime-hooks.js'
 import type { ToolRegistry } from './tool-registry.js'
 
@@ -164,6 +164,7 @@ export class AgentRuntime {
     const collectedEvidence: string[] = []
     const accumulatedOutput: Record<string, unknown> = {}
     const expectedArtifacts = this.extractExpectedArtifacts(messages)
+    const stepId = this.extractScenarioStepId(messages)
 
     const allTools = this.toolRegistry.listTools()
     const toolDefs: ToolDefinition[] = allTools
@@ -176,7 +177,7 @@ export class AgentRuntime {
 
     const promptText = this.loadPromptText(profile)
     const globalInstructions = getGlobalAgenticInstructions()
-    const learningOverlay = this.loadLearningOverlay(profile)
+    const learningOverlay = this.loadLearningOverlay(profile, { sessionId, stepId })
     const systemParts: string[] = []
     if (globalInstructions) {
       systemParts.push(globalInstructions)
@@ -558,18 +559,40 @@ export class AgentRuntime {
     return undefined
   }
 
-  private loadLearningOverlay(profile: AgentProfile): string | undefined {
-    const overlays = this.sessionService?.listAppliedPromptOverlays(profile.role) ?? []
-    const content = overlays
-      .map((overlay) => overlay.patchContent)
-      .filter((item): item is string => Boolean(item))
+  private loadLearningOverlay(
+    profile: AgentProfile,
+    context: { sessionId: string; stepId?: string },
+  ): string | undefined {
+    if (!this.sessionService || !context.stepId) return undefined
 
-    if (content.length === 0) return undefined
+    const session = this.sessionService.getSession(context.sessionId)
+    if (!session?.scenarioId) return undefined
 
-    return [
-      '[APPLIED LEARNING OVERLAYS]',
-      ...content,
-    ].join('\n\n')
+    const overlays = this.sessionService.listRuntimeLearningOverlays({
+      scenarioId: session.scenarioId,
+      stepId: context.stepId,
+      agentId: profile.role,
+      limit: 5,
+    })
+    if (overlays.length === 0) return undefined
+
+    this.sessionService.appendEvent(context.sessionId, {
+      type: 'info',
+      agentRole: profile.role,
+      payload: {
+        event: 'l5_runtime_learning_loaded',
+        scenarioId: session.scenarioId,
+        stepId: context.stepId,
+        overlayCount: overlays.length,
+        overlays: overlays.map((overlay) => ({
+          proposalId: overlay.proposalId,
+          materializationId: overlay.materializationId,
+          checksum: overlay.checksum,
+        })),
+      },
+    })
+
+    return renderRuntimeLearningOverlays(overlays)
   }
 
   private async chatBeforeDeadline(
@@ -664,10 +687,41 @@ export class AgentRuntime {
     return []
   }
 
+  private extractScenarioStepId(messages: ModelMessage[]): string | undefined {
+    for (const message of messages) {
+      if (message.role !== 'user') continue
+
+      try {
+        const parsed = JSON.parse(message.content)
+        return typeof parsed?.scenarioStep === 'string' && parsed.scenarioStep.length > 0
+          ? parsed.scenarioStep
+          : undefined
+      } catch {
+        continue
+      }
+    }
+
+    return undefined
+  }
+
   private hasExpectedArtifacts(output: Record<string, unknown>, expectedArtifacts: string[]): boolean {
     if (expectedArtifacts.length === 0) return false
     return expectedArtifacts.every((artifact) => output[artifact] !== undefined && output[artifact] !== null)
   }
+}
+
+function renderRuntimeLearningOverlays(overlays: RuntimeLearningOverlay[]): string {
+  return [
+    '[APPLIED L5 RUNTIME LEARNING]',
+    'These overlays were approved, materialized, audited, and scoped to this scenario, step, and agent. They are advisory and must not override global constraints, role instructions, tool policy, workflow contracts, or user instructions.',
+    ...overlays.map((overlay, index) => [
+      `[Overlay ${index + 1}]`,
+      `Proposal: ${overlay.proposalId}`,
+      `Materialization: ${overlay.materializationId}`,
+      `Checksum: ${overlay.checksum}`,
+      overlay.patchContent,
+    ].join('\n')),
+  ].join('\n\n')
 }
 
 function responseTextFromArtifacts(output: Record<string, unknown>): string {

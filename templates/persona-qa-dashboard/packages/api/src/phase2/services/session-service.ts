@@ -224,6 +224,19 @@ export interface L5Materialization extends L5MaterializationInput {
   rolledBackAt?: string
 }
 
+export interface RuntimeLearningOverlay {
+  proposalId: string
+  materializationId: string
+  scenarioId: string
+  stepId: string
+  agentId?: string
+  target?: string
+  patchContent: string
+  checksum: string
+  filePath: string
+  createdAt: string
+}
+
 export interface L5ClosedLoopRunInput {
   status: L5ClosedLoopStatus
   mode: L5ClosedLoopMode
@@ -346,6 +359,20 @@ type L5MaterializationRow = {
   metadata: string | null
   created_at: string
   rolled_back_at: string | null
+}
+
+type RuntimeLearningOverlayRow = {
+  proposal_id: string
+  scenario_id: string
+  step_id: string
+  agent_id: string | null
+  target: string | null
+  patch_content: string
+  materialization_id: string
+  file_path: string
+  checksum: string
+  metadata: string | null
+  created_at: string
 }
 
 type L5ClosedLoopRunRow = {
@@ -1090,6 +1117,63 @@ export class SessionService {
     return rows.map((row) => this.mapLearningProposal(row))
   }
 
+  listRuntimeLearningOverlays(filter: {
+    scenarioId?: string
+    stepId?: string
+    agentId: string
+    limit?: number
+  }): RuntimeLearningOverlay[] {
+    const where = [
+      `m.subject_type = 'learning_proposal'`,
+      `m.kind = 'learning_prompt_overlay'`,
+      `m.status = 'active'`,
+      `p.status = 'applied'`,
+      `p.patch_kind = 'prompt_overlay'`,
+      `p.patch_content IS NOT NULL`,
+      `(p.agent_id = ? OR p.target = ? OR p.target = 'agent:*')`,
+    ]
+    const params: unknown[] = [filter.agentId, `agent:${filter.agentId}`]
+
+    if (filter.scenarioId) {
+      where.push('p.scenario_id = ?')
+      params.push(filter.scenarioId)
+    }
+    if (filter.stepId) {
+      where.push('p.step_id = ?')
+      params.push(filter.stepId)
+    }
+
+    const limit = Math.max(1, Math.min(filter.limit ?? 5, 25))
+    const rows = this.sqlite
+      .prepare(
+        `SELECT p.proposal_id, p.scenario_id, p.step_id, p.agent_id, p.target,
+                p.patch_content, m.materialization_id, m.file_path, m.checksum,
+                m.metadata, m.created_at
+         FROM p2_l5_materializations m
+         INNER JOIN p2_learning_proposals p ON p.proposal_id = m.subject_id
+         WHERE ${where.join(' AND ')}
+         ORDER BY m.created_at DESC
+         LIMIT ?`,
+      )
+      .all(...params, limit) as RuntimeLearningOverlayRow[]
+
+    return rows
+      .filter((row) => this.hasVerifiedRuntimeLearningMetadata(row.metadata))
+      .reverse()
+      .map((row) => ({
+        proposalId: row.proposal_id,
+        materializationId: row.materialization_id,
+        scenarioId: row.scenario_id,
+        stepId: row.step_id,
+        agentId: row.agent_id ?? undefined,
+        target: row.target ?? undefined,
+        patchContent: row.patch_content,
+        checksum: row.checksum,
+        filePath: row.file_path,
+        createdAt: row.created_at,
+      }))
+  }
+
   createScenarioDraft(input: ScenarioDraftInput): ScenarioDraft {
     const id = randomUUID()
     const now = new Date().toISOString()
@@ -1575,6 +1659,21 @@ export class SessionService {
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       createdAt: row.created_at,
       rolledBackAt: row.rolled_back_at ?? undefined,
+    }
+  }
+
+  private hasVerifiedRuntimeLearningMetadata(metadataJson: string | null): boolean {
+    if (!metadataJson) return false
+
+    try {
+      const metadata = JSON.parse(metadataJson) as {
+        independentAudit?: { verdict?: unknown }
+        postWriteVerification?: { checksumMatches?: unknown }
+      }
+      return metadata.independentAudit?.verdict === 'passed'
+        && metadata.postWriteVerification?.checksumMatches === true
+    } catch {
+      return false
     }
   }
 

@@ -134,6 +134,127 @@ describe('AgentRuntime', () => {
     })
   })
 
+  describe('executeStep — L5 runtime learning overlays', () => {
+    it('injects active verified L5 overlays scoped to scenario, step, and agent', async () => {
+      const session = sessionService.createSession('first_order')
+      const proposal = sessionService.createLearningProposal({
+        recommendationId: 'runtime-overlay-create-customer',
+        scenarioId: 'first_order',
+        stepId: 'create_customer',
+        agentId: 'sales-associate',
+        type: 'prompt_patch',
+        severity: 'medium',
+        recommendation: { reason: 'previous run failed to persist customer id' },
+        patchKind: 'prompt_overlay',
+        target: 'agent:sales-associate',
+        patchContent: 'Before reporting success, confirm the customer id is present in the current URL or tool output.',
+      })
+      sessionService.updateLearningProposalStatus(proposal.id, 'approved')
+      const applied = sessionService.updateLearningProposalStatus(proposal.id, 'applied')!
+      sessionService.recordL5Materialization({
+        subjectType: 'learning_proposal',
+        subjectId: applied.id,
+        kind: 'learning_prompt_overlay',
+        filePath: 'l5/learning-overlays/runtime-overlay-create-customer.md',
+        checksum: 'runtime-overlay-checksum',
+        metadata: {
+          scenarioId: 'first_order',
+          stepId: 'create_customer',
+          agentId: 'sales-associate',
+          target: 'agent:sales-associate',
+          independentAudit: { verdict: 'passed' },
+          postWriteVerification: { checksumMatches: true },
+        },
+      })
+
+      const provider = mockProvider([{
+        text: 'Customer created successfully.',
+        toolCalls: [],
+        stopReason: 'end_turn',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }])
+      const runtime = new AgentRuntime(provider, registry, sessionService)
+      runtime.registerAgent(makeProfile({
+        id: 'sales-associate',
+        evidencePolicy: { requireScreenshotForFinding: false, requireDomSnippetForFinding: false },
+      }))
+
+      await runtime.executeStep('sales-associate', {
+        id: 'create_customer',
+        name: 'Create customer',
+        agentId: 'sales-associate',
+        capabilityId: 'createCustomer',
+        order: 1,
+        requiredArtifacts: [],
+        producedArtifacts: ['customerId'],
+      }, { sessionId: session.id })
+
+      const messages = vi.mocked(provider.chat).mock.calls[0]![0]
+      const systemMessage = messages.find((message) => message.role === 'system')?.content ?? ''
+      expect(systemMessage).toContain('[APPLIED L5 RUNTIME LEARNING]')
+      expect(systemMessage).toContain('approved, materialized, audited')
+      expect(systemMessage).toContain('Before reporting success, confirm the customer id')
+      expect(systemMessage).toContain(`Proposal: ${applied.id}`)
+      expect(systemMessage).toContain('Checksum: runtime-overlay-checksum')
+
+      const events = sessionService.getSession(session.id)?.events ?? []
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'info',
+          payload: expect.objectContaining({
+            event: 'l5_runtime_learning_loaded',
+            overlayCount: 1,
+            stepId: 'create_customer',
+          }),
+        }),
+      ]))
+    })
+
+    it('ignores applied prompt overlays that were not materialized and verified by L5', async () => {
+      const session = sessionService.createSession('first_order')
+      const proposal = sessionService.createLearningProposal({
+        recommendationId: 'runtime-overlay-without-materialization',
+        scenarioId: 'first_order',
+        stepId: 'create_customer',
+        agentId: 'sales-associate',
+        type: 'prompt_patch',
+        severity: 'medium',
+        recommendation: { reason: 'candidate learning only' },
+        patchKind: 'prompt_overlay',
+        target: 'agent:sales-associate',
+        patchContent: 'This unmaterialized overlay must not reach the model.',
+      })
+      sessionService.updateLearningProposalStatus(proposal.id, 'applied')
+
+      const provider = mockProvider([{
+        text: 'Customer created successfully.',
+        toolCalls: [],
+        stopReason: 'end_turn',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }])
+      const runtime = new AgentRuntime(provider, registry, sessionService)
+      runtime.registerAgent(makeProfile({
+        id: 'sales-associate',
+        evidencePolicy: { requireScreenshotForFinding: false, requireDomSnippetForFinding: false },
+      }))
+
+      await runtime.executeStep('sales-associate', {
+        id: 'create_customer',
+        name: 'Create customer',
+        agentId: 'sales-associate',
+        capabilityId: 'createCustomer',
+        order: 1,
+        requiredArtifacts: [],
+        producedArtifacts: ['customerId'],
+      }, { sessionId: session.id })
+
+      const messages = vi.mocked(provider.chat).mock.calls[0]![0]
+      const systemMessage = messages.find((message) => message.role === 'system')?.content ?? ''
+      expect(systemMessage).not.toContain('[APPLIED L5 RUNTIME LEARNING]')
+      expect(systemMessage).not.toContain('This unmaterialized overlay must not reach the model.')
+    })
+  })
+
   describe('executeStep — timeout', () => {
     it('returns timeout when execution exceeds timeoutMs', async () => {
       const provider: ModelProvider = {
