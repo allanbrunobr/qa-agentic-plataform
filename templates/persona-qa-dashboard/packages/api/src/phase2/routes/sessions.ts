@@ -6,12 +6,19 @@ import { diagnoseSessionFailure } from '../services/failure-diagnosis-service.js
 import { FailurePatternService } from '../services/failure-pattern-service.js';
 import { GovernancePolicyService } from '../services/governance-policy-service.js';
 import { IndependentAuditorService } from '../services/independent-auditor-service.js';
+import { L5MaterializationService } from '../services/l5-materialization-service.js';
 import { LearningControlService } from '../services/learning-control-service.js';
 import { LearningPlaybookService } from '../services/learning-playbook-service.js';
 import { MetaOrchestrator } from '../services/meta-orchestrator.js';
 import { ProfileTuningService } from '../services/profile-tuning-service.js';
 import { SelfHealingService } from '../services/self-healing-service.js';
-import { resolvePhase2ArtifactPath, SessionService, type GovernanceSubjectType } from '../services/session-service.js';
+import {
+  resolvePhase2ArtifactPath,
+  SessionService,
+  type GovernanceSubjectType,
+  type L5MaterializationStatus,
+  type L5MaterializationSubjectType,
+} from '../services/session-service.js';
 import type { Session } from '../types/session-types.js';
 
 // Singleton session service instance for Phase 2 routes
@@ -314,7 +321,8 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
         request.body?.reviewedBy,
       );
       if (!draft) return reply.status(404).send({ error: 'Scenario draft not found' });
-      return reply.send(draft);
+      const materialization = await new L5MaterializationService(service).materializeScenarioDraft(draft);
+      return reply.send({ ...draft, materialization });
     },
   );
 
@@ -393,6 +401,19 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  app.get<{ Querystring: { subjectType?: string; subjectId?: string; status?: string; limit?: string } }>(
+    '/api/p2/materializations',
+    async (request, reply) => {
+      const service = getSessionService();
+      return reply.send(service.listL5Materializations({
+        subjectType: isL5MaterializationSubjectType(request.query.subjectType) ? request.query.subjectType : undefined,
+        subjectId: request.query.subjectId,
+        status: isL5MaterializationStatus(request.query.status) ? request.query.status : undefined,
+        limit: request.query.limit ? Number(request.query.limit) : 100,
+      }));
+    },
+  );
+
   app.post<{ Body: { scenarioId?: string; limit?: number } }>(
     '/api/p2/learning/proposals/generate',
     async (request, reply) => {
@@ -425,7 +446,8 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
       try {
         const service = getSessionService();
         const proposal = new LearningControlService(service).applyProposal(request.params.id);
-        return reply.send(proposal);
+        const materialization = await new L5MaterializationService(service).materializeLearningProposal(proposal);
+        return reply.send({ ...proposal, materialization });
       } catch (error) {
         return reply.status(409).send({ error: error instanceof Error ? error.message : String(error) });
       }
@@ -525,4 +547,12 @@ function isScenarioDraftStatus(value: unknown): value is 'pending' | 'approved' 
 
 function isGovernanceSubjectType(value: unknown): value is GovernanceSubjectType {
   return value === 'learning_proposal' || value === 'scenario_draft' || value === 'healing_action';
+}
+
+function isL5MaterializationSubjectType(value: unknown): value is L5MaterializationSubjectType {
+  return value === 'learning_proposal' || value === 'scenario_draft' || value === 'healing_action';
+}
+
+function isL5MaterializationStatus(value: unknown): value is L5MaterializationStatus {
+  return value === 'active' || value === 'rolled_back';
 }

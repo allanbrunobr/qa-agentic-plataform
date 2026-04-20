@@ -1,3 +1,6 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { phase2SessionRoutes, setSessionService } from '../routes/sessions.js';
@@ -6,17 +9,25 @@ import { SessionService } from '../services/session-service.js';
 describe('Phase 2 Session Routes', () => {
   const app = Fastify();
   let sessionService: SessionService;
+  let previousArtifactDir: string | undefined;
 
   beforeAll(async () => {
+    previousArtifactDir = process.env.PHASE2_ARTIFACT_DIR;
     await app.register(phase2SessionRoutes);
     await app.ready();
   });
 
   afterAll(async () => {
+    if (previousArtifactDir === undefined) {
+      delete process.env.PHASE2_ARTIFACT_DIR;
+    } else {
+      process.env.PHASE2_ARTIFACT_DIR = previousArtifactDir;
+    }
     await app.close();
   });
 
   beforeEach(() => {
+    process.env.PHASE2_ARTIFACT_DIR = mkdtempSync(path.join(tmpdir(), 'p2-route-artifacts-'));
     sessionService = new SessionService();
     setSessionService(sessionService);
   });
@@ -214,7 +225,25 @@ describe('Phase 2 Session Routes', () => {
       });
 
       expect(promote.statusCode).toBe(200);
-      expect(promote.json()).toEqual(expect.objectContaining({ status: 'promoted' }));
+      expect(promote.json()).toEqual(expect.objectContaining({
+        status: 'promoted',
+        materialization: expect.objectContaining({
+          subjectType: 'scenario_draft',
+          subjectId: draft.id,
+          kind: 'scenario_draft_manifest',
+          status: 'active',
+        }),
+      }));
+      const materializations = await app.inject({
+        method: 'GET',
+        url: `/api/p2/materializations?subjectType=scenario_draft&subjectId=${draft.id}`,
+      });
+      expect(materializations.statusCode).toBe(200);
+      expect(materializations.json()).toContainEqual(expect.objectContaining({
+        subjectType: 'scenario_draft',
+        subjectId: draft.id,
+        kind: 'scenario_draft_manifest',
+      }));
       expect(sessionService.listGovernanceDecisions({
         subjectType: 'scenario_draft',
         subjectId: draft.id,
@@ -274,6 +303,49 @@ describe('Phase 2 Session Routes', () => {
         action: 'approve',
         verdict: 'blocked',
         requirements: expect.arrayContaining(['independent_audit', 'human_review']),
+      }));
+    });
+
+    it('should materialize applied learning proposals', async () => {
+      const proposal = sessionService.createLearningProposal({
+        recommendationId: 'route-learning-apply',
+        scenarioId: 'test_scenario',
+        stepId: 'step_1',
+        agentId: 'sales-associate',
+        type: 'prompt_patch',
+        severity: 'medium',
+        recommendation: { reason: 'test' },
+        patchKind: 'prompt_overlay',
+        target: 'agent:sales-associate',
+        patchContent: '[LEARNING OVERLAY]',
+      });
+
+      const approve = await app.inject({
+        method: 'POST',
+        url: `/api/p2/learning/proposals/${proposal.id}/approve`,
+      });
+      expect(approve.statusCode).toBe(200);
+
+      const apply = await app.inject({
+        method: 'POST',
+        url: `/api/p2/learning/proposals/${proposal.id}/apply`,
+      });
+
+      expect(apply.statusCode).toBe(200);
+      expect(apply.json()).toEqual(expect.objectContaining({
+        status: 'applied',
+        materialization: expect.objectContaining({
+          subjectType: 'learning_proposal',
+          subjectId: proposal.id,
+          kind: 'learning_prompt_overlay',
+          status: 'active',
+        }),
+      }));
+      expect(sessionService.listL5Materializations({
+        subjectType: 'learning_proposal',
+        subjectId: proposal.id,
+      })).toContainEqual(expect.objectContaining({
+        kind: 'learning_prompt_overlay',
       }));
     });
   });

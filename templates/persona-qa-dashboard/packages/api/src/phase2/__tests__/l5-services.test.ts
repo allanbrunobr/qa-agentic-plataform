@@ -1,5 +1,10 @@
+import { mkdtemp, readFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CoverageAnalysisService } from '../services/coverage-analysis-service.js'
+import { L5MaterializationService } from '../services/l5-materialization-service.js'
+import { LearningControlService } from '../services/learning-control-service.js'
 import { calculateRiskScore, MetaOrchestrator } from '../services/meta-orchestrator.js'
 import { ProfileTuningService } from '../services/profile-tuning-service.js'
 import { SelfHealingService } from '../services/self-healing-service.js'
@@ -20,6 +25,79 @@ describe('L5 controlled feedback services', () => {
     expect(draft.status).toBe('pending')
     expect(draft.gapType).toBe('capability_uncovered')
     expect(service.listScenarioDrafts()).toHaveLength(1)
+  })
+
+  it('materializes promoted scenario drafts as durable L5 artifacts', async () => {
+    const service = new SessionService(':memory:')
+    const artifactRoot = await mkdtemp(path.join(tmpdir(), 'l5-scenario-artifacts-'))
+    const draft = service.createScenarioDraft({
+      scenarioId: 'generated_checkout_flow',
+      name: 'Generated Checkout Flow',
+      description: 'Covers an uncovered flow',
+      contract: { scenario_id: 'generated_checkout_flow', quality_gate: 'restricted' },
+      gapType: 'capability_uncovered',
+      gapEvidence: [{ route: '/checkout' }],
+    })
+    const promoted = service.updateScenarioDraftStatus(draft.id, 'promoted', 'qa_lead')
+
+    const materialization = await new L5MaterializationService(service, { artifactRoot })
+      .materializeScenarioDraft(promoted!)
+
+    expect(materialization).toEqual(expect.objectContaining({
+      subjectType: 'scenario_draft',
+      subjectId: draft.id,
+      kind: 'scenario_draft_manifest',
+      status: 'active',
+      checksum: expect.stringMatching(/^[a-f0-9]{64}$/),
+    }))
+    const content = JSON.parse(await readFile(materialization.filePath, 'utf8'))
+    expect(content).toEqual(expect.objectContaining({
+      kind: 'scenario_draft',
+      source: expect.objectContaining({
+        draftId: draft.id,
+        scenarioId: 'generated_checkout_flow',
+      }),
+    }))
+    expect(service.listL5Materializations({
+      subjectType: 'scenario_draft',
+      subjectId: draft.id,
+    })).toContainEqual(expect.objectContaining({
+      kind: 'scenario_draft_manifest',
+      checksum: materialization.checksum,
+    }))
+  })
+
+  it('materializes applied prompt overlays as durable L5 artifacts', async () => {
+    const service = new SessionService(':memory:')
+    const artifactRoot = await mkdtemp(path.join(tmpdir(), 'l5-learning-artifacts-'))
+    const proposal = service.createLearningProposal({
+      recommendationId: 'overlay-materialization',
+      scenarioId: 'first_visit',
+      stepId: 'create_customer',
+      agentId: 'front_desk',
+      type: 'prompt_patch',
+      severity: 'medium',
+      recommendation: { reason: 'tool needs stricter success criteria' },
+      patchKind: 'prompt_overlay',
+      target: 'agent:front_desk',
+      patchContent: 'Never report customer creation unless the persisted customer id is present.',
+    })
+    const learning = new LearningControlService(service)
+    learning.approveProposal(proposal.id)
+    const applied = learning.applyProposal(proposal.id)
+
+    const materialization = await new L5MaterializationService(service, { artifactRoot })
+      .materializeLearningProposal(applied)
+
+    expect(materialization).toEqual(expect.objectContaining({
+      subjectType: 'learning_proposal',
+      subjectId: proposal.id,
+      kind: 'learning_prompt_overlay',
+      status: 'active',
+    }))
+    const content = await readFile(materialization.filePath, 'utf8')
+    expect(content).toContain('# L5 Learning Overlay')
+    expect(content).toContain('Never report customer creation unless the persisted customer id is present.')
   })
 
   it('recommends timeout tuning when p95 duration approaches profile timeout', () => {

@@ -132,6 +132,8 @@ export type GovernanceSubjectType = 'learning_proposal' | 'scenario_draft' | 'he
 export type GovernanceAction = 'generate' | 'approve' | 'apply' | 'reject' | 'evaluate' | 'rollback' | 'promote'
 export type GovernanceVerdict = 'allowed' | 'blocked'
 export type SyntheticToolClosureReason = 'timeout' | 'interruption'
+export type L5MaterializationSubjectType = 'learning_proposal' | 'scenario_draft' | 'healing_action'
+export type L5MaterializationStatus = 'active' | 'rolled_back'
 
 export interface LearningProposalInput {
   recommendationId: string
@@ -202,6 +204,22 @@ export interface GovernanceDecisionInput {
 export interface GovernanceDecision extends GovernanceDecisionInput {
   id: string
   createdAt: string
+}
+
+export interface L5MaterializationInput {
+  subjectType: L5MaterializationSubjectType
+  subjectId: string
+  kind: string
+  filePath: string
+  checksum: string
+  metadata?: Record<string, unknown>
+}
+
+export interface L5Materialization extends L5MaterializationInput {
+  id: string
+  status: L5MaterializationStatus
+  createdAt: string
+  rolledBackAt?: string
 }
 
 type StepPerformanceRow = {
@@ -294,6 +312,19 @@ type GovernanceDecisionRow = {
   requirements: string | null
   metadata: string | null
   created_at: string
+}
+
+type L5MaterializationRow = {
+  materialization_id: string
+  subject_type: L5MaterializationSubjectType
+  subject_id: string
+  kind: string
+  status: L5MaterializationStatus
+  file_path: string
+  checksum: string
+  metadata: string | null
+  created_at: string
+  rolled_back_at: string | null
 }
 
 type ToolClosureRow = {
@@ -1265,6 +1296,93 @@ export class SessionService {
     return rows.map((row) => this.mapGovernanceDecision(row))
   }
 
+  recordL5Materialization(input: L5MaterializationInput): L5Materialization {
+    const id = randomUUID()
+    const createdAt = new Date().toISOString()
+    this.sqlite
+      .prepare(
+        `INSERT INTO p2_l5_materializations (
+           materialization_id, subject_type, subject_id, kind, status,
+           file_path, checksum, metadata, created_at, rolled_back_at
+         ) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, NULL)`,
+      )
+      .run(
+        id,
+        input.subjectType,
+        input.subjectId,
+        input.kind,
+        input.filePath,
+        input.checksum,
+        input.metadata ? JSON.stringify(input.metadata) : null,
+        createdAt,
+      )
+
+    return {
+      ...input,
+      id,
+      status: 'active',
+      createdAt,
+    }
+  }
+
+  listL5Materializations(filter: {
+    subjectType?: L5MaterializationSubjectType
+    subjectId?: string
+    status?: L5MaterializationStatus
+    limit?: number
+  } = {}): L5Materialization[] {
+    const where: string[] = []
+    const params: unknown[] = []
+    if (filter.subjectType) {
+      where.push('subject_type = ?')
+      params.push(filter.subjectType)
+    }
+    if (filter.subjectId) {
+      where.push('subject_id = ?')
+      params.push(filter.subjectId)
+    }
+    if (filter.status) {
+      where.push('status = ?')
+      params.push(filter.status)
+    }
+
+    const limit = Math.max(1, Math.min(filter.limit ?? 100, 500))
+    const rows = this.sqlite
+      .prepare(
+        `SELECT materialization_id, subject_type, subject_id, kind, status,
+                file_path, checksum, metadata, created_at, rolled_back_at
+         FROM p2_l5_materializations
+         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(...params, limit) as L5MaterializationRow[]
+
+    return rows.map((row) => this.mapL5Materialization(row))
+  }
+
+  markL5MaterializationRolledBack(id: string): L5Materialization | undefined {
+    const timestamp = new Date().toISOString()
+    this.sqlite
+      .prepare(
+        `UPDATE p2_l5_materializations
+         SET status = 'rolled_back', rolled_back_at = ?
+         WHERE materialization_id = ?`,
+      )
+      .run(timestamp, id)
+
+    const row = this.sqlite
+      .prepare(
+        `SELECT materialization_id, subject_type, subject_id, kind, status,
+                file_path, checksum, metadata, created_at, rolled_back_at
+         FROM p2_l5_materializations
+         WHERE materialization_id = ?`,
+      )
+      .get(id) as L5MaterializationRow | undefined
+
+    return row ? this.mapL5Materialization(row) : undefined
+  }
+
   private mapLearningProposal(row: LearningProposalRow): LearningProposal {
     return {
       id: row.proposal_id,
@@ -1329,6 +1447,21 @@ export class SessionService {
       requirements: row.requirements ? JSON.parse(row.requirements) : undefined,
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       createdAt: row.created_at,
+    }
+  }
+
+  private mapL5Materialization(row: L5MaterializationRow): L5Materialization {
+    return {
+      id: row.materialization_id,
+      subjectType: row.subject_type,
+      subjectId: row.subject_id,
+      kind: row.kind,
+      status: row.status,
+      filePath: row.file_path,
+      checksum: row.checksum,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      createdAt: row.created_at,
+      rolledBackAt: row.rolled_back_at ?? undefined,
     }
   }
 
@@ -1557,6 +1690,20 @@ export class SessionService {
         created_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS p2_l5_materializations (
+        materialization_id TEXT PRIMARY KEY,
+        subject_type TEXT NOT NULL,
+        subject_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        status TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        checksum TEXT NOT NULL,
+        metadata TEXT,
+        created_at TEXT NOT NULL,
+        rolled_back_at TEXT,
+        UNIQUE(subject_type, subject_id, kind, file_path)
+      );
+
       CREATE TABLE IF NOT EXISTS p2_tool_ledger_closures (
         session_id TEXT NOT NULL REFERENCES p2_sessions(session_id),
         tool_call_id TEXT NOT NULL,
@@ -1576,6 +1723,7 @@ export class SessionService {
       CREATE INDEX IF NOT EXISTS idx_p2_scenario_drafts_status ON p2_scenario_drafts(status, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_healing_actions_created ON p2_healing_actions(created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_governance_subject ON p2_governance_decisions(subject_type, subject_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_p2_l5_materializations_subject ON p2_l5_materializations(subject_type, subject_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_tool_ledger_closures_session ON p2_tool_ledger_closures(session_id, closed_at);
     `)
   }
