@@ -101,6 +101,7 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
   const completedClosedLoops = closedLoopRuns.filter((run) => run.status === 'completed').length
   const closedLoopsNeedingReview = closedLoopRuns.filter((run) => run.status === 'needs_review').length
   const runtimeLearningUsage = summarizeRuntimeLearningUsage(sessions)
+  const terminalSessionAudits = summarizeTerminalSessionAudits(sessions)
 
   const l4Status: L4MaturityStatus = restrictedGates > 0 || contractViolations > 0
     ? 'attention'
@@ -186,8 +187,10 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
           {
             id: 'independent_audit',
             label: 'Independent audit',
-            state: 'guarded',
-            evidence: 'Decisões de governança recebem auditoria independente.',
+            state: terminalSessionAudits.failed > 0 ? 'guarded' : terminalSessionAudits.total > 0 ? 'complete' : 'guarded',
+            evidence: terminalSessionAudits.total > 0
+              ? `${terminalSessionAudits.total} sessão(ões) receberam verificação independente de lifecycle; ${terminalSessionAudits.failed} falharam.`
+              : 'Decisões de governança recebem auditoria independente; auditoria terminal é registrada ao final das execuções.',
           },
           {
             id: 'self_healing',
@@ -246,6 +249,11 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
             tone: runtimeLearningUsage.loads > 0 ? 'success' : verifiedMaterializations > 0 ? 'warning' : 'neutral',
           },
           { label: 'Auditorias independentes', value: independentAudits, tone: independentAudits > 0 ? 'success' : 'neutral' },
+          {
+            label: 'Auditorias de sessão',
+            value: terminalSessionAudits.total,
+            tone: terminalSessionAudits.failed > 0 ? 'danger' : terminalSessionAudits.total > 0 ? 'success' : 'neutral',
+          },
           { label: 'Ações bounded', value: boundedAutomaticActions, tone: boundedAutomaticActions > 0 ? 'success' : 'neutral' },
           { label: 'Materializações ativas', value: activeMaterializations, tone: activeMaterializations > 0 ? 'success' : 'neutral' },
           { label: 'Materializações verificadas', value: verifiedMaterializations, tone: verifiedMaterializations > 0 ? 'success' : 'neutral' },
@@ -301,4 +309,27 @@ function summarizeRuntimeLearningUsage(sessions: ReturnType<SessionService['getA
     overlayLoads,
     materializations: materializationIds.size,
   }
+}
+
+function summarizeTerminalSessionAudits(sessions: ReturnType<SessionService['getAllSessions']>): {
+  total: number
+  failed: number
+} {
+  let total = 0
+  let failed = 0
+
+  for (const session of sessions) {
+    for (const event of session.events) {
+      if (event.type !== 'auditor_evaluation') continue
+      const payload = event.payload ?? event.data
+      if (payload?.['source'] !== 'terminal_session_audit') continue
+
+      total += 1
+      if (payload['verdict'] === 'failed') {
+        failed += 1
+      }
+    }
+  }
+
+  return { total, failed }
 }

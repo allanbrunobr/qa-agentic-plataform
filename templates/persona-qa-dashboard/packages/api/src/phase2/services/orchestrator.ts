@@ -7,6 +7,7 @@ import { AdaptiveDecisionEngine } from './adaptive-decision-engine.js';
 import { resolvePhase2ArtifactPath, type SessionService } from './session-service.js';
 import type { SensorRunner } from './sensor-runner.js';
 import { hasRenderablePageContent, getEvidencePageUrl, type EvidencePage } from '../tools/browser-page-evidence.js';
+import { IndependentAuditorService } from './independent-auditor-service.js';
 
 export class Orchestrator {
   private readonly adaptiveDecisionEngine: AdaptiveDecisionEngine;
@@ -147,6 +148,7 @@ export class Orchestrator {
                 stepsCompleted,
                 reason: handoffError,
               });
+              this.recordIndependentSessionAudit(sessionId, 'handoff_failure');
               this.sessionService.addEvent(sessionId, 'run_failed', {
                 scenarioId: scenario.id,
                 failedStep: step.id,
@@ -266,6 +268,7 @@ export class Orchestrator {
           stepsCompleted,
           reason: failDecision.reason,
         });
+        this.recordIndependentSessionAudit(sessionId, 'step_failure');
         this.sessionService.addEvent(sessionId, 'run_failed', {
           scenarioId: scenario.id,
           failedStep: step.id,
@@ -291,6 +294,7 @@ export class Orchestrator {
       stepsCompleted,
       totalSteps: executableSteps.length,
     });
+    this.recordIndependentSessionAudit(sessionId, 'run_completed');
     this.sessionService.addEvent(sessionId, 'run_completed', {
       scenarioId: scenario.id,
       stepsCompleted,
@@ -419,6 +423,7 @@ export class Orchestrator {
                 stepsCompleted,
                 reason: handoffError,
               });
+              this.recordIndependentSessionAudit(sessionId, 'handoff_failure');
               this.sessionService.addEvent(sessionId, 'run_failed', {
                 failedStep: step.id,
                 stepsCompleted,
@@ -471,6 +476,7 @@ export class Orchestrator {
           stepsCompleted,
           reason: `Step ${step.id} failed after ${retryPolicy.maxAttempts} attempt(s)`,
         });
+        this.recordIndependentSessionAudit(sessionId, 'step_failure');
         this.sessionService.addEvent(sessionId, 'run_failed', {
           failedStep: step.id,
           stepsCompleted,
@@ -496,6 +502,7 @@ export class Orchestrator {
       totalSteps: executableSteps.length,
       resumed: true,
     });
+    this.recordIndependentSessionAudit(sessionId, 'run_completed');
     this.sessionService.addEvent(sessionId, 'run_completed', {
       scenarioId: scenario.id,
       stepsCompleted,
@@ -601,6 +608,24 @@ export class Orchestrator {
       });
       throw error;
     }
+  }
+
+  private recordIndependentSessionAudit(sessionId: string, trigger: string): void {
+    const session = this.sessionService.getSession(sessionId);
+    if (!session) return;
+
+    const evaluation = new IndependentAuditorService().evaluateSession(session);
+    this.sessionService.addEvent(sessionId, 'auditor_evaluation', {
+      agentRole: 'auditor',
+      auditorRole: 'auditor',
+      source: 'terminal_session_audit',
+      trigger,
+      sessionId,
+      verdict: evaluation.verdict,
+      checkedAt: evaluation.checkedAt,
+      summary: evaluation.summary,
+      findings: evaluation.findings,
+    });
   }
 
   private async captureStepScreenshot(

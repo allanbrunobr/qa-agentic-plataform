@@ -124,6 +124,7 @@ describe('Orchestrator', () => {
       expect(eventTypes).toContain('step_started');
       expect(eventTypes).toContain('step_completed');
       expect(eventTypes).toContain('session_completed');
+      expect(eventTypes).toContain('auditor_evaluation');
       expect(eventTypes).toContain('run_completed');
     });
 
@@ -148,6 +149,29 @@ describe('Orchestrator', () => {
         stepId: 'step_1',
         attempt: 1,
         status: 'completed',
+      });
+    });
+
+    it('should record an independent auditor verdict after terminal session events', async () => {
+      const scenario = makeScenario();
+      vi.spyOn(agentRuntime, 'executeStep').mockResolvedValue(makeSuccessOutput(0));
+
+      const result = await orchestrator.executeRun(scenario);
+      const session = sessionService.getSession(result.sessionId)!;
+      const auditorEvent = session.events.find((event) => event.type === 'auditor_evaluation');
+
+      expect(auditorEvent).toBeDefined();
+      expect(auditorEvent?.agentRole).toBe('auditor');
+      expect(auditorEvent?.payload).toMatchObject({
+        source: 'terminal_session_audit',
+        trigger: 'run_completed',
+        sessionId: result.sessionId,
+        verdict: 'passed',
+        summary: {
+          agentStarted: 2,
+          agentStopped: 2,
+          terminalEvents: 1,
+        },
       });
     });
 
