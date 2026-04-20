@@ -166,6 +166,60 @@ describe('Phase 2 Session Routes', () => {
       expect(list.json()).toContainEqual(expect.objectContaining({
         status: 'needs_review',
       }));
+
+      const run = res.json();
+      const proposalId = run.actions.find((action: Record<string, unknown>) => (
+        action.type === 'learning_proposal_generated'
+      ))?.proposalId as string | undefined;
+      expect(proposalId).toEqual(expect.any(String));
+      if (!proposalId) throw new Error('Expected generated learning proposal action');
+
+      sessionService.recordGovernanceDecision({
+        subjectType: 'learning_proposal',
+        subjectId: proposalId,
+        action: 'approve',
+        verdict: 'allowed',
+        reason: 'Reviewed as part of the audit bundle route test.',
+      });
+
+      const bundle = await app.inject({
+        method: 'GET',
+        url: `/api/p2/closed-loop/runs/${run.id}/audit-bundle`,
+      });
+      expect(bundle.statusCode).toBe(200);
+      expect(bundle.headers['content-disposition']).toContain(`l5-audit-bundle-${run.id}.json`);
+      expect(bundle.json()).toEqual(expect.objectContaining({
+        schemaVersion: 'persona-qa.l5.audit-bundle.v1',
+        run: expect.objectContaining({ id: run.id }),
+        lifecycle: expect.any(Array),
+        replay: expect.objectContaining({
+          endpoint: '/api/p2/closed-loop/run',
+          safeReplayPayload: expect.objectContaining({
+            applyApprovedChanges: false,
+            generateScenarioDrafts: false,
+          }),
+        }),
+        integrity: expect.objectContaining({
+          checksum: expect.any(String),
+          counts: expect.objectContaining({
+            governanceDecisions: 1,
+          }),
+        }),
+      }));
+      expect(bundle.json().related.learningProposals).toContainEqual(expect.objectContaining({
+        id: proposalId,
+      }));
+      expect(bundle.json().related.governanceDecisions).toContainEqual(expect.objectContaining({
+        subjectId: proposalId,
+      }));
+    });
+
+    it('should return 404 for missing closed-loop audit bundles', async () => {
+      const bundle = await app.inject({
+        method: 'GET',
+        url: '/api/p2/closed-loop/runs/missing-run/audit-bundle',
+      });
+      expect(bundle.statusCode).toBe(404);
     });
 
     it('should expose and control closed-loop scheduler automation', async () => {

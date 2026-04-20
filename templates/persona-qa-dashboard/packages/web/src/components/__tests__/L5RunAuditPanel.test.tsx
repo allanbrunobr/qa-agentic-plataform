@@ -34,6 +34,7 @@ describe('L5RunAuditPanel', () => {
           },
         ]}
         governanceDecisions={[governanceDecision()]}
+        auditBundleUrl="/api/p2/closed-loop/runs/run-1/audit-bundle"
       />,
     )
 
@@ -45,6 +46,10 @@ describe('L5RunAuditPanel', () => {
     expect(screen.getByText('Governança recente')).toBeInTheDocument()
     expect(screen.getByText('apply - healing action')).toBeInTheDocument()
     expect(screen.getByText('Self-healing action permitted by bounded policy.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Exportar bundle' })).toHaveAttribute(
+      'href',
+      '/api/p2/closed-loop/runs/run-1/audit-bundle',
+    )
   })
 
   it('renders recent run history and emits selected run changes', () => {

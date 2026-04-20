@@ -11,6 +11,7 @@ interface L5RunAuditPanelProps {
   runs?: Phase2ClosedLoopRun[]
   selectedRunId?: string | null
   onSelectRun?: (runId: string) => void
+  auditBundleUrl?: string
   guards?: Array<{
     loop: string
     status: 'open' | 'blocked'
@@ -26,6 +27,7 @@ export function L5RunAuditPanel({
   runs = [],
   selectedRunId,
   onSelectRun,
+  auditBundleUrl,
   guards = [],
   governanceDecisions = [],
 }: L5RunAuditPanelProps) {
@@ -56,7 +58,7 @@ export function L5RunAuditPanel({
 
   return (
     <Card className="mt-4">
-      <PanelHeader />
+      <PanelHeader auditBundleUrl={auditBundleUrl} />
 
       <RunHistory
         runs={auditRuns}
@@ -132,13 +134,24 @@ export function L5RunAuditPanel({
   )
 }
 
-function PanelHeader() {
+function PanelHeader({ auditBundleUrl }: { auditBundleUrl?: string }) {
   return (
-    <div className="mb-4">
-      <h3 className="text-sm font-semibold text-[var(--text-primary)]">L5 Run Audit</h3>
-      <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-        Trilha operacional da iteração closed-loop selecionada: lifecycle, ações, verificação e governança.
-      </p>
+    <div className="mb-4 flex items-start justify-between gap-4">
+      <div>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">L5 Run Audit</h3>
+        <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+          Trilha operacional da iteração closed-loop selecionada: lifecycle, ações, verificação e governança.
+        </p>
+      </div>
+      {auditBundleUrl ? (
+        <a
+          href={auditBundleUrl}
+          download
+          className="shrink-0 rounded-md border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent)] hover:text-[var(--text-primary)]"
+        >
+          Exportar bundle
+        </a>
+      ) : null}
     </div>
   )
 }

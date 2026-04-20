@@ -10,6 +10,7 @@ import {
   L5ClosedLoopScheduler,
   type L5ClosedLoopSchedulerOptions,
 } from '../services/l5-closed-loop-scheduler.js';
+import { L5AuditBundleService } from '../services/l5-audit-bundle-service.js';
 import { L5ClosedLoopService } from '../services/l5-closed-loop-service.js';
 import { L5MaterializationService } from '../services/l5-materialization-service.js';
 import { LearningControlService } from '../services/learning-control-service.js';
@@ -147,6 +148,18 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
         status: isL5ClosedLoopStatus(request.query.status) ? request.query.status : undefined,
         limit: request.query.limit ? Number(request.query.limit) : 25,
       }));
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/api/p2/closed-loop/runs/:id/audit-bundle',
+    async (request, reply) => {
+      const service = getSessionService();
+      const bundle = new L5AuditBundleService(service).build(request.params.id);
+      if (!bundle) return reply.status(404).send({ error: 'Closed-loop run not found' });
+
+      reply.header('Content-Disposition', `attachment; filename="l5-audit-bundle-${request.params.id}.json"`);
+      return reply.send(bundle);
     },
   );
 

@@ -374,6 +374,47 @@ export interface Phase2ClosedLoopSchedulerTickResult {
   scheduler: Phase2ClosedLoopSchedulerStatus
 }
 
+export interface Phase2ClosedLoopAuditBundle {
+  schemaVersion: 'persona-qa.l5.audit-bundle.v1'
+  generatedAt: string
+  run: Phase2ClosedLoopRun
+  lifecycle: unknown[]
+  guards: Phase2ClosedLoopStatusResponse['guards']
+  snapshots: {
+    before: Record<string, unknown>
+    after: Record<string, unknown>
+  }
+  related: {
+    learningProposals: Phase2LearningProposal[]
+    healingActions: Phase2HealingAction[]
+    scenarioDrafts: Phase2ScenarioDraft[]
+    materializations: Array<Record<string, unknown>>
+    governanceDecisions: Phase2GovernanceDecision[]
+  }
+  replay: {
+    endpoint: '/api/p2/closed-loop/run'
+    method: 'POST'
+    safeReplayPayload: {
+      scenarioId?: string
+      maxScenarios: number
+      applyApprovedChanges: false
+      generateScenarioDrafts: false
+    }
+    originalIntent: {
+      mode: Phase2ClosedLoopMode
+      scenarioId?: string
+      maxScenarios: number
+      applyApprovedChanges: boolean
+      generateScenarioDrafts: boolean
+    }
+    notes: string[]
+  }
+  integrity: {
+    checksum: string
+    counts: Record<string, number>
+  }
+}
+
 export const api = {
   getRuns: () => fetchJSON(`${API_BASE}/api/runs`),
   getRun: (id: number) => fetchJSON(`${API_BASE}/api/runs/${id}`),
@@ -408,6 +449,10 @@ export const api = {
   getPhase2Maturity: () => fetchJSON<Phase2MaturityStatus>(`${API_BASE}/api/p2/maturity`),
   getPhase2ClosedLoopStatus: () =>
     fetchJSON<Phase2ClosedLoopStatusResponse>(`${API_BASE}/api/p2/closed-loop/status`),
+  getPhase2ClosedLoopAuditBundleUrl: (runId: string) =>
+    `${API_BASE}/api/p2/closed-loop/runs/${encodeURIComponent(runId)}/audit-bundle`,
+  getPhase2ClosedLoopAuditBundle: (runId: string) =>
+    fetchJSON<Phase2ClosedLoopAuditBundle>(`${API_BASE}/api/p2/closed-loop/runs/${encodeURIComponent(runId)}/audit-bundle`),
   runPhase2ClosedLoop: (payload: {
     scenarioId?: string
     maxScenarios?: number

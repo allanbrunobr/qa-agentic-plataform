@@ -543,6 +543,7 @@ export function Overview() {
           runs={recentClosedLoopRuns}
           selectedRunId={auditedClosedLoop?.id ?? selectedClosedLoopRunId}
           onSelectRun={setSelectedClosedLoopRunId}
+          auditBundleUrl={auditedClosedLoop ? api.getPhase2ClosedLoopAuditBundleUrl(auditedClosedLoop.id) : undefined}
           guards={closedLoop?.guards ?? []}
           governanceDecisions={governanceDecisions}
         />
