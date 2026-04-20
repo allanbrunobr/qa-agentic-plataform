@@ -1,6 +1,6 @@
 import { buildContractEvaluation } from './contract-evaluation.js'
 import { CoverageAnalysisService } from './coverage-analysis-service.js'
-import { L5LoopGuardService, type L5LoopGuard } from './l5-loop-guard-service.js'
+import { L5LoopGuardService, type L5LoopGuard, type L5LoopId } from './l5-loop-guard-service.js'
 import { L5MaterializationService } from './l5-materialization-service.js'
 import { LearningControlService } from './learning-control-service.js'
 import { MetaOrchestrator, type MetaOrchestrationQueueItem } from './meta-orchestrator.js'
@@ -55,6 +55,27 @@ interface SessionComparison {
   reason: string
 }
 
+type L5LifecycleLoopId = L5LoopId | 'verification'
+
+type L5LifecycleEventType =
+  | 'closed_loop_started'
+  | 'closed_loop_completed'
+  | 'loop_started'
+  | 'loop_completed'
+  | 'loop_blocked'
+  | 'scenario_started'
+  | 'scenario_completed'
+
+type L5LifecycleEvent = {
+  type: L5LifecycleEventType
+  timestamp: string
+  loop?: L5LifecycleLoopId
+  scenarioId?: string
+  status?: string
+  reason?: string
+  details?: Record<string, unknown>
+}
+
 export class L5ClosedLoopService {
   constructor(private readonly sessionService: SessionService) {}
 
@@ -72,6 +93,15 @@ export class L5ClosedLoopService {
   async runOnce(options: L5ClosedLoopRunOptions = {}): Promise<L5ClosedLoopRun> {
     const startedAt = new Date().toISOString()
     const actor = options.actor ?? 'l5_closed_loop'
+    const lifecycle: L5LifecycleEvent[] = []
+    appendLifecycle(lifecycle, 'closed_loop_started', {
+      details: {
+        actor,
+        scenarioId: options.scenarioId,
+        applyApprovedChanges: options.applyApprovedChanges === true,
+        generateScenarioDrafts: options.generateScenarioDrafts === true,
+      },
+    })
     const maxScenarios = clamp(options.maxScenarios ?? 3, 1, 10)
     const maxApprovedApplies = clamp(options.maxApprovedApplies ?? 3, 0, 10)
     const guards = new L5LoopGuardService(this.sessionService).summarize()
@@ -81,6 +111,20 @@ export class L5ClosedLoopService {
     ))
 
     if (blockedGuard) {
+      appendLifecycle(lifecycle, 'loop_blocked', {
+        loop: blockedGuard.loop,
+        status: 'blocked',
+        reason: blockedGuard.reason,
+        details: {
+          current: blockedGuard.current,
+          limit: blockedGuard.limit,
+        },
+      })
+      appendLifecycle(lifecycle, 'closed_loop_completed', {
+        status: 'blocked',
+        reason: blockedGuard.reason,
+      })
+
       return this.record({
         status: 'blocked',
         mode: options.applyApprovedChanges ? 'apply_approved' : 'observe',
@@ -99,13 +143,23 @@ export class L5ClosedLoopService {
           appliedMaterializations: 0,
           pendingReviews: 0,
         },
-        metadata: { guards },
+        metadata: { guards, lifecycle },
         startedAt,
       })
     }
 
+    appendLifecycle(lifecycle, 'loop_started', { loop: 'meta_orchestration' })
     const queue = this.selectQueue(options.scenarioId, maxScenarios)
     const scenarios = queue.map((item) => item.scenarioId)
+    appendLifecycle(lifecycle, 'loop_completed', {
+      loop: 'meta_orchestration',
+      status: scenarios.length > 0 ? 'queued' : 'empty',
+      details: {
+        queuedScenarios: scenarios.length,
+        consideredScenarios: queue.length,
+      },
+    })
+
     const actions: Record<string, unknown>[] = []
     const before = Object.fromEntries(
       scenarios.map((scenarioId) => [scenarioId, this.buildScenarioSnapshot(scenarioId)]),
@@ -117,12 +171,23 @@ export class L5ClosedLoopService {
     let scenarioDrafts = 0
 
     for (const scenarioId of scenarios) {
+      appendLifecycle(lifecycle, 'scenario_started', { scenarioId })
+      appendLifecycle(lifecycle, 'loop_started', { loop: 'learning', scenarioId })
       const generated = new LearningControlService(this.sessionService).generateProposals({
         scenarioId,
         limit: 50,
       })
       generatedProposals += generated.length
       pendingReviews += generated.filter((proposal) => proposal.status === 'proposed').length
+      appendLifecycle(lifecycle, 'loop_completed', {
+        loop: 'learning',
+        scenarioId,
+        status: generated.length > 0 ? 'generated' : 'unchanged',
+        details: {
+          generatedProposals: generated.length,
+          pendingReviews: generated.filter((proposal) => proposal.status === 'proposed').length,
+        },
+      })
       actions.push(...generated.map((proposal) => ({
         type: 'learning_proposal_generated',
         scenarioId,
@@ -133,12 +198,14 @@ export class L5ClosedLoopService {
       })))
 
       if (options.applyApprovedChanges && maxApprovedApplies > 0) {
+        appendLifecycle(lifecycle, 'loop_started', { loop: 'materialization', scenarioId })
         const approved = this.sessionService.listLearningProposals({
           scenarioId,
           status: 'approved',
           limit: maxApprovedApplies,
         }).filter(isAutoMaterializableProposal)
 
+        let materializationFailures = 0
         for (const proposal of approved) {
           try {
             const applied = new LearningControlService(this.sessionService).applyProposal(proposal.id)
@@ -162,15 +229,37 @@ export class L5ClosedLoopService {
               error: error instanceof Error ? error.message : String(error),
               actor,
             })
+            materializationFailures += 1
           }
         }
+        appendLifecycle(lifecycle, 'loop_completed', {
+          loop: 'materialization',
+          scenarioId,
+          status: materializationFailures > 0 ? 'needs_review' : 'completed',
+          details: {
+            consideredApprovedProposals: approved.length,
+            appliedMaterializations,
+            materializationFailures,
+          },
+        })
       }
+      appendLifecycle(lifecycle, 'scenario_completed', { scenarioId })
     }
 
+    appendLifecycle(lifecycle, 'loop_started', { loop: 'self_healing' })
     const healingActions = new SelfHealingService(this.sessionService).evaluateRecentFailures()
       .filter((action) => scenarios.length === 0 || scenarios.some((scenarioId) => action.target.startsWith(`${scenarioId}:`)))
     automaticHealingActions = healingActions.filter((action) => action.automatic && action.status === 'applied').length
     pendingReviews += healingActions.filter((action) => action.status === 'proposed' || action.status === 'blocked').length
+    appendLifecycle(lifecycle, 'loop_completed', {
+      loop: 'self_healing',
+      status: healingActions.length > 0 ? 'evaluated' : 'unchanged',
+      details: {
+        evaluatedActions: healingActions.length,
+        automaticHealingActions,
+        pendingHealingReviews: healingActions.filter((action) => action.status === 'proposed' || action.status === 'blocked').length,
+      },
+    })
     actions.push(...healingActions.map((action) => ({
       type: 'self_healing_evaluated',
       actionId: action.id,
@@ -181,6 +270,7 @@ export class L5ClosedLoopService {
     })))
 
     if (options.generateScenarioDrafts) {
+      appendLifecycle(lifecycle, 'loop_started', { loop: 'scenario_generation' })
       const coverage = new CoverageAnalysisService(this.sessionService)
       const gap = coverage.analyzeGaps()[0]
       if (gap) {
@@ -195,14 +285,40 @@ export class L5ClosedLoopService {
           gapType: draft.gapType,
         })
       }
+      appendLifecycle(lifecycle, 'loop_completed', {
+        loop: 'scenario_generation',
+        status: scenarioDrafts > 0 ? 'generated' : 'unchanged',
+        details: {
+          generatedDrafts: scenarioDrafts,
+        },
+      })
     }
 
+    appendLifecycle(lifecycle, 'loop_started', { loop: 'verification' })
     const after = Object.fromEntries(
       scenarios.map((scenarioId) => [scenarioId, this.buildScenarioSnapshot(scenarioId)]),
     )
     const comparisons = scenarios.map((scenarioId) => this.compareLatestSessions(scenarioId))
     const rerunRequired = appliedMaterializations > 0 || automaticHealingActions > 0
     const status = pendingReviews > 0 ? 'needs_review' : 'completed'
+    appendLifecycle(lifecycle, 'loop_completed', {
+      loop: 'verification',
+      status,
+      details: {
+        comparisons: comparisons.length,
+        rerunRequired,
+        improvedScenarios: comparisons.filter((comparison) => comparison.verdict === 'improved').length,
+        regressedScenarios: comparisons.filter((comparison) => comparison.verdict === 'regressed').length,
+      },
+    })
+    appendLifecycle(lifecycle, 'closed_loop_completed', {
+      status,
+      details: {
+        actionCount: actions.length,
+        pendingReviews,
+        rerunRequired,
+      },
+    })
 
     return this.record({
       status,
@@ -235,6 +351,7 @@ export class L5ClosedLoopService {
         queue,
         before,
         after,
+        lifecycle,
       },
       startedAt,
     })
@@ -333,6 +450,18 @@ function buildComparisonReason(verdict: SessionComparison['verdict'], scoreDelta
   if (verdict === 'improved') return `Latest run improved by ${scoreDelta} point(s).`
   if (verdict === 'regressed') return `Latest run regressed by ${Math.abs(scoreDelta)} point(s).`
   return 'Latest run score is unchanged.'
+}
+
+function appendLifecycle(
+  lifecycle: L5LifecycleEvent[],
+  type: L5LifecycleEventType,
+  event: Omit<L5LifecycleEvent, 'type' | 'timestamp'> = {},
+): void {
+  lifecycle.push({
+    type,
+    timestamp: new Date().toISOString(),
+    ...event,
+  })
 }
 
 function clamp(value: number, min: number, max: number): number {

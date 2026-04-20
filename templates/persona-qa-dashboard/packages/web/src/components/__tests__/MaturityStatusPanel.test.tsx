@@ -12,6 +12,7 @@ describe('MaturityStatusPanel', () => {
     expect(screen.getByText('Workflow contracts')).toBeInTheDocument()
     expect(screen.getByText('Independent audit')).toBeInTheDocument()
     expect(screen.getByText('Runtime learning loads')).toBeInTheDocument()
+    expect(screen.getByText('Lifecycle L5 events')).toBeInTheDocument()
     expect(screen.getAllByText('95%')).toHaveLength(2)
   })
 })
@@ -58,6 +59,7 @@ function maturityStatus(): Phase2MaturityStatus {
           { label: 'Revisões pendentes', value: 0, tone: 'success' },
           { label: 'Decisões bloqueadas', value: 0, tone: 'success' },
           { label: 'Runtime learning loads', value: 1, tone: 'success' },
+          { label: 'Lifecycle L5 events', value: 12, tone: 'success' },
         ],
       },
     },

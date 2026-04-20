@@ -376,6 +376,15 @@ describe('L5 controlled feedback services', () => {
       run: expect.objectContaining({
         status: 'needs_review',
         queuedScenarios: ['first_order'],
+        metadata: expect.objectContaining({
+          lifecycle: expect.arrayContaining([
+            expect.objectContaining({ type: 'closed_loop_started' }),
+            expect.objectContaining({ type: 'loop_started', loop: 'meta_orchestration' }),
+            expect.objectContaining({ type: 'scenario_started', scenarioId: 'first_order' }),
+            expect.objectContaining({ type: 'loop_completed', loop: 'self_healing' }),
+            expect.objectContaining({ type: 'closed_loop_completed', status: 'needs_review' }),
+          ]),
+        }),
       }),
       scheduler: expect.objectContaining({
         tickCount: 1,
@@ -386,6 +395,7 @@ describe('L5 controlled feedback services', () => {
     expect(service.listL5ClosedLoopRuns()).toContainEqual(expect.objectContaining({
       id: tick.run!.id,
     }))
+    expect(tick.run!.metadata?.['lifecycle']).toHaveLength(12)
 
     const stopped = scheduler.stop('test_complete')
     expect(stopped).toEqual(expect.objectContaining({

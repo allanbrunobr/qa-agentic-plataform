@@ -100,6 +100,7 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
   const queuedMetaRuns = queueItems.filter((item) => item.status === 'queued').length
   const completedClosedLoops = closedLoopRuns.filter((run) => run.status === 'completed').length
   const closedLoopsNeedingReview = closedLoopRuns.filter((run) => run.status === 'needs_review').length
+  const closedLoopLifecycle = summarizeClosedLoopLifecycle(closedLoopRuns)
   const runtimeLearningUsage = summarizeRuntimeLearningUsage(sessions)
   const terminalSessionAudits = summarizeTerminalSessionAudits(sessions)
 
@@ -233,9 +234,9 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
           {
             id: 'closed_loop',
             label: 'Closed loop',
-            state: latestClosedLoop ? 'guarded' : 'beta',
+            state: closedLoopLifecycle.runsWithLifecycle > 0 ? 'complete' : latestClosedLoop ? 'guarded' : 'beta',
             evidence: latestClosedLoop
-              ? `Última iteração L5 registrada como ${latestClosedLoop.status}.`
+              ? `Última iteração L5 registrada como ${latestClosedLoop.status}; lifecycle auditável em ${closedLoopLifecycle.runsWithLifecycle} run(s).`
               : 'Iterações L5 podem ser executadas sob demanda com governança e verificação antes/depois.',
           },
         ],
@@ -265,10 +266,41 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
           { label: 'Fila meta-orquestrada', value: queuedMetaRuns, tone: queuedMetaRuns > 0 ? 'success' : 'neutral' },
           { label: 'Closed loops completos', value: completedClosedLoops, tone: completedClosedLoops > 0 ? 'success' : 'neutral' },
           { label: 'Closed loops em review', value: closedLoopsNeedingReview, tone: closedLoopsNeedingReview > 0 ? 'warning' : 'success' },
+          {
+            label: 'Lifecycle L5 events',
+            value: closedLoopLifecycle.events,
+            tone: closedLoopLifecycle.events > 0 ? 'success' : 'neutral',
+          },
         ],
       },
     },
   }
+}
+
+function summarizeClosedLoopLifecycle(closedLoopRuns: ReturnType<SessionService['listL5ClosedLoopRuns']>): {
+  events: number
+  runsWithLifecycle: number
+} {
+  let events = 0
+  let runsWithLifecycle = 0
+
+  for (const run of closedLoopRuns) {
+    const lifecycle = run.metadata?.['lifecycle']
+    if (!Array.isArray(lifecycle)) continue
+
+    const count = lifecycle.filter((event) => (
+      event
+      && typeof event === 'object'
+      && typeof (event as Record<string, unknown>)['type'] === 'string'
+      && typeof (event as Record<string, unknown>)['timestamp'] === 'string'
+    )).length
+
+    if (count === 0) continue
+    events += count
+    runsWithLifecycle += 1
+  }
+
+  return { events, runsWithLifecycle }
 }
 
 function summarizeRuntimeLearningUsage(sessions: ReturnType<SessionService['getAllSessions']>): {
