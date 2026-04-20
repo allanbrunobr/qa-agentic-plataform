@@ -141,14 +141,14 @@ cd <repoPath>/.agentic-qa
 
 ## Regression Verification
 
-Run the full clean-room Reference Store install regression:
+Run the deterministic clean-room Reference Store install regression:
 
 ```bash
 cd '/path/to/projects/agentic-platform'
 npm run verify:install-local:reference-store
 ```
 
-The verifier creates a temporary copy of the host repository, installs `.agentic-qa`, runs discovery, installs dependencies, starts the local dashboard/API, executes a real scenario, and validates L4/L5 endpoints.
+The verifier creates a temporary copy of the host repository, installs `.agentic-qa`, runs discovery, installs dependencies, starts the local dashboard/API, executes a smoke scenario with deterministic workflow tools, and validates L4/L5 endpoints. This is the release-safe gate because it does not depend on live Reference Store login or backend state.
 
 A passing run prints:
 
@@ -158,6 +158,15 @@ A passing run prints:
 [verify-install-local] PASS session=...
 ```
 
+Run the real Reference Store integration gate when the local or remote Reference Store environment is intentionally available:
+
+```bash
+cd '/path/to/projects/agentic-platform'
+npm run verify:real-reference-store
+```
+
+This uses the same clean-room install path, but starts the generated runtime with real Playwright workflow tools. It can create or mutate data in the configured target environment, so it is intentionally separate from `verify:release`.
+
 Run the release gate before merging installer, template, runtime, or dashboard changes:
 
 ```bash
@@ -165,7 +174,7 @@ cd '/path/to/projects/agentic-platform'
 npm run verify:release
 ```
 
-The release gate runs syntax validation for the clean-room verifier, the API L4/L5 release Vitest set, the web release Vitest set, the web production build, and the full clean-room install/runtime/dashboard smoke. Override `API_PORT`, `WEB_PORT`, or `RELEASE_PORT_SEED` if local ports are busy.
+The release gate runs syntax validation for both verifiers, the API L4/L5 release Vitest set, the web release Vitest set, the web production build, and the deterministic clean-room install/runtime/dashboard smoke. Override `API_PORT`, `WEB_PORT`, or `RELEASE_PORT_SEED` if local ports are busy.
 
 ## Guardrail
 

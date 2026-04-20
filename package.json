@@ -13,6 +13,7 @@
     "install-local:reference-store": "tsx packages/dashboard-api/src/cli.ts install-local /path/to/projects/reference-store/reference-store-frontend",
     "discover-local:reference-store": "tsx packages/dashboard-api/src/cli.ts discover-local /path/to/projects/reference-store/reference-store-frontend",
     "verify:install-local:reference-store": "node scripts/verify-install-local-reference-store.mjs",
+    "verify:real-reference-store": "node scripts/verify-real-reference-store.mjs",
     "verify:release": "node scripts/verify-release.mjs",
     "dev:api": "tsx packages/dashboard-api/src/server.ts",
     "dev:web": "tsx packages/dashboard-web/src/server.ts",
