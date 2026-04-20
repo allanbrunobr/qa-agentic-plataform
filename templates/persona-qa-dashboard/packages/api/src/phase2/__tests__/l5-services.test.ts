@@ -4,6 +4,8 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { CoverageAnalysisService } from '../services/coverage-analysis-service.js'
 import { GovernancePolicyService } from '../services/governance-policy-service.js'
+import { L5ClosedLoopScheduler } from '../services/l5-closed-loop-scheduler.js'
+import { L5ClosedLoopService } from '../services/l5-closed-loop-service.js'
 import { L5LoopGuardService } from '../services/l5-loop-guard-service.js'
 import { L5MaterializationService } from '../services/l5-materialization-service.js'
 import { LearningControlService } from '../services/learning-control-service.js'
@@ -232,6 +234,164 @@ describe('L5 controlled feedback services', () => {
       'self_healing',
     ])
     expect(guards.every((guard) => guard.status === 'open')).toBe(true)
+  })
+
+  it('runs a governed closed-loop iteration and leaves new learning proposals for review', async () => {
+    const service = new SessionService(':memory:')
+    const session = service.createSession('first_order')
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      service.recordStepPerformance({
+        sessionId: session.id,
+        scenarioId: 'first_order',
+        stepId: 'create_customer',
+        agentId: 'sales-associate',
+        status: 'failed',
+        success: false,
+        attempt,
+        durationMs: 1_000,
+        errorMessage: 'form validation failed',
+      })
+    }
+
+    const loop = await new L5ClosedLoopService(service).runOnce({
+      scenarioId: 'first_order',
+      maxScenarios: 1,
+    })
+
+    expect(loop).toEqual(expect.objectContaining({
+      status: 'needs_review',
+      mode: 'observe',
+      queuedScenarios: ['first_order'],
+      summary: expect.objectContaining({
+        generatedProposals: expect.any(Number),
+        pendingReviews: expect.any(Number),
+      }),
+    }))
+    expect(Number(loop.summary.generatedProposals)).toBeGreaterThan(0)
+    expect(service.listLearningProposals({
+      scenarioId: 'first_order',
+      status: 'proposed',
+    }).length).toBeGreaterThan(0)
+    expect(service.listL5ClosedLoopRuns()).toContainEqual(expect.objectContaining({
+      id: loop.id,
+      status: 'needs_review',
+    }))
+  })
+
+  it('materializes pre-approved learning changes during the closed-loop apply phase', async () => {
+    const previousArtifactDir = process.env.PHASE2_ARTIFACT_DIR
+    process.env.PHASE2_ARTIFACT_DIR = await mkdtemp(path.join(tmpdir(), 'l5-closed-loop-artifacts-'))
+
+    try {
+      const service = new SessionService(':memory:')
+      const session = service.createSession('first_order')
+
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        service.recordStepPerformance({
+          sessionId: session.id,
+          scenarioId: 'first_order',
+          stepId: 'create_customer',
+          agentId: 'sales-associate',
+          status: 'failed',
+          success: false,
+          attempt,
+          durationMs: 1_000,
+          errorMessage: 'form validation failed',
+        })
+      }
+
+      const proposal = new LearningControlService(service).generateProposals({
+        scenarioId: 'first_order',
+      }).find((candidate) => candidate.patchKind === 'prompt_overlay')
+      expect(proposal).toBeTruthy()
+      new LearningControlService(service).approveProposal(proposal!.id)
+
+      const loop = await new L5ClosedLoopService(service).runOnce({
+        scenarioId: 'first_order',
+        maxScenarios: 1,
+        applyApprovedChanges: true,
+      })
+
+      expect(loop).toEqual(expect.objectContaining({
+        status: 'completed',
+        mode: 'apply_approved',
+        summary: expect.objectContaining({
+          appliedMaterializations: 1,
+        }),
+        verification: expect.objectContaining({
+          rerunRequired: true,
+        }),
+      }))
+      expect(service.listL5Materializations({
+        subjectType: 'learning_proposal',
+        subjectId: proposal!.id,
+      })).toContainEqual(expect.objectContaining({
+        kind: 'learning_prompt_overlay',
+        status: 'active',
+      }))
+    } finally {
+      if (previousArtifactDir === undefined) {
+        delete process.env.PHASE2_ARTIFACT_DIR
+      } else {
+        process.env.PHASE2_ARTIFACT_DIR = previousArtifactDir
+      }
+    }
+  })
+
+  it('runs closed-loop automation ticks with interval guardrails and a single-flight lock', async () => {
+    const service = new SessionService(':memory:')
+    const session = service.createSession('first_order')
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      service.recordStepPerformance({
+        sessionId: session.id,
+        scenarioId: 'first_order',
+        stepId: 'create_customer',
+        agentId: 'sales-associate',
+        status: 'failed',
+        success: false,
+        attempt,
+        durationMs: 1_000,
+        errorMessage: 'form validation failed',
+      })
+    }
+
+    const scheduler = new L5ClosedLoopScheduler(service, { minIntervalMs: 1_000 })
+    const started = scheduler.start({
+      intervalMs: 25,
+      scenarioId: 'first_order',
+      maxScenarios: 1,
+    })
+    expect(started).toEqual(expect.objectContaining({
+      enabled: true,
+      intervalMs: 1_000,
+      running: false,
+      nextTickAt: expect.any(String),
+    }))
+
+    const tick = await scheduler.tick()
+    expect(tick).toEqual(expect.objectContaining({
+      status: 'executed',
+      run: expect.objectContaining({
+        status: 'needs_review',
+        queuedScenarios: ['first_order'],
+      }),
+      scheduler: expect.objectContaining({
+        tickCount: 1,
+        consecutiveFailures: 0,
+        running: false,
+      }),
+    }))
+    expect(service.listL5ClosedLoopRuns()).toContainEqual(expect.objectContaining({
+      id: tick.run!.id,
+    }))
+
+    const stopped = scheduler.stop('test_complete')
+    expect(stopped).toEqual(expect.objectContaining({
+      enabled: false,
+      nextTickAt: null,
+    }))
   })
 
   it('records bounded self-healing actions for repeated timeout failures', () => {

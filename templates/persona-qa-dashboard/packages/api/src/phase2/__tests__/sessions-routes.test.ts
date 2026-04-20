@@ -68,6 +68,109 @@ describe('Phase 2 Session Routes', () => {
     });
   });
 
+  describe('L5 closed-loop routes', () => {
+    it('should expose closed-loop status', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/p2/closed-loop/status' });
+      expect(res.statusCode).toBe(200);
+
+      const body = res.json();
+      expect(body).toEqual(expect.objectContaining({
+        generatedAt: expect.any(String),
+        guards: expect.any(Array),
+        queue: expect.any(Array),
+        latestRun: null,
+        recentRuns: [],
+      }));
+    });
+
+    it('should run one governed closed-loop iteration', async () => {
+      const session = sessionService.createSession('first_order');
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        sessionService.recordStepPerformance({
+          sessionId: session.id,
+          scenarioId: 'first_order',
+          stepId: 'create_customer',
+          agentId: 'sales-associate',
+          status: 'failed',
+          success: false,
+          attempt,
+          durationMs: 1_000,
+          errorMessage: 'form validation failed',
+        });
+      }
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/p2/closed-loop/run',
+        payload: {
+          scenarioId: 'first_order',
+          maxScenarios: 1,
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.json()).toEqual(expect.objectContaining({
+        status: 'needs_review',
+        mode: 'observe',
+        queuedScenarios: ['first_order'],
+      }));
+
+      const list = await app.inject({ method: 'GET', url: '/api/p2/closed-loop/runs?limit=5' });
+      expect(list.statusCode).toBe(200);
+      expect(list.json()).toContainEqual(expect.objectContaining({
+        status: 'needs_review',
+      }));
+    });
+
+    it('should expose and control closed-loop scheduler automation', async () => {
+      const status = await app.inject({ method: 'GET', url: '/api/p2/closed-loop/scheduler' });
+      expect(status.statusCode).toBe(200);
+      expect(status.json()).toEqual(expect.objectContaining({
+        enabled: false,
+        running: false,
+      }));
+
+      const started = await app.inject({
+        method: 'POST',
+        url: '/api/p2/closed-loop/scheduler/start',
+        payload: {
+          intervalMs: 100,
+          scenarioId: 'first_order',
+          maxScenarios: 1,
+        },
+      });
+      expect(started.statusCode).toBe(200);
+      expect(started.json()).toEqual(expect.objectContaining({
+        enabled: true,
+        intervalMs: 60000,
+        nextTickAt: expect.any(String),
+      }));
+
+      const tick = await app.inject({
+        method: 'POST',
+        url: '/api/p2/closed-loop/scheduler/tick',
+        payload: {
+          scenarioId: 'first_order',
+          maxScenarios: 1,
+        },
+      });
+      expect(tick.statusCode).toBe(201);
+      expect(tick.json()).toEqual(expect.objectContaining({
+        status: 'executed',
+        scheduler: expect.objectContaining({
+          tickCount: 1,
+        }),
+      }));
+
+      const stopped = await app.inject({ method: 'POST', url: '/api/p2/closed-loop/scheduler/stop' });
+      expect(stopped.statusCode).toBe(200);
+      expect(stopped.json()).toEqual(expect.objectContaining({
+        enabled: false,
+        nextTickAt: null,
+      }));
+    });
+  });
+
   describe('GET /api/p2/sessions', () => {
     it('should return empty list when no sessions', async () => {
       const res = await app.inject({ method: 'GET', url: '/api/p2/sessions' });

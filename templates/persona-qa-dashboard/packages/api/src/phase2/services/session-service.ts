@@ -134,6 +134,8 @@ export type GovernanceVerdict = 'allowed' | 'blocked'
 export type SyntheticToolClosureReason = 'timeout' | 'interruption'
 export type L5MaterializationSubjectType = 'learning_proposal' | 'scenario_draft' | 'healing_action'
 export type L5MaterializationStatus = 'active' | 'rolled_back'
+export type L5ClosedLoopStatus = 'completed' | 'needs_review' | 'blocked' | 'failed'
+export type L5ClosedLoopMode = 'observe' | 'apply_approved'
 
 export interface LearningProposalInput {
   recommendationId: string
@@ -220,6 +222,25 @@ export interface L5Materialization extends L5MaterializationInput {
   status: L5MaterializationStatus
   createdAt: string
   rolledBackAt?: string
+}
+
+export interface L5ClosedLoopRunInput {
+  status: L5ClosedLoopStatus
+  mode: L5ClosedLoopMode
+  scenarioId?: string
+  queuedScenarios: string[]
+  actions: Record<string, unknown>[]
+  verification: Record<string, unknown>
+  summary: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  startedAt?: string
+  completedAt?: string
+}
+
+export interface L5ClosedLoopRun extends L5ClosedLoopRunInput {
+  id: string
+  startedAt: string
+  completedAt: string
 }
 
 type StepPerformanceRow = {
@@ -325,6 +346,20 @@ type L5MaterializationRow = {
   metadata: string | null
   created_at: string
   rolled_back_at: string | null
+}
+
+type L5ClosedLoopRunRow = {
+  loop_id: string
+  status: L5ClosedLoopStatus
+  mode: L5ClosedLoopMode
+  scenario_id: string | null
+  queued_scenarios: string
+  actions_json: string
+  verification_json: string
+  summary_json: string
+  metadata: string | null
+  started_at: string
+  completed_at: string
 }
 
 type ToolClosureRow = {
@@ -1383,6 +1418,84 @@ export class SessionService {
     return row ? this.mapL5Materialization(row) : undefined
   }
 
+  recordL5ClosedLoopRun(input: L5ClosedLoopRunInput): L5ClosedLoopRun {
+    const id = randomUUID()
+    const startedAt = input.startedAt ?? new Date().toISOString()
+    const completedAt = input.completedAt ?? new Date().toISOString()
+
+    this.sqlite
+      .prepare(
+        `INSERT INTO p2_l5_closed_loop_runs (
+           loop_id, status, mode, scenario_id, queued_scenarios, actions_json,
+           verification_json, summary_json, metadata, started_at, completed_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.status,
+        input.mode,
+        input.scenarioId ?? null,
+        JSON.stringify(input.queuedScenarios),
+        JSON.stringify(input.actions),
+        JSON.stringify(input.verification),
+        JSON.stringify(input.summary),
+        input.metadata ? JSON.stringify(input.metadata) : null,
+        startedAt,
+        completedAt,
+      )
+
+    return {
+      ...input,
+      id,
+      startedAt,
+      completedAt,
+    }
+  }
+
+  getL5ClosedLoopRun(id: string): L5ClosedLoopRun | undefined {
+    const row = this.sqlite
+      .prepare(
+        `SELECT loop_id, status, mode, scenario_id, queued_scenarios, actions_json,
+                verification_json, summary_json, metadata, started_at, completed_at
+         FROM p2_l5_closed_loop_runs
+         WHERE loop_id = ?`,
+      )
+      .get(id) as L5ClosedLoopRunRow | undefined
+
+    return row ? this.mapL5ClosedLoopRun(row) : undefined
+  }
+
+  listL5ClosedLoopRuns(filter: {
+    scenarioId?: string
+    status?: L5ClosedLoopStatus
+    limit?: number
+  } = {}): L5ClosedLoopRun[] {
+    const where: string[] = []
+    const params: unknown[] = []
+    if (filter.scenarioId) {
+      where.push('scenario_id = ?')
+      params.push(filter.scenarioId)
+    }
+    if (filter.status) {
+      where.push('status = ?')
+      params.push(filter.status)
+    }
+
+    const limit = Math.max(1, Math.min(filter.limit ?? 25, 100))
+    const rows = this.sqlite
+      .prepare(
+        `SELECT loop_id, status, mode, scenario_id, queued_scenarios, actions_json,
+                verification_json, summary_json, metadata, started_at, completed_at
+         FROM p2_l5_closed_loop_runs
+         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+         ORDER BY completed_at DESC
+         LIMIT ?`,
+      )
+      .all(...params, limit) as L5ClosedLoopRunRow[]
+
+    return rows.map((row) => this.mapL5ClosedLoopRun(row))
+  }
+
   private mapLearningProposal(row: LearningProposalRow): LearningProposal {
     return {
       id: row.proposal_id,
@@ -1462,6 +1575,22 @@ export class SessionService {
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       createdAt: row.created_at,
       rolledBackAt: row.rolled_back_at ?? undefined,
+    }
+  }
+
+  private mapL5ClosedLoopRun(row: L5ClosedLoopRunRow): L5ClosedLoopRun {
+    return {
+      id: row.loop_id,
+      status: row.status,
+      mode: row.mode,
+      scenarioId: row.scenario_id ?? undefined,
+      queuedScenarios: JSON.parse(row.queued_scenarios),
+      actions: JSON.parse(row.actions_json),
+      verification: JSON.parse(row.verification_json),
+      summary: JSON.parse(row.summary_json),
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      startedAt: row.started_at,
+      completedAt: row.completed_at,
     }
   }
 
@@ -1704,6 +1833,20 @@ export class SessionService {
         UNIQUE(subject_type, subject_id, kind, file_path)
       );
 
+      CREATE TABLE IF NOT EXISTS p2_l5_closed_loop_runs (
+        loop_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        scenario_id TEXT,
+        queued_scenarios TEXT NOT NULL,
+        actions_json TEXT NOT NULL,
+        verification_json TEXT NOT NULL,
+        summary_json TEXT NOT NULL,
+        metadata TEXT,
+        started_at TEXT NOT NULL,
+        completed_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS p2_tool_ledger_closures (
         session_id TEXT NOT NULL REFERENCES p2_sessions(session_id),
         tool_call_id TEXT NOT NULL,
@@ -1724,6 +1867,7 @@ export class SessionService {
       CREATE INDEX IF NOT EXISTS idx_p2_healing_actions_created ON p2_healing_actions(created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_governance_subject ON p2_governance_decisions(subject_type, subject_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_l5_materializations_subject ON p2_l5_materializations(subject_type, subject_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_p2_l5_closed_loop_status ON p2_l5_closed_loop_runs(status, scenario_id, completed_at);
       CREATE INDEX IF NOT EXISTS idx_p2_tool_ledger_closures_session ON p2_tool_ledger_closures(session_id, closed_at);
     `)
   }

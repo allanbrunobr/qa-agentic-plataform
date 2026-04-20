@@ -4,7 +4,14 @@ import { Activity, AlertTriangle, ArrowRightLeft, Bot, Clock3, Play } from 'luci
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Card, StatCard } from '@/components/ui/Card'
 import { MaturityStatusPanel } from '@/components/MaturityStatusPanel'
-import { api, type Phase2MaturityStatus, type Phase2ScenarioSummary, type Phase2SessionSummary } from '@/lib/api'
+import {
+  api,
+  type Phase2ClosedLoopSchedulerStatus,
+  type Phase2ClosedLoopStatusResponse,
+  type Phase2MaturityStatus,
+  type Phase2ScenarioSummary,
+  type Phase2SessionSummary,
+} from '@/lib/api'
 import { formatDuration, formatRelativeTime } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 
@@ -93,6 +100,8 @@ export function Overview() {
   const [scenarios, setScenarios] = useState<Phase2ScenarioSummary[]>([])
   const [stats, setStats] = useState<Awaited<ReturnType<typeof api.getStats>> | null>(null)
   const [maturity, setMaturity] = useState<Phase2MaturityStatus | null>(null)
+  const [closedLoop, setClosedLoop] = useState<Phase2ClosedLoopStatusResponse | null>(null)
+  const [closedLoopScheduler, setClosedLoopScheduler] = useState<Phase2ClosedLoopSchedulerStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedScenario, setSelectedScenario] = useState(initialScenarioFromHash ?? 'first_order_multi_role')
   const [customerName, setCustomerName] = useState('')
@@ -101,6 +110,8 @@ export function Overview() {
   const [workflowYaml, setWorkflowYaml] = useState<string>('')
   const [workflowLoading, setWorkflowLoading] = useState(false)
   const [workflowError, setWorkflowError] = useState<string | null>(null)
+  const [closedLoopRunning, setClosedLoopRunning] = useState(false)
+  const [closedLoopError, setClosedLoopError] = useState<string | null>(null)
 
   useEffect(() => {
     const syncFromHash = () => {
@@ -119,17 +130,21 @@ export function Overview() {
 
     const load = async () => {
       try {
-        const [sessionData, scenarioData, statsData, maturityData] = await Promise.all([
+        const [sessionData, scenarioData, statsData, maturityData, closedLoopData, schedulerData] = await Promise.all([
           api.getPhase2Sessions(),
           api.getPhase2Scenarios(),
           api.getStats(),
           api.getPhase2Maturity().catch(() => null),
+          api.getPhase2ClosedLoopStatus().catch(() => null),
+          api.getPhase2ClosedLoopSchedulerStatus().catch(() => null),
         ])
         if (!mounted) return
         setSessions(sessionData)
         setScenarios(scenarioData)
         setStats(statsData)
         setMaturity(maturityData)
+        setClosedLoop(closedLoopData)
+        setClosedLoopScheduler(schedulerData)
         if (scenarioData.length > 0 && !scenarioData.some((scenario) => scenario.id === selectedScenario)) {
           setSelectedScenario(scenarioData[0]!.id)
         }
@@ -233,6 +248,8 @@ export function Overview() {
   }
   const selectedScenarioSummary = scenarios.find((scenario) => scenario.id === selectedScenario)
   const selectedScenarioGate = selectedScenarioSummary?.quality_gate
+  const latestClosedLoop = closedLoop?.latestRun ?? null
+  const schedulerEnabled = closedLoopScheduler?.enabled ?? false
 
   if (loading) return <LoadingState />
 
@@ -252,6 +269,80 @@ export function Overview() {
       setStartError(error instanceof Error ? error.message : 'Falha ao iniciar sessão agentic')
     } finally {
       setStartingRun(false)
+    }
+  }
+
+  const handleClosedLoopRun = async (applyApprovedChanges: boolean) => {
+    if (closedLoopRunning) return
+    setClosedLoopRunning(true)
+    setClosedLoopError(null)
+    try {
+      await api.runPhase2ClosedLoop({
+        scenarioId: selectedScenario || undefined,
+        maxScenarios: selectedScenario ? 1 : 3,
+        applyApprovedChanges,
+      })
+      const nextStatus = await api.getPhase2ClosedLoopStatus()
+      setClosedLoop(nextStatus)
+    } catch (error) {
+      setClosedLoopError(error instanceof Error ? error.message : 'Falha ao executar closed loop L5')
+    } finally {
+      setClosedLoopRunning(false)
+    }
+  }
+
+  const handleClosedLoopSchedulerStart = async () => {
+    if (closedLoopRunning) return
+    setClosedLoopRunning(true)
+    setClosedLoopError(null)
+    try {
+      const scheduler = await api.startPhase2ClosedLoopScheduler({
+        scenarioId: selectedScenario || undefined,
+        maxScenarios: selectedScenario ? 1 : 3,
+        applyApprovedChanges: false,
+        intervalMs: 15 * 60 * 1000,
+      })
+      setClosedLoopScheduler(scheduler)
+    } catch (error) {
+      setClosedLoopError(error instanceof Error ? error.message : 'Falha ao iniciar automação L5')
+    } finally {
+      setClosedLoopRunning(false)
+    }
+  }
+
+  const handleClosedLoopSchedulerStop = async () => {
+    if (closedLoopRunning) return
+    setClosedLoopRunning(true)
+    setClosedLoopError(null)
+    try {
+      const scheduler = await api.stopPhase2ClosedLoopScheduler()
+      setClosedLoopScheduler(scheduler)
+    } catch (error) {
+      setClosedLoopError(error instanceof Error ? error.message : 'Falha ao pausar automação L5')
+    } finally {
+      setClosedLoopRunning(false)
+    }
+  }
+
+  const handleClosedLoopSchedulerTick = async () => {
+    if (closedLoopRunning) return
+    setClosedLoopRunning(true)
+    setClosedLoopError(null)
+    try {
+      await api.tickPhase2ClosedLoopScheduler({
+        scenarioId: selectedScenario || undefined,
+        maxScenarios: selectedScenario ? 1 : 3,
+      })
+      const [nextStatus, nextScheduler] = await Promise.all([
+        api.getPhase2ClosedLoopStatus(),
+        api.getPhase2ClosedLoopSchedulerStatus(),
+      ])
+      setClosedLoop(nextStatus)
+      setClosedLoopScheduler(nextScheduler)
+    } catch (error) {
+      setClosedLoopError(error instanceof Error ? error.message : 'Falha ao executar automação L5')
+    } finally {
+      setClosedLoopRunning(false)
     }
   }
 
@@ -317,6 +408,103 @@ export function Overview() {
           <MaturityStatusPanel maturity={maturity} />
         </motion.div>
       )}
+
+      <motion.div variants={itemVariants}>
+        <Card className="p-6">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">L5 Closed Loop</h2>
+              <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+                Aprendizado, aplicação governada e verificação antes/depois por cenário.
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                variant="secondary"
+                loading={closedLoopRunning}
+                onClick={() => void handleClosedLoopRun(false)}
+              >
+                Analisar
+              </Button>
+              <Button
+                variant="primary"
+                loading={closedLoopRunning}
+                onClick={() => void handleClosedLoopRun(true)}
+              >
+                Aplicar aprovadas
+              </Button>
+              <Button
+                variant="secondary"
+                loading={closedLoopRunning}
+                onClick={() => void handleClosedLoopSchedulerTick()}
+              >
+                Rodar agora
+              </Button>
+              <Button
+                variant={schedulerEnabled ? 'secondary' : 'primary'}
+                loading={closedLoopRunning}
+                onClick={() => {
+                  if (schedulerEnabled) {
+                    void handleClosedLoopSchedulerStop()
+                  } else {
+                    void handleClosedLoopSchedulerStart()
+                  }
+                }}
+              >
+                {schedulerEnabled ? 'Pausar auto' : 'Iniciar auto'}
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-5">
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Última iteração</p>
+              <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
+                {latestClosedLoop?.status?.replace('_', ' ') ?? 'sem execução'}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Cenários na fila</p>
+              <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
+                {closedLoop?.queue.filter((item) => item.status === 'queued').length ?? 0}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Ações</p>
+              <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
+                {latestClosedLoop?.actions.length ?? 0}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Reexecução</p>
+              <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
+                {latestClosedLoop?.verification?.rerunRequired ? 'necessária' : 'não exigida'}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Automação</p>
+              <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
+                {schedulerEnabled ? 'ativa' : 'pausada'}
+              </p>
+              <p className="mt-1 truncate text-xs text-[var(--text-muted)]">
+                {closedLoopScheduler?.nextTickAt ? `próxima ${formatRelativeTime(closedLoopScheduler.nextTickAt)}` : 'sem agenda'}
+              </p>
+            </div>
+          </div>
+
+          {latestClosedLoop ? (
+            <p className="mt-4 text-xs text-[var(--text-muted)]">
+              {String(latestClosedLoop.summary.statusReason ?? 'Iteração L5 registrada.')}
+            </p>
+          ) : null}
+
+          {closedLoopError && (
+            <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+              {closedLoopError}
+            </div>
+          )}
+        </Card>
+      </motion.div>
 
       <motion.div variants={itemVariants}>
         <Card className="p-6">
