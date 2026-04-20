@@ -14,6 +14,7 @@ import type {
   FailureCategory,
   StepExecutionStatus,
 } from '../types/scenario-types.js'
+import { diagnoseFailureMessage } from './failure-diagnosis-service.js'
 
 const DEFAULT_PHASE2_ARTIFACT_DIR = process.env['PHASE2_ARTIFACT_DIR'] ?? path.resolve(process.cwd(), 'artifacts')
 
@@ -689,18 +690,7 @@ export class SessionService {
   }
 
   classifyFailure(error?: string, status?: StepExecutionStatus): FailureCategory {
-    if (status === 'timeout') return 'timeout'
-    if (status === 'interrupted') return 'interruption'
-
-    const normalized = (error ?? '').toLowerCase()
-    if (normalized.includes('timeout') || normalized.includes('timed out')) return 'timeout'
-    if (normalized.includes('artifact') || normalized.includes('required') || normalized.includes('evidence')) return 'artifact'
-    if (normalized.includes('sensor')) return 'sensor'
-    if (normalized.includes('model') || normalized.includes('rate limited') || normalized.includes('max_tokens')) return 'model'
-    if (normalized.includes('tool_not_allowed') || normalized.includes('policy')) return 'tool_policy'
-    if (normalized.includes('capability') || normalized.includes('cannot find module')) return 'capability'
-    if (normalized.includes('401') || normalized.includes('auth') || normalized.includes('api key')) return 'auth'
-    return 'unknown'
+    return diagnoseFailureMessage(error, status).failureCategory
   }
 
   recordStepPerformance(input: StepPerformanceInput): StepPerformanceRecord {

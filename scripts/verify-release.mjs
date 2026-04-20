@@ -19,6 +19,7 @@ const releasePath = fs.existsSync(preferredNodePath)
 
 const apiReleaseTests = [
   'src/phase2/__tests__/adaptive-history.test.ts',
+  'src/phase2/__tests__/failure-diagnosis-service.test.ts',
   'src/phase2/__tests__/l5-services.test.ts',
   'src/phase2/__tests__/governance-policy-service.test.ts',
   'src/phase2/__tests__/independent-auditor-service.test.ts',
@@ -58,6 +59,12 @@ const steps = [
     name: 'syntax: clean-room verifier',
     command: releaseNodePath,
     args: ['--check', 'scripts/verify-install-local-reference-store.mjs'],
+    cwd: repoRoot,
+  },
+  {
+    name: 'syntax: real Reference Store verifier',
+    command: releaseNodePath,
+    args: ['--check', 'scripts/verify-real-reference-store.mjs'],
     cwd: repoRoot,
   },
   {

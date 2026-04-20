@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import type { FastifyInstance } from 'fastify';
 import { buildContractEvaluation } from '../services/contract-evaluation.js';
 import { CoverageAnalysisService } from '../services/coverage-analysis-service.js';
+import { diagnoseSessionFailure } from '../services/failure-diagnosis-service.js';
 import { FailurePatternService } from '../services/failure-pattern-service.js';
 import { GovernancePolicyService } from '../services/governance-policy-service.js';
 import { IndependentAuditorService } from '../services/independent-auditor-service.js';
@@ -105,6 +106,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
         artifactCount: Object.keys(s.artifacts).length,
         findingCount: s.findings.length,
         lastError: extractLastError(s),
+        failureDiagnosis: diagnoseSessionFailure(s),
         contractVerdict: evaluation?.verdict ?? null,
         contractHardViolations: evaluation?.hardViolations ?? 0,
         contractDriftSignals: evaluation?.driftSignals ?? 0,
@@ -125,6 +127,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
 
     return reply.send({
       ...session,
+      failureDiagnosis: diagnoseSessionFailure(session),
       ...safeBuildContractEvaluation(session),
     });
   });
