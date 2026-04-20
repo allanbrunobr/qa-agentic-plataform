@@ -420,6 +420,20 @@ export class AgentRuntime {
           Object.assign(accumulatedOutput, result.output as Record<string, unknown>)
         }
 
+        const completedFromToolOutput = this.completeFromToolOutputIfValid(
+          profile,
+          sessionId,
+          responseTextFromArtifacts(accumulatedOutput),
+          accumulatedOutput,
+          collectedFindings,
+          collectedEvidence,
+          expectedArtifacts,
+          startedAt,
+          'required_artifacts_produced_by_tool',
+          response.toolCalls,
+        )
+        if (completedFromToolOutput) return this.finishStep(sessionId, profile, completedFromToolOutput)
+
         toolResultMessages.push(
           `[Tool result for ${toolName} (${toolCallId})]: ${JSON.stringify(result.ok ? result.output : result.error)}`,
         )
@@ -591,6 +605,8 @@ export class AgentRuntime {
     collectedEvidence: string[],
     expectedArtifacts: string[],
     startedAt: number,
+    reason = 'model_followup_deadline_exceeded_after_required_artifacts',
+    toolCalls: AgentStepOutput['toolCalls'] = [],
   ): AgentStepOutput | undefined {
     if (!this.hasExpectedArtifacts(accumulatedOutput, expectedArtifacts)) {
       return undefined
@@ -614,7 +630,7 @@ export class AgentRuntime {
       agentRole: profile.role,
       payload: {
         event: 'completed_from_tool_output',
-        reason: 'model_followup_deadline_exceeded_after_required_artifacts',
+        reason,
         expectedArtifacts,
       },
     })
@@ -622,7 +638,7 @@ export class AgentRuntime {
     return {
       status: 'completed',
       text,
-      toolCalls: [],
+      toolCalls,
       findings: collectedFindings,
       output: accumulatedOutput,
       durationMs: Date.now() - startedAt,

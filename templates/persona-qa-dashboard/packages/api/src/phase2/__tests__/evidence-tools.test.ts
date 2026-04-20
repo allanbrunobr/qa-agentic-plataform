@@ -19,6 +19,14 @@ function mockPage() {
   }
 }
 
+function mockBlankPage() {
+  return {
+    screenshot: async (_opts: unknown) => Buffer.from('fake-png-data'),
+    url: () => 'about:blank',
+    evaluate: async () => false,
+  }
+}
+
 describe('evidence-tools', () => {
   let sessionService: SessionService
   let ctx: ToolContext
@@ -66,6 +74,23 @@ describe('evidence-tools', () => {
       expect(result).toEqual({
         ok: false,
         error: { code: 'invalid_input', message: expect.stringContaining('description'), retryable: false },
+      })
+    })
+
+    it('does not store blank screenshots as evidence', async () => {
+      const handler = makeCaptureScreenshotHandler(sessionService)
+      const result = await handler(
+        { description: 'blank page' },
+        { page: mockBlankPage(), sessionId: 'sess-1', agentRole: 'sales-associate' },
+      )
+
+      expect(result).toEqual({
+        ok: false,
+        error: {
+          code: 'blank_page',
+          message: expect.stringContaining('no renderable content'),
+          retryable: true,
+        },
       })
     })
   })

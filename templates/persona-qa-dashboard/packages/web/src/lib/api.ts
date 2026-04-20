@@ -187,11 +187,45 @@ export interface DashboardStats {
 
 export type Phase2LearningProposalStatus = 'proposed' | 'approved' | 'applied' | 'rejected'
 export type Phase2LearningProposalPatchKind = 'none' | 'prompt_overlay' | 'capability_patch' | 'environment_check'
-export type Phase2HealingActionStatus = 'proposed' | 'applied' | 'blocked'
+export type Phase2HealingActionStatus = 'proposed' | 'applied' | 'blocked' | 'rolled_back'
 export type Phase2GovernanceSubjectType = 'learning_proposal' | 'scenario_draft' | 'healing_action'
 export type Phase2GovernanceAction = 'generate' | 'approve' | 'apply' | 'reject' | 'evaluate'
 export type Phase2GovernanceVerdict = 'allowed' | 'blocked'
 export type Phase2ScenarioDraftStatus = 'pending' | 'approved' | 'rejected' | 'revised'
+export type Phase2MaturityCapabilityState = 'complete' | 'guarded' | 'beta'
+export type Phase2MaturitySignalTone = 'success' | 'warning' | 'danger' | 'neutral'
+
+export interface Phase2MaturityCapability {
+  id: string
+  label: string
+  state: Phase2MaturityCapabilityState
+  evidence: string
+}
+
+export interface Phase2MaturitySignal {
+  label: string
+  value: number | string
+  tone: Phase2MaturitySignalTone
+}
+
+export interface Phase2MaturityLevel {
+  level: 'L4' | 'L5'
+  status: 'ready' | 'stable' | 'attention' | 'controlled_beta' | 'operational'
+  completion: number
+  verdict: string
+  summary: string
+  capabilities: Phase2MaturityCapability[]
+  signals: Phase2MaturitySignal[]
+}
+
+export interface Phase2MaturityStatus {
+  generatedAt: string
+  releaseGate: 'ready' | 'attention'
+  levels: {
+    l4: Phase2MaturityLevel
+    l5: Phase2MaturityLevel
+  }
+}
 
 export interface Phase2LearningProposal {
   id: string
@@ -283,6 +317,7 @@ export const api = {
   getPhase2SessionArtifacts: (id: string) => fetchJSON<Phase2SessionArtifact[]>(`${API_BASE}/api/p2/sessions/${id}/artifacts`),
   getPhase2ArtifactContentUrl: (artifactId: string) => `${API_BASE}/api/p2/artifacts/${artifactId}/content`,
   getPhase2SessionWsUrl: (sessionId: string) => `${WS_BASE}/ws/p2/sessions/${sessionId}`,
+  getPhase2Maturity: () => fetchJSON<Phase2MaturityStatus>(`${API_BASE}/api/p2/maturity`),
   getPhase2HealingLog: (limit = 100) =>
     fetchJSON<Phase2HealingAction[]>(`${API_BASE}/api/p2/healing/log?${new URLSearchParams({ limit: String(limit) })}`),
   evaluatePhase2Healing: () =>

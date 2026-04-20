@@ -10,9 +10,12 @@ describe('Phase 2 Session Routes', () => {
   const app = Fastify();
   let sessionService: SessionService;
   let previousArtifactDir: string | undefined;
+  let previousLegacyScenarios: string | undefined;
 
   beforeAll(async () => {
     previousArtifactDir = process.env.PHASE2_ARTIFACT_DIR;
+    previousLegacyScenarios = process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS;
+    process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS = '1';
     await app.register(phase2SessionRoutes);
     await app.ready();
   });
@@ -23,6 +26,11 @@ describe('Phase 2 Session Routes', () => {
     } else {
       process.env.PHASE2_ARTIFACT_DIR = previousArtifactDir;
     }
+    if (previousLegacyScenarios === undefined) {
+      delete process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS;
+    } else {
+      process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS = previousLegacyScenarios;
+    }
     await app.close();
   });
 
@@ -30,6 +38,34 @@ describe('Phase 2 Session Routes', () => {
     process.env.PHASE2_ARTIFACT_DIR = mkdtempSync(path.join(tmpdir(), 'p2-route-artifacts-'));
     sessionService = new SessionService();
     setSessionService(sessionService);
+  });
+
+  describe('GET /api/p2/maturity', () => {
+    it('should expose L4 and L5 maturity status', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/p2/maturity' });
+      expect(res.statusCode).toBe(200);
+
+      const body = res.json();
+      expect(body.releaseGate).toBe('ready');
+      expect(body.levels.l4).toEqual(expect.objectContaining({
+        level: 'L4',
+        status: 'ready',
+        completion: 95,
+      }));
+      expect(body.levels.l5).toEqual(expect.objectContaining({
+        level: 'L5',
+        status: 'controlled_beta',
+        completion: 70,
+      }));
+      expect(body.levels.l4.capabilities).toContainEqual(expect.objectContaining({
+        id: 'workflow_contracts',
+        state: 'complete',
+      }));
+      expect(body.levels.l5.capabilities).toContainEqual(expect.objectContaining({
+        id: 'independent_audit',
+        state: 'guarded',
+      }));
+    });
   });
 
   describe('GET /api/p2/sessions', () => {
@@ -346,6 +382,36 @@ describe('Phase 2 Session Routes', () => {
         subjectId: proposal.id,
       })).toContainEqual(expect.objectContaining({
         kind: 'learning_prompt_overlay',
+        metadata: expect.objectContaining({
+          independentAudit: expect.objectContaining({
+            verdict: 'passed',
+            checksumVerified: true,
+          }),
+          postWriteVerification: expect.objectContaining({
+            checksumMatches: true,
+          }),
+        }),
+      }));
+
+      const maturity = await app.inject({ method: 'GET', url: '/api/p2/maturity' });
+      expect(maturity.statusCode).toBe(200);
+      expect(maturity.json().levels.l5).toEqual(expect.objectContaining({
+        status: 'operational',
+        completion: 95,
+      }));
+    });
+
+    it('should expose a governed meta-orchestration queue', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/p2/schedule/queue?limit=2' });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()[0]).toEqual(expect.objectContaining({
+        position: 1,
+        status: 'queued',
+        guard: expect.objectContaining({
+          loop: 'meta_orchestration',
+          status: 'open',
+        }),
       }));
     });
   });

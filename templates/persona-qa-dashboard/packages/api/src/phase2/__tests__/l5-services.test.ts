@@ -1,8 +1,10 @@
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { CoverageAnalysisService } from '../services/coverage-analysis-service.js'
+import { GovernancePolicyService } from '../services/governance-policy-service.js'
+import { L5LoopGuardService } from '../services/l5-loop-guard-service.js'
 import { L5MaterializationService } from '../services/l5-materialization-service.js'
 import { LearningControlService } from '../services/learning-control-service.js'
 import { calculateRiskScore, MetaOrchestrator } from '../services/meta-orchestrator.js'
@@ -13,6 +15,21 @@ import { ToolRegistry } from '../services/tool-registry.js'
 import { registerWorkflowTools } from '../tools/workflow-tools.js'
 
 describe('L5 controlled feedback services', () => {
+  let previousLegacyScenarios: string | undefined
+
+  beforeAll(() => {
+    previousLegacyScenarios = process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS
+    process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS = '1'
+  })
+
+  afterAll(() => {
+    if (previousLegacyScenarios === undefined) {
+      delete process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS
+    } else {
+      process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS = previousLegacyScenarios
+    }
+  })
+
   it('detects uncovered scenario capabilities and stores human-reviewed drafts', () => {
     const service = new SessionService(':memory:')
     const coverage = new CoverageAnalysisService(service)
@@ -38,7 +55,11 @@ describe('L5 controlled feedback services', () => {
       gapType: 'capability_uncovered',
       gapEvidence: [{ route: '/checkout' }],
     })
+    const governance = new GovernancePolicyService(service)
+    const approved = service.updateScenarioDraftStatus(draft.id, 'approved', 'qa_lead')
+    governance.recordScenarioDraftDecision(approved!, 'approve', 'qa_lead')
     const promoted = service.updateScenarioDraftStatus(draft.id, 'promoted', 'qa_lead')
+    governance.recordScenarioDraftDecision(promoted!, 'promote', 'qa_lead')
 
     const materialization = await new L5MaterializationService(service, { artifactRoot })
       .materializeScenarioDraft(promoted!)
@@ -64,6 +85,17 @@ describe('L5 controlled feedback services', () => {
     })).toContainEqual(expect.objectContaining({
       kind: 'scenario_draft_manifest',
       checksum: materialization.checksum,
+      metadata: expect.objectContaining({
+        independentAudit: expect.objectContaining({
+          verdict: 'passed',
+          checksumVerified: true,
+          governanceEvidence: 1,
+        }),
+        postWriteVerification: expect.objectContaining({
+          checksumMatches: true,
+          verifier: 'independent_auditor',
+        }),
+      }),
     }))
   })
 
@@ -94,10 +126,38 @@ describe('L5 controlled feedback services', () => {
       subjectId: proposal.id,
       kind: 'learning_prompt_overlay',
       status: 'active',
+      metadata: expect.objectContaining({
+        independentAudit: expect.objectContaining({
+          verdict: 'passed',
+          checksumVerified: true,
+          governanceEvidence: 1,
+        }),
+      }),
     }))
     const content = await readFile(materialization.filePath, 'utf8')
     expect(content).toContain('# L5 Learning Overlay')
     expect(content).toContain('Never report customer creation unless the persisted customer id is present.')
+  })
+
+  it('blocks L5 materialization without prior governance evidence', async () => {
+    const service = new SessionService(':memory:')
+    const artifactRoot = await mkdtemp(path.join(tmpdir(), 'l5-blocked-artifacts-'))
+    const proposal = service.createLearningProposal({
+      recommendationId: 'ungoverned-materialization',
+      scenarioId: 'first_visit',
+      stepId: 'create_customer',
+      agentId: 'front_desk',
+      type: 'prompt_patch',
+      severity: 'medium',
+      recommendation: { reason: 'missing governance' },
+      patchKind: 'prompt_overlay',
+      target: 'agent:front_desk',
+      patchContent: 'Ungoverned overlay.',
+    })
+
+    await expect(new L5MaterializationService(service, { artifactRoot })
+      .materializeLearningProposal(proposal))
+      .rejects.toThrow('materialization_governance_evidence_missing')
   })
 
   it('recommends timeout tuning when p95 duration approaches profile timeout', () => {
@@ -148,6 +208,30 @@ describe('L5 controlled feedback services', () => {
     const recommendations = new MetaOrchestrator(service).recommendSchedule()
     expect(recommendations[0]?.scenarioId).toBeTruthy()
     expect(recommendations[0]?.riskScore).toBeGreaterThan(0)
+
+    const queue = new MetaOrchestrator(service).buildGovernedRunQueue(3)
+    expect(queue[0]).toEqual(expect.objectContaining({
+      position: 1,
+      status: 'queued',
+      guard: expect.objectContaining({
+        loop: 'meta_orchestration',
+        status: 'open',
+      }),
+    }))
+  })
+
+  it('reports formal circuit breaker status for every L5 loop', () => {
+    const service = new SessionService(':memory:')
+    const guards = new L5LoopGuardService(service).summarize()
+
+    expect(guards.map((guard) => guard.loop).sort()).toEqual([
+      'learning',
+      'materialization',
+      'meta_orchestration',
+      'scenario_generation',
+      'self_healing',
+    ])
+    expect(guards.every((guard) => guard.status === 'open')).toBe(true)
   })
 
   it('records bounded self-healing actions for repeated timeout failures', () => {

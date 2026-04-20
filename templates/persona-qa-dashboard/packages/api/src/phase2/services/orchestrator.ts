@@ -6,6 +6,7 @@ import type { AgentRuntime } from './agent-runtime.js';
 import { AdaptiveDecisionEngine } from './adaptive-decision-engine.js';
 import { resolvePhase2ArtifactPath, type SessionService } from './session-service.js';
 import type { SensorRunner } from './sensor-runner.js';
+import { hasRenderablePageContent, getEvidencePageUrl, type EvidencePage } from '../tools/browser-page-evidence.js';
 
 export class Orchestrator {
   private readonly adaptiveDecisionEngine: AdaptiveDecisionEngine;
@@ -608,10 +609,21 @@ export class Orchestrator {
     agentId: string,
     runtimeContext: Record<string, unknown>,
   ): Promise<void> {
-    const maybePage = runtimeContext.page as { screenshot?: (opts: { fullPage?: boolean }) => Promise<Buffer> } | undefined;
+    const maybePage = runtimeContext.page as EvidencePage | undefined;
     if (!maybePage?.screenshot) return;
 
     try {
+      if (!(await hasRenderablePageContent(maybePage))) {
+        this.sessionService.addEvent(sessionId, 'info', {
+          event: 'step_screenshot_skipped',
+          stepId,
+          agentRole: agentId,
+          reason: 'blank_page',
+          pageUrl: getEvidencePageUrl(maybePage),
+        });
+        return;
+      }
+
       const buffer = await maybePage.screenshot({ fullPage: false });
       const relativePath = `screenshots/${sessionId}/${Date.now()}-${stepId}.png`;
       const absolutePath = resolvePhase2ArtifactPath(relativePath);

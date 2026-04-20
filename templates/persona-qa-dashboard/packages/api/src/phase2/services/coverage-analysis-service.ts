@@ -1,6 +1,7 @@
 import { listScenarios, loadScenario } from '../scenarios/index.js'
 import type { ScenarioContract } from '../types/scenario-types.js'
 import type { SessionService, ScenarioDraft } from './session-service.js'
+import { L5LoopGuardService } from './l5-loop-guard-service.js'
 
 export type CoverageGapType = 'capability_uncovered' | 'role_combination_untested' | 'edge_case_suggested'
 
@@ -81,6 +82,7 @@ export class CoverageAnalysisService {
   }
 
   createDraftFromGap(gap: CoverageGap): ScenarioDraft {
+    new L5LoopGuardService(this.sessionService).assertLoopOpen('scenario_generation')
     const scenarioId = gap.suggestedScenario.id ?? `draft_${gap.id.replace(/[^a-z0-9_]+/gi, '_').toLowerCase()}`
     return this.sessionService.createScenarioDraft({
       scenarioId,

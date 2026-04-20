@@ -33,14 +33,36 @@ export const phase1ReportsModuleHref = pathToFileURL(
   path.resolve(AGENTIC_QA_ROOT, 'adapter/runtime/host-source-snapshot/integration-test/persona-tests/support/capabilities/reports.ts'),
 ).href
 
-async function importCustomersCapability(): Promise<{ createCustomer: (page: unknown, input: CreateCustomerInput) => Promise<unknown> }> {
-  return (await import(phase1CustomersModuleHref)) as {
-    createCustomer: (page: unknown, input: CreateCustomerInput) => Promise<unknown>
-  }
+type WorkflowCapabilityImporter = (moduleHref: string) => Promise<unknown>
+
+const defaultWorkflowCapabilityImporter: WorkflowCapabilityImporter = (moduleHref) => import(moduleHref)
+
+let workflowCapabilityImporter = defaultWorkflowCapabilityImporter
+
+export function setWorkflowCapabilityImporterForTest(importer?: WorkflowCapabilityImporter): void {
+  workflowCapabilityImporter = importer ?? defaultWorkflowCapabilityImporter
+}
+
+interface CustomersCapabilityModule {
+  createCustomer: (page: unknown, input: CreateCustomerInput) => Promise<unknown>
+  findCustomerByName?: (page: unknown, name: string) => Promise<string | null>
+}
+
+interface CustomerRecoveryPage {
+  url?: () => string
+  waitForURL?: (
+    url: string | RegExp | ((url: URL) => boolean),
+    options?: { timeout?: number },
+  ) => Promise<void>
+  waitForLoadState?: (state: 'domcontentloaded' | 'load' | 'networkidle', options?: { timeout?: number }) => Promise<void>
+}
+
+async function importCustomersCapability(): Promise<CustomersCapabilityModule> {
+  return (await workflowCapabilityImporter(phase1CustomersModuleHref)) as CustomersCapabilityModule
 }
 
 async function importOrdersCapability(): Promise<{ scheduleOrder: (page: unknown, input: ScheduleOrderInput) => Promise<unknown> }> {
-  return (await import(phase1OrdersModuleHref)) as {
+  return (await workflowCapabilityImporter(phase1OrdersModuleHref)) as {
     scheduleOrder: (page: unknown, input: ScheduleOrderInput) => Promise<unknown>
   }
 }
@@ -49,7 +71,7 @@ async function importOrderDetailsCapability(): Promise<{
   openOrderDetails: (page: unknown, customerId: string, eventId?: string) => Promise<void>
   completeFulfillment: (page: unknown) => Promise<void>
 }> {
-  return (await import(phase1OrderDetailsModuleHref)) as {
+  return (await workflowCapabilityImporter(phase1OrderDetailsModuleHref)) as {
     openOrderDetails: (page: unknown, customerId: string, eventId?: string) => Promise<void>
     completeFulfillment: (page: unknown) => Promise<void>
   }
@@ -58,7 +80,7 @@ async function importOrderDetailsCapability(): Promise<{
 async function importBillingCapability(): Promise<{
   findGuideByEventId: (page: unknown, eventId: string) => Promise<{ id: string | null; eventId: string | null; text: string } | null>
 }> {
-  return (await import(phase1BillingModuleHref)) as {
+  return (await workflowCapabilityImporter(phase1BillingModuleHref)) as {
     findGuideByEventId: (page: unknown, eventId: string) => Promise<{ id: string | null; eventId: string | null; text: string } | null>
   }
 }
@@ -67,7 +89,7 @@ async function importFinanceCapability(): Promise<{
   openFinanceDashboard: (page: unknown, options?: { dateFilter?: 'today' | 'week' | '30days'; dateFrom?: string; dateTo?: string }) => Promise<void>
   assertDashboardLoaded: (page: unknown) => Promise<void>
 }> {
-  return (await import(phase1FinanceModuleHref)) as {
+  return (await workflowCapabilityImporter(phase1FinanceModuleHref)) as {
     openFinanceDashboard: (page: unknown, options?: { dateFilter?: 'today' | 'week' | '30days'; dateFrom?: string; dateTo?: string }) => Promise<void>
     assertDashboardLoaded: (page: unknown) => Promise<void>
   }
@@ -77,7 +99,7 @@ async function importReportsCapability(): Promise<{
   openReportsPage: (page: unknown) => Promise<void>
   assertReportsPageLoaded: (page: unknown) => Promise<void>
 }> {
-  return (await import(phase1ReportsModuleHref)) as {
+  return (await workflowCapabilityImporter(phase1ReportsModuleHref)) as {
     openReportsPage: (page: unknown) => Promise<void>
     assertReportsPageLoaded: (page: unknown) => Promise<void>
   }
@@ -88,6 +110,47 @@ async function importReportsCapability(): Promise<{
 export interface CreateCustomerInput {
   name: string
   phone?: string
+}
+
+function isCustomerIdExtractionFailure(message: string) {
+  return message.includes('Failed to extract customerId after creating customer')
+}
+
+function extractCustomerIdFromUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+
+  try {
+    const parsed = new URL(url)
+    const queryCustomerId = parsed.searchParams.get('customer_id')
+    if (queryCustomerId) return queryCustomerId
+
+    const pathMatch = parsed.pathname.match(/customers\/(?:editar\/)?(\d+)/)
+    return pathMatch?.[1] ?? null
+  } catch {
+    const queryMatch = url.match(/[?&]customer_id=(\d+)/)
+    if (queryMatch?.[1]) return queryMatch[1]
+
+    const pathMatch = url.match(/customers\/(?:editar\/)?(\d+)/)
+    return pathMatch?.[1] ?? null
+  }
+}
+
+async function recoverCustomerIdAfterCreateFailure(page: unknown, customerName: string): Promise<string | null> {
+  const recoveryPage = page as CustomerRecoveryPage
+
+  await recoveryPage.waitForURL?.((url) => (
+    url.href.includes('/customers/')
+    && !url.pathname.includes('/customers/adicionar/')
+  ), { timeout: 10000 }).catch(() => {})
+  await recoveryPage.waitForLoadState?.('networkidle', { timeout: 5000 }).catch(() => {})
+
+  const customerIdFromUrl = extractCustomerIdFromUrl(recoveryPage.url?.())
+  if (customerIdFromUrl) return customerIdFromUrl
+
+  const { findCustomerByName } = await importCustomersCapability()
+  if (!findCustomerByName) return null
+
+  return findCustomerByName(page, customerName)
 }
 
 export const createCustomerHandler: ToolHandler = async (
@@ -123,6 +186,26 @@ export const createCustomerHandler: ToolHandler = async (
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
+    if (isCustomerIdExtractionFailure(message)) {
+      try {
+        const recoveredCustomerId = await recoverCustomerIdAfterCreateFailure(context.page, resolvedName)
+        if (recoveredCustomerId) {
+          return {
+            ok: true,
+            output: {
+              customerId: recoveredCustomerId,
+              customerName: resolvedName,
+              customerPhone: resolvedPhone ?? null,
+              phone: resolvedPhone ?? null,
+              recoveredFrom: 'customer_id_extraction_failure',
+            },
+          }
+        }
+      } catch {
+        // Preserve the original capability error if recovery also fails.
+      }
+    }
+
     const retryable = !message.includes('not found') && !message.includes('invalid')
     return { ok: false, error: { code: 'capability_error', message, retryable } }
   }

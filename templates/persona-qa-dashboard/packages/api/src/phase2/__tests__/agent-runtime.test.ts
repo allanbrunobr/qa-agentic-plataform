@@ -164,7 +164,7 @@ describe('AgentRuntime', () => {
       expect(result.error).toContain('timeout')
     })
 
-    it('completes from tool output when required produced artifacts exist before model follow-up timeout', async () => {
+    it('completes from tool output when required produced artifacts exist', async () => {
       registry.register('createCustomer', async () => ({
         ok: true,
         output: { customerId: 'customer-1', customerName: 'Maria' },
@@ -210,7 +210,7 @@ describe('AgentRuntime', () => {
       expect(result.status).toBe('completed')
       expect(result.success).toBe(true)
       expect(result.output).toMatchObject({ customerId: 'customer-1' })
-      expect(provider.chat).toHaveBeenCalledTimes(2)
+      expect(provider.chat).toHaveBeenCalledTimes(1)
     })
   })
 

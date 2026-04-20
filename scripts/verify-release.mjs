@@ -23,6 +23,9 @@ const apiReleaseTests = [
   'src/phase2/__tests__/scenario-loading.test.ts',
   'src/phase2/__tests__/adaptive-history.test.ts',
   'src/phase2/__tests__/failure-diagnosis-service.test.ts',
+  'src/phase2/__tests__/agent-runtime.test.ts',
+  'src/phase2/__tests__/workflow-tools.test.ts',
+  'src/phase2/__tests__/evidence-tools.test.ts',
   'src/phase2/__tests__/l5-services.test.ts',
   'src/phase2/__tests__/governance-policy-service.test.ts',
   'src/phase2/__tests__/independent-auditor-service.test.ts',
@@ -33,6 +36,7 @@ const apiReleaseTests = [
 
 const webReleaseTests = [
   'src/components/__tests__/L5GovernancePanel.test.tsx',
+  'src/components/__tests__/MaturityStatusPanel.test.tsx',
   'src/components/__tests__/RunTimeline.test.tsx',
   'src/components/__tests__/RecentFindings.test.tsx',
   'src/components/__tests__/RecentRuns.test.tsx',

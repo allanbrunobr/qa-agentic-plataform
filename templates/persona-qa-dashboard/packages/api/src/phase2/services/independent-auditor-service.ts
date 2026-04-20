@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto'
 import type { Session, SessionEvent } from '../types/session-types.js'
 import type {
   GovernanceAction,
   GovernanceSubjectType,
   HealingAction,
+  L5MaterializationSubjectType,
   LearningProposal,
   ScenarioDraft,
   SessionService,
@@ -41,6 +43,20 @@ export interface GovernanceAuditEvaluation {
     subjectType: GovernanceSubjectType
     action: GovernanceAction
     requirements: string[]
+  }
+}
+
+export interface MaterializationAuditEvaluation {
+  subjectType: L5MaterializationSubjectType
+  subjectId: string
+  kind: string
+  verdict: AuditorVerdict
+  checkedAt: string
+  findings: AuditorFinding[]
+  summary: {
+    requirements: string[]
+    checksumVerified: boolean
+    governanceEvidence: number
   }
 }
 
@@ -183,6 +199,63 @@ export class IndependentAuditorService {
       },
     }
   }
+
+  evaluateMaterialization(input: {
+    subjectType: L5MaterializationSubjectType
+    subjectId: string
+    kind: string
+    filePath: string
+    checksum: string
+    persistedContent: string
+    sessionService: SessionService
+  }): MaterializationAuditEvaluation {
+    const findings: AuditorFinding[] = []
+    const checksum = createHash('sha256').update(input.persistedContent).digest('hex')
+
+    if (!input.filePath) {
+      findings.push(errorFinding('materialization_file_path_missing', 'L5 materialization must include a persisted file path.', {
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+      }))
+    }
+
+    if (checksum !== input.checksum) {
+      findings.push(errorFinding('materialization_checksum_mismatch', 'L5 materialization checksum must match persisted content.', {
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        expected: input.checksum,
+        actual: checksum,
+      }))
+    }
+
+    auditMaterializationKind(input.subjectType, input.kind, findings)
+    const governanceEvidence = countMaterializationGovernanceEvidence(input, input.sessionService)
+    if (governanceEvidence === 0) {
+      findings.push(errorFinding('materialization_governance_evidence_missing', 'L5 materialization requires a prior allowed governance decision.', {
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        kind: input.kind,
+      }))
+    }
+
+    return {
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      kind: input.kind,
+      verdict: findings.some((finding) => finding.severity === 'error')
+        ? 'failed'
+        : findings.length > 0
+          ? 'warning'
+          : 'passed',
+      checkedAt: new Date().toISOString(),
+      findings,
+      summary: {
+        requirements: ['independent_audit', 'post_materialization_verification', 'checksum_match', 'governance_evidence'],
+        checksumVerified: checksum === input.checksum,
+        governanceEvidence,
+      },
+    }
+  }
 }
 
 function auditLearningProposal(
@@ -321,6 +394,46 @@ function auditHealingAction(action: HealingAction, governanceAction: GovernanceA
       }))
     }
   }
+}
+
+function auditMaterializationKind(
+  subjectType: L5MaterializationSubjectType,
+  kind: string,
+  findings: AuditorFinding[],
+): void {
+  const allowedKinds: Record<L5MaterializationSubjectType, string[]> = {
+    learning_proposal: ['learning_prompt_overlay', 'learning_proposal_manifest'],
+    scenario_draft: ['scenario_draft_manifest'],
+    healing_action: ['healing_action_manifest'],
+  }
+
+  if (!allowedKinds[subjectType].includes(kind)) {
+    findings.push(errorFinding('materialization_kind_not_allowed', 'L5 materialization kind is not allowed for this subject type.', {
+      subjectType,
+      kind,
+      allowedKinds: allowedKinds[subjectType],
+    }))
+  }
+}
+
+function countMaterializationGovernanceEvidence(
+  input: { subjectType: L5MaterializationSubjectType; subjectId: string },
+  sessionService: SessionService,
+): number {
+  const allowedActions: Record<L5MaterializationSubjectType, GovernanceAction[]> = {
+    learning_proposal: ['apply'],
+    scenario_draft: ['promote'],
+    healing_action: ['apply', 'rollback'],
+  }
+
+  return sessionService.listGovernanceDecisions({
+    subjectType: input.subjectType,
+    subjectId: input.subjectId,
+    limit: 100,
+  }).filter((decision) => (
+    decision.verdict === 'allowed'
+    && allowedActions[input.subjectType].includes(decision.action)
+  )).length
 }
 
 function errorFinding(code: string, message: string, evidence: Record<string, unknown>): AuditorFinding {

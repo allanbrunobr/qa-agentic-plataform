@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
   resolvePhase2ArtifactPath,
@@ -9,6 +9,8 @@ import {
   type ScenarioDraft,
   type SessionService,
 } from './session-service.js'
+import { IndependentAuditorService, type MaterializationAuditEvaluation } from './independent-auditor-service.js'
+import { L5LoopGuardService } from './l5-loop-guard-service.js'
 
 export interface L5MaterializationOptions {
   artifactRoot?: string
@@ -145,11 +147,27 @@ export class L5MaterializationService {
     content: string
     metadata: Record<string, unknown>
   }): Promise<L5Materialization> {
+    new L5LoopGuardService(this.sessionService).assertLoopOpen('materialization')
     const { absolutePath, storagePath } = this.resolveStoragePath(input.directory, input.fileName)
     await mkdir(path.dirname(absolutePath), { recursive: true })
     await writeFile(absolutePath, input.content, 'utf8')
 
     const checksum = createHash('sha256').update(input.content).digest('hex')
+    const persistedContent = await readFile(absolutePath, 'utf8')
+    const independentAudit = new IndependentAuditorService().evaluateMaterialization({
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      kind: input.kind,
+      filePath: storagePath,
+      checksum,
+      persistedContent,
+      sessionService: this.sessionService,
+    })
+
+    if (independentAudit.verdict === 'failed') {
+      throw new Error(`L5 materialization audit failed: ${independentAudit.findings.map((finding) => finding.code).join(', ')}`)
+    }
+
     return this.sessionService.recordL5Materialization({
       subjectType: input.subjectType,
       subjectId: input.subjectId,
@@ -158,6 +176,12 @@ export class L5MaterializationService {
       checksum,
       metadata: {
         ...input.metadata,
+        independentAudit: serializeMaterializationAudit(independentAudit),
+        postWriteVerification: {
+          checksumMatches: persistedContent === input.content,
+          verifiedAt: independentAudit.checkedAt,
+          verifier: 'independent_auditor',
+        },
         absolutePath,
       },
     })
@@ -182,6 +206,22 @@ export class L5MaterializationService {
       absolutePath: resolvePhase2ArtifactPath(storagePath),
       storagePath,
     }
+  }
+}
+
+function serializeMaterializationAudit(audit: MaterializationAuditEvaluation): Record<string, unknown> {
+  return {
+    verdict: audit.verdict,
+    checkedAt: audit.checkedAt,
+    findings: audit.findings.map((finding) => ({
+      severity: finding.severity,
+      code: finding.code,
+      message: finding.message,
+      evidence: finding.evidence,
+    })),
+    requirements: audit.summary.requirements,
+    checksumVerified: audit.summary.checksumVerified,
+    governanceEvidence: audit.summary.governanceEvidence,
   }
 }
 

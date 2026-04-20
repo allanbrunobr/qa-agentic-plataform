@@ -5,6 +5,7 @@ import type {
   SessionService,
 } from './session-service.js'
 import { GovernancePolicyService } from './governance-policy-service.js'
+import { L5LoopGuardService } from './l5-loop-guard-service.js'
 import { LearningPlaybookService, type LearningRecommendation } from './learning-playbook-service.js'
 
 export class LearningControlService {
@@ -15,6 +16,7 @@ export class LearningControlService {
   }
 
   generateProposals(filter: { scenarioId?: string; limit?: number } = {}): LearningProposal[] {
+    new L5LoopGuardService(this.sessionService).assertLoopOpen('learning')
     const playbook = new LearningPlaybookService(this.sessionService).buildPlaybook(filter)
     return playbook.recommendations.map((recommendation) => (
       this.sessionService.createLearningProposal(this.toProposalInput(recommendation))
@@ -40,6 +42,7 @@ export class LearningControlService {
   }
 
   applyProposal(id: string): LearningProposal {
+    new L5LoopGuardService(this.sessionService).assertLoopOpen('materialization')
     const proposal = this.requireProposal(id)
     this.enforceGovernance(proposal, 'apply')
 

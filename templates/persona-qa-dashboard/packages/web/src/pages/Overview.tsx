@@ -3,7 +3,8 @@ import { motion } from 'framer-motion'
 import { Activity, AlertTriangle, ArrowRightLeft, Bot, Clock3, Play } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Card, StatCard } from '@/components/ui/Card'
-import { api, type Phase2ScenarioSummary, type Phase2SessionSummary } from '@/lib/api'
+import { MaturityStatusPanel } from '@/components/MaturityStatusPanel'
+import { api, type Phase2MaturityStatus, type Phase2ScenarioSummary, type Phase2SessionSummary } from '@/lib/api'
 import { formatDuration, formatRelativeTime } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 
@@ -91,6 +92,7 @@ export function Overview() {
   const [sessions, setSessions] = useState<Phase2SessionSummary[]>([])
   const [scenarios, setScenarios] = useState<Phase2ScenarioSummary[]>([])
   const [stats, setStats] = useState<Awaited<ReturnType<typeof api.getStats>> | null>(null)
+  const [maturity, setMaturity] = useState<Phase2MaturityStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedScenario, setSelectedScenario] = useState(initialScenarioFromHash ?? 'first_order_multi_role')
   const [customerName, setCustomerName] = useState('')
@@ -117,15 +119,17 @@ export function Overview() {
 
     const load = async () => {
       try {
-        const [sessionData, scenarioData, statsData] = await Promise.all([
+        const [sessionData, scenarioData, statsData, maturityData] = await Promise.all([
           api.getPhase2Sessions(),
           api.getPhase2Scenarios(),
           api.getStats(),
+          api.getPhase2Maturity().catch(() => null),
         ])
         if (!mounted) return
         setSessions(sessionData)
         setScenarios(scenarioData)
         setStats(statsData)
+        setMaturity(maturityData)
         if (scenarioData.length > 0 && !scenarioData.some((scenario) => scenario.id === selectedScenario)) {
           setSelectedScenario(scenarioData[0]!.id)
         }
@@ -307,6 +311,12 @@ export function Overview() {
           />
         </motion.div>
       </div>
+
+      {maturity && (
+        <motion.div variants={itemVariants}>
+          <MaturityStatusPanel maturity={maturity} />
+        </motion.div>
+      )}
 
       <motion.div variants={itemVariants}>
         <Card className="p-6">
