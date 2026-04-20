@@ -1,4 +1,5 @@
 import { buildContractEvaluation } from './contract-evaluation.js'
+import { L5ClosedLoopService } from './l5-closed-loop-service.js'
 import { L5LoopGuardService } from './l5-loop-guard-service.js'
 import { MetaOrchestrator } from './meta-orchestrator.js'
 import { buildScenarioQualityGateMap } from './scenario-quality-gates.js'
@@ -73,6 +74,8 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
   const materializations = sessionService.listL5Materializations({ limit: 500 })
   const loopGuards = new L5LoopGuardService(sessionService).summarize()
   const queueItems = new MetaOrchestrator(sessionService).buildGovernedRunQueue(10)
+  const closedLoopRuns = sessionService.listL5ClosedLoopRuns({ limit: 100 })
+  const latestClosedLoop = new L5ClosedLoopService(sessionService).getStatus(1).latestRun
 
   const pendingReviews = learningProposals.filter((proposal) => proposal.status === 'proposed').length
     + scenarioDrafts.filter((draft) => draft.status === 'pending').length
@@ -95,6 +98,8 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
   }).length
   const blockedLoops = loopGuards.filter((guard) => guard.status === 'blocked').length
   const queuedMetaRuns = queueItems.filter((item) => item.status === 'queued').length
+  const completedClosedLoops = closedLoopRuns.filter((run) => run.status === 'completed').length
+  const closedLoopsNeedingReview = closedLoopRuns.filter((run) => run.status === 'needs_review').length
 
   const l4Status: L4MaturityStatus = restrictedGates > 0 || contractViolations > 0
     ? 'attention'
@@ -211,6 +216,14 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
             state: blockedLoops === 0 ? 'complete' : 'guarded',
             evidence: 'Learning, geração de cenários, healing, materialização e meta-orchestration têm limites formais.',
           },
+          {
+            id: 'closed_loop',
+            label: 'Closed loop',
+            state: latestClosedLoop ? 'guarded' : 'beta',
+            evidence: latestClosedLoop
+              ? `Última iteração L5 registrada como ${latestClosedLoop.status}.`
+              : 'Iterações L5 podem ser executadas sob demanda com governança e verificação antes/depois.',
+          },
         ],
         signals: [
           { label: 'Revisões pendentes', value: pendingReviews, tone: pendingReviews > 0 ? 'warning' : 'success' },
@@ -221,6 +234,8 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
           { label: 'Materializações ativas', value: activeMaterializations, tone: activeMaterializations > 0 ? 'success' : 'neutral' },
           { label: 'Materializações verificadas', value: verifiedMaterializations, tone: verifiedMaterializations > 0 ? 'success' : 'neutral' },
           { label: 'Fila meta-orquestrada', value: queuedMetaRuns, tone: queuedMetaRuns > 0 ? 'success' : 'neutral' },
+          { label: 'Closed loops completos', value: completedClosedLoops, tone: completedClosedLoops > 0 ? 'success' : 'neutral' },
+          { label: 'Closed loops em review', value: closedLoopsNeedingReview, tone: closedLoopsNeedingReview > 0 ? 'warning' : 'success' },
         ],
       },
     },

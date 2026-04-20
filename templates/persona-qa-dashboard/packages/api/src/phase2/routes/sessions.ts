@@ -6,6 +6,11 @@ import { diagnoseSessionFailure } from '../services/failure-diagnosis-service.js
 import { FailurePatternService } from '../services/failure-pattern-service.js';
 import { GovernancePolicyService } from '../services/governance-policy-service.js';
 import { IndependentAuditorService } from '../services/independent-auditor-service.js';
+import {
+  L5ClosedLoopScheduler,
+  type L5ClosedLoopSchedulerOptions,
+} from '../services/l5-closed-loop-scheduler.js';
+import { L5ClosedLoopService } from '../services/l5-closed-loop-service.js';
 import { L5MaterializationService } from '../services/l5-materialization-service.js';
 import { LearningControlService } from '../services/learning-control-service.js';
 import { LearningPlaybookService } from '../services/learning-playbook-service.js';
@@ -17,6 +22,7 @@ import {
   resolvePhase2ArtifactPath,
   SessionService,
   type GovernanceSubjectType,
+  type L5ClosedLoopStatus,
   type L5MaterializationStatus,
   type L5MaterializationSubjectType,
 } from '../services/session-service.js';
@@ -24,6 +30,7 @@ import type { Session } from '../types/session-types.js';
 
 // Singleton session service instance for Phase 2 routes
 let _sessionService: SessionService | null = null;
+let _closedLoopScheduler: L5ClosedLoopScheduler | null = null;
 
 function extractLastError(session: ReturnType<SessionService['getSession']>): string | null {
   if (!session) return null
@@ -92,14 +99,111 @@ export function getSessionService(): SessionService {
 }
 
 export function setSessionService(service: SessionService): void {
+  _closedLoopScheduler?.stop('session_service_replaced');
+  _closedLoopScheduler = null;
   _sessionService = service;
 }
 
+function getClosedLoopScheduler(): L5ClosedLoopScheduler {
+  if (!_closedLoopScheduler) {
+    _closedLoopScheduler = new L5ClosedLoopScheduler(getSessionService());
+  }
+  return _closedLoopScheduler;
+}
+
 export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
+  app.addHook('onClose', async () => {
+    _closedLoopScheduler?.stop('app_closed');
+    _closedLoopScheduler = null;
+  });
+
+  if (process.env['PERSONA_QA_L5_CLOSED_LOOP_AUTOSTART'] === '1') {
+    app.addHook('onReady', async () => {
+      getClosedLoopScheduler().start(readSchedulerEnvOptions());
+    });
+  }
+
   app.get('/api/p2/maturity', async (_request, reply) => {
     const service = getSessionService();
     return reply.send(buildMaturityStatus(service));
   });
+
+  app.get<{ Querystring: { limit?: string } }>(
+    '/api/p2/closed-loop/status',
+    async (request, reply) => {
+      const service = getSessionService();
+      return reply.send(new L5ClosedLoopService(service).getStatus(
+        request.query.limit ? Number(request.query.limit) : 10,
+      ));
+    },
+  );
+
+  app.get<{ Querystring: { scenarioId?: string; status?: string; limit?: string } }>(
+    '/api/p2/closed-loop/runs',
+    async (request, reply) => {
+      const service = getSessionService();
+      return reply.send(service.listL5ClosedLoopRuns({
+        scenarioId: request.query.scenarioId,
+        status: isL5ClosedLoopStatus(request.query.status) ? request.query.status : undefined,
+        limit: request.query.limit ? Number(request.query.limit) : 25,
+      }));
+    },
+  );
+
+  app.post<{
+    Body: {
+      scenarioId?: string
+      maxScenarios?: number
+      applyApprovedChanges?: boolean
+      generateScenarioDrafts?: boolean
+      actor?: string
+      maxApprovedApplies?: number
+    }
+  }>(
+    '/api/p2/closed-loop/run',
+    async (request, reply) => {
+      try {
+        const service = getSessionService();
+        const run = await new L5ClosedLoopService(service).runOnce({
+          scenarioId: request.body?.scenarioId,
+          maxScenarios: request.body?.maxScenarios,
+          applyApprovedChanges: request.body?.applyApprovedChanges,
+          generateScenarioDrafts: request.body?.generateScenarioDrafts,
+          actor: request.body?.actor,
+          maxApprovedApplies: request.body?.maxApprovedApplies,
+        });
+        return reply.status(201).send(run);
+      } catch (error) {
+        return reply.status(409).send({ error: error instanceof Error ? error.message : String(error) });
+      }
+    },
+  );
+
+  app.get('/api/p2/closed-loop/scheduler', async (_request, reply) => {
+    return reply.send(getClosedLoopScheduler().status());
+  });
+
+  app.post<{ Body: L5ClosedLoopSchedulerOptions }>(
+    '/api/p2/closed-loop/scheduler/start',
+    async (request, reply) => {
+      const scheduler = getClosedLoopScheduler();
+      return reply.send(scheduler.start(normalizeSchedulerOptions(request.body)));
+    },
+  );
+
+  app.post('/api/p2/closed-loop/scheduler/stop', async (_request, reply) => {
+    return reply.send(getClosedLoopScheduler().stop('manual_stop'));
+  });
+
+  app.post<{ Body: L5ClosedLoopSchedulerOptions }>(
+    '/api/p2/closed-loop/scheduler/tick',
+    async (request, reply) => {
+      const result = await getClosedLoopScheduler().tick(normalizeSchedulerOptions(request.body));
+      if (result.status === 'executed') return reply.status(201).send(result);
+      if (result.status === 'failed') return reply.status(500).send(result);
+      return reply.send(result);
+    },
+  );
 
   // GET /api/p2/sessions — list all sessions
   app.get('/api/p2/sessions', async (_request, reply) => {
@@ -571,4 +675,42 @@ function isL5MaterializationSubjectType(value: unknown): value is L5Materializat
 
 function isL5MaterializationStatus(value: unknown): value is L5MaterializationStatus {
   return value === 'active' || value === 'rolled_back';
+}
+
+function isL5ClosedLoopStatus(value: unknown): value is L5ClosedLoopStatus {
+  return value === 'completed' || value === 'needs_review' || value === 'blocked' || value === 'failed';
+}
+
+function normalizeSchedulerOptions(input: Partial<L5ClosedLoopSchedulerOptions> | undefined): L5ClosedLoopSchedulerOptions {
+  if (!input) return {};
+
+  return {
+    scenarioId: typeof input.scenarioId === 'string' && input.scenarioId.trim() ? input.scenarioId : undefined,
+    maxScenarios: typeof input.maxScenarios === 'number' ? input.maxScenarios : undefined,
+    applyApprovedChanges: typeof input.applyApprovedChanges === 'boolean' ? input.applyApprovedChanges : undefined,
+    generateScenarioDrafts: typeof input.generateScenarioDrafts === 'boolean' ? input.generateScenarioDrafts : undefined,
+    actor: typeof input.actor === 'string' && input.actor.trim() ? input.actor : undefined,
+    maxApprovedApplies: typeof input.maxApprovedApplies === 'number' ? input.maxApprovedApplies : undefined,
+    intervalMs: typeof input.intervalMs === 'number' ? input.intervalMs : undefined,
+    runImmediately: typeof input.runImmediately === 'boolean' ? input.runImmediately : undefined,
+  };
+}
+
+function readSchedulerEnvOptions(): L5ClosedLoopSchedulerOptions {
+  return {
+    intervalMs: readNumberEnv('PERSONA_QA_L5_CLOSED_LOOP_INTERVAL_MS'),
+    maxScenarios: readNumberEnv('PERSONA_QA_L5_CLOSED_LOOP_MAX_SCENARIOS'),
+    maxApprovedApplies: readNumberEnv('PERSONA_QA_L5_CLOSED_LOOP_MAX_APPROVED_APPLIES'),
+    applyApprovedChanges: process.env['PERSONA_QA_L5_CLOSED_LOOP_APPLY_APPROVED'] === '1',
+    generateScenarioDrafts: process.env['PERSONA_QA_L5_CLOSED_LOOP_GENERATE_DRAFTS'] === '1',
+    runImmediately: process.env['PERSONA_QA_L5_CLOSED_LOOP_RUN_IMMEDIATELY'] === '1',
+    actor: process.env['PERSONA_QA_L5_CLOSED_LOOP_ACTOR'] || 'l5_closed_loop_scheduler',
+  };
+}
+
+function readNumberEnv(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : undefined;
 }

@@ -189,11 +189,13 @@ export type Phase2LearningProposalStatus = 'proposed' | 'approved' | 'applied' |
 export type Phase2LearningProposalPatchKind = 'none' | 'prompt_overlay' | 'capability_patch' | 'environment_check'
 export type Phase2HealingActionStatus = 'proposed' | 'applied' | 'blocked' | 'rolled_back'
 export type Phase2GovernanceSubjectType = 'learning_proposal' | 'scenario_draft' | 'healing_action'
-export type Phase2GovernanceAction = 'generate' | 'approve' | 'apply' | 'reject' | 'evaluate'
+export type Phase2GovernanceAction = 'generate' | 'approve' | 'apply' | 'reject' | 'evaluate' | 'rollback' | 'promote'
 export type Phase2GovernanceVerdict = 'allowed' | 'blocked'
-export type Phase2ScenarioDraftStatus = 'pending' | 'approved' | 'rejected' | 'revised'
+export type Phase2ScenarioDraftStatus = 'pending' | 'approved' | 'rejected' | 'revised' | 'promoted'
 export type Phase2MaturityCapabilityState = 'complete' | 'guarded' | 'beta'
 export type Phase2MaturitySignalTone = 'success' | 'warning' | 'danger' | 'neutral'
+export type Phase2ClosedLoopRunStatus = 'completed' | 'needs_review' | 'blocked' | 'failed'
+export type Phase2ClosedLoopMode = 'observe' | 'apply_approved'
 
 export interface Phase2MaturityCapability {
   id: string
@@ -286,6 +288,78 @@ export interface Phase2ScenarioDraft {
   updatedAt: string
 }
 
+export interface Phase2ClosedLoopRun {
+  id: string
+  status: Phase2ClosedLoopRunStatus
+  mode: Phase2ClosedLoopMode
+  scenarioId?: string
+  queuedScenarios: string[]
+  actions: Array<Record<string, unknown>>
+  verification: Record<string, unknown>
+  summary: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  startedAt: string
+  completedAt: string
+}
+
+export interface Phase2ClosedLoopStatusResponse {
+  generatedAt: string
+  guards: Array<{
+    loop: string
+    status: 'open' | 'blocked'
+    reason: string
+    current: number
+    limit: number
+  }>
+  queue: Array<{
+    scenarioId: string
+    priority: 'critical' | 'high' | 'normal' | 'low'
+    reason: string
+    suggestedFrequency: 'every_commit' | 'daily' | 'weekly' | 'on_demand'
+    lastRunAt: string | null
+    riskScore: number
+    queueId: string
+    position: number
+    status: 'queued' | 'blocked'
+  }>
+  latestRun: Phase2ClosedLoopRun | null
+  recentRuns: Phase2ClosedLoopRun[]
+}
+
+export interface Phase2ClosedLoopSchedulerStatus {
+  enabled: boolean
+  running: boolean
+  intervalMs: number
+  minIntervalMs: number
+  maxConsecutiveFailures: number
+  nextTickAt: string | null
+  startedAt: string | null
+  stoppedAt: string | null
+  lastTickStartedAt: string | null
+  lastTickCompletedAt: string | null
+  tickCount: number
+  failureCount: number
+  consecutiveFailures: number
+  lastRunId: string | null
+  lastError: string | null
+  options: {
+    scenarioId?: string
+    maxScenarios: number
+    applyApprovedChanges: boolean
+    generateScenarioDrafts: boolean
+    maxApprovedApplies: number
+    actor: string
+  }
+}
+
+export interface Phase2ClosedLoopSchedulerTickResult {
+  status: 'executed' | 'skipped' | 'failed'
+  reason?: string
+  error?: string
+  run?: Phase2ClosedLoopRun
+  scheduler: Phase2ClosedLoopSchedulerStatus
+}
+
 export const api = {
   getRuns: () => fetchJSON(`${API_BASE}/api/runs`),
   getRun: (id: number) => fetchJSON(`${API_BASE}/api/runs/${id}`),
@@ -318,6 +392,47 @@ export const api = {
   getPhase2ArtifactContentUrl: (artifactId: string) => `${API_BASE}/api/p2/artifacts/${artifactId}/content`,
   getPhase2SessionWsUrl: (sessionId: string) => `${WS_BASE}/ws/p2/sessions/${sessionId}`,
   getPhase2Maturity: () => fetchJSON<Phase2MaturityStatus>(`${API_BASE}/api/p2/maturity`),
+  getPhase2ClosedLoopStatus: () =>
+    fetchJSON<Phase2ClosedLoopStatusResponse>(`${API_BASE}/api/p2/closed-loop/status`),
+  runPhase2ClosedLoop: (payload: {
+    scenarioId?: string
+    maxScenarios?: number
+    applyApprovedChanges?: boolean
+    generateScenarioDrafts?: boolean
+  }) =>
+    fetchJSON<Phase2ClosedLoopRun>(`${API_BASE}/api/p2/closed-loop/run`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getPhase2ClosedLoopSchedulerStatus: () =>
+    fetchJSON<Phase2ClosedLoopSchedulerStatus>(`${API_BASE}/api/p2/closed-loop/scheduler`),
+  startPhase2ClosedLoopScheduler: (payload: {
+    scenarioId?: string
+    maxScenarios?: number
+    applyApprovedChanges?: boolean
+    generateScenarioDrafts?: boolean
+    maxApprovedApplies?: number
+    intervalMs?: number
+    runImmediately?: boolean
+  }) =>
+    fetchJSON<Phase2ClosedLoopSchedulerStatus>(`${API_BASE}/api/p2/closed-loop/scheduler/start`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  stopPhase2ClosedLoopScheduler: () =>
+    fetchJSON<Phase2ClosedLoopSchedulerStatus>(`${API_BASE}/api/p2/closed-loop/scheduler/stop`, {
+      method: 'POST',
+    }),
+  tickPhase2ClosedLoopScheduler: (payload: {
+    scenarioId?: string
+    maxScenarios?: number
+    applyApprovedChanges?: boolean
+    generateScenarioDrafts?: boolean
+  }) =>
+    fetchJSON<Phase2ClosedLoopSchedulerTickResult>(`${API_BASE}/api/p2/closed-loop/scheduler/tick`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   getPhase2HealingLog: (limit = 100) =>
     fetchJSON<Phase2HealingAction[]>(`${API_BASE}/api/p2/healing/log?${new URLSearchParams({ limit: String(limit) })}`),
   evaluatePhase2Healing: () =>
