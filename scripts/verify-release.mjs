@@ -9,6 +9,7 @@ const repoRoot = path.resolve(scriptDir, '..')
 const dashboardRoot = path.join(repoRoot, 'templates/persona-qa-dashboard')
 const apiRoot = path.join(dashboardRoot, 'packages/api')
 const webRoot = path.join(dashboardRoot, 'packages/web')
+const tsxLoader = path.join(dashboardRoot, 'node_modules/tsx/dist/loader.mjs')
 const preferredNodeBin = process.env.AGENTIC_RELEASE_NODE_BIN
   ?? path.join(process.env.HOME ?? '', '.nvm/versions/node/v22.13.1/bin')
 const preferredNodePath = path.join(preferredNodeBin, 'node')
@@ -18,8 +19,13 @@ const releasePath = fs.existsSync(preferredNodePath)
   : process.env.PATH
 
 const apiReleaseTests = [
+  'src/phase2/__tests__/agent-profiles.test.ts',
+  'src/phase2/__tests__/scenario-loading.test.ts',
   'src/phase2/__tests__/adaptive-history.test.ts',
   'src/phase2/__tests__/failure-diagnosis-service.test.ts',
+  'src/phase2/__tests__/agent-runtime.test.ts',
+  'src/phase2/__tests__/workflow-tools.test.ts',
+  'src/phase2/__tests__/evidence-tools.test.ts',
   'src/phase2/__tests__/l5-services.test.ts',
   'src/phase2/__tests__/governance-policy-service.test.ts',
   'src/phase2/__tests__/independent-auditor-service.test.ts',
@@ -30,6 +36,7 @@ const apiReleaseTests = [
 
 const webReleaseTests = [
   'src/components/__tests__/L5GovernancePanel.test.tsx',
+  'src/components/__tests__/MaturityStatusPanel.test.tsx',
   'src/components/__tests__/RunTimeline.test.tsx',
   'src/components/__tests__/RecentFindings.test.tsx',
   'src/components/__tests__/RecentRuns.test.tsx',
@@ -68,10 +75,19 @@ const steps = [
     cwd: repoRoot,
   },
   {
+    name: 'api: adapter personas route node test',
+    command: releaseNodePath,
+    args: ['--import', tsxLoader, '--test', 'src/routes/__tests__/personas.test.ts'],
+    cwd: apiRoot,
+  },
+  {
     name: 'api: L4/L5 release vitest',
     command: 'npm',
     args: ['exec', '--', 'vitest', 'run', ...apiReleaseTests],
     cwd: apiRoot,
+    env: {
+      PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS: '1',
+    },
   },
   {
     name: 'web: release vitest',

@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createAnthropicProvider } from '../providers/anthropic-provider.js'
-import { getProfile } from '../profiles/agent-profiles.js'
+import { listProfiles } from '../profiles/agent-profiles.js'
 import { artifactSensor } from '../sensors/artifact-sensor.js'
 import { outputSensor } from '../sensors/output-sensor.js'
 import { schemaSensor } from '../sensors/schema-sensor.js'
@@ -39,8 +39,9 @@ export function createPhase2Runtime(options: Phase2RuntimeOptions = {}) {
   registerWorkflowTools(toolRegistry)
   registerEvidenceTools(toolRegistry, sessionService)
 
-  const sales-associate = getProfile('sales-associate')
-  const provider = createAnthropicProvider(options.model ?? sales-associate.model ?? 'claude-haiku-4-5-20251001')
+  const profiles = listProfiles()
+  const primaryPersona = profiles.find((profile) => profile.role !== 'orchestrator')
+  const provider = createAnthropicProvider(options.model ?? primaryPersona?.model ?? 'claude-sonnet-4-6')
   const agentRuntime = new AgentRuntime(provider, toolRegistry, sessionService)
   const sensorRunner = new SensorRunner()
 
@@ -50,11 +51,9 @@ export function createPhase2Runtime(options: Phase2RuntimeOptions = {}) {
   sensorRunner.registerSensor('output', outputSensor)
   sensorRunner.registerSensor('timeout', timeoutSensor)
 
-  agentRuntime.registerAgent(sales-associate)
-  agentRuntime.registerAgent(getProfile('fulfillment-agent'))
-  agentRuntime.registerAgent(getProfile('billing_clerk'))
-  agentRuntime.registerAgent(getProfile('store_manager'))
-  agentRuntime.registerAgent(getProfile('orchestrator'))
+  for (const profile of profiles) {
+    agentRuntime.registerAgent(profile)
+  }
 
   const orchestrator = new Orchestrator(agentRuntime, sessionService, sensorRunner)
 

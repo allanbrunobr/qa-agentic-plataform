@@ -8,6 +8,7 @@ import path from 'node:path'
 import type { ToolHandler, ToolMetadata, ToolContext, ToolResult } from '../types/tool-types.js'
 import type { ToolRegistry } from '../services/tool-registry.js'
 import { resolvePhase2ArtifactPath, type SessionService } from '../services/session-service.js'
+import { hasRenderablePageContent, type EvidencePage } from './browser-page-evidence.js'
 
 // --- captureScreenshot ---
 
@@ -31,7 +32,18 @@ export function makeCaptureScreenshotHandler(sessionService: SessionService): To
     }
 
     try {
-      const page = context.page as { screenshot: (opts: { fullPage?: boolean }) => Promise<Buffer> }
+      const page = context.page as EvidencePage
+      if (!(await hasRenderablePageContent(page))) {
+        return {
+          ok: false,
+          error: {
+            code: 'blank_page',
+            message: 'Cannot capture screenshot because the current Playwright page has no renderable content',
+            retryable: true,
+          },
+        }
+      }
+
       const buffer = await page.screenshot({ fullPage: fullPage ?? false })
       const filePath = `screenshots/${context.sessionId}/${Date.now()}.png`
       const absolutePath = resolvePhase2ArtifactPath(filePath)

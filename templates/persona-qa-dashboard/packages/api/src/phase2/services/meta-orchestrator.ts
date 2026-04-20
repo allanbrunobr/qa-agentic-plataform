@@ -1,5 +1,6 @@
 import { listScenarios, loadScenario } from '../scenarios/index.js'
 import type { SessionService } from './session-service.js'
+import { L5LoopGuardService, type L5LoopGuard } from './l5-loop-guard-service.js'
 
 export interface ScheduleRecommendation {
   scenarioId: string
@@ -8,6 +9,13 @@ export interface ScheduleRecommendation {
   suggestedFrequency: 'every_commit' | 'daily' | 'weekly' | 'on_demand'
   lastRunAt: string | null
   riskScore: number
+}
+
+export interface MetaOrchestrationQueueItem extends ScheduleRecommendation {
+  queueId: string
+  position: number
+  status: 'queued' | 'blocked'
+  guard: L5LoopGuard
 }
 
 export class MetaOrchestrator {
@@ -22,6 +30,29 @@ export class MetaOrchestrator {
   optimizeRunOrder(scenarioIds: string[]): string[] {
     const riskByScenario = new Map(this.recommendSchedule().map((item) => [item.scenarioId, item.riskScore]))
     return [...scenarioIds].sort((a, b) => (riskByScenario.get(b) ?? 0) - (riskByScenario.get(a) ?? 0))
+  }
+
+  buildGovernedRunQueue(limit = 10): MetaOrchestrationQueueItem[] {
+    const guard = new L5LoopGuardService(this.sessionService)
+      .summarize()
+      .find((candidate) => candidate.loop === 'meta_orchestration')
+    const metaGuard = guard ?? {
+      loop: 'meta_orchestration' as const,
+      status: 'open' as const,
+      reason: 'Meta-orchestration guard unavailable; defaulting to recommendation-only mode.',
+      current: 0,
+      limit: 0,
+    }
+
+    return this.recommendSchedule()
+      .slice(0, Math.max(1, Math.min(limit, 50)))
+      .map((recommendation, index) => ({
+        ...recommendation,
+        queueId: `${recommendation.scenarioId}:${index + 1}`,
+        position: index + 1,
+        status: metaGuard.status === 'open' ? 'queued' : 'blocked',
+        guard: metaGuard,
+      }))
   }
 
   private buildRecommendation(scenarioId: string): ScheduleRecommendation {

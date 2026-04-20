@@ -9,6 +9,7 @@ import { IndependentAuditorService } from '../services/independent-auditor-servi
 import { L5MaterializationService } from '../services/l5-materialization-service.js';
 import { LearningControlService } from '../services/learning-control-service.js';
 import { LearningPlaybookService } from '../services/learning-playbook-service.js';
+import { buildMaturityStatus } from '../services/maturity-service.js';
 import { MetaOrchestrator } from '../services/meta-orchestrator.js';
 import { ProfileTuningService } from '../services/profile-tuning-service.js';
 import { SelfHealingService } from '../services/self-healing-service.js';
@@ -95,6 +96,11 @@ export function setSessionService(service: SessionService): void {
 }
 
 export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/p2/maturity', async (_request, reply) => {
+    const service = getSessionService();
+    return reply.send(buildMaturityStatus(service));
+  });
+
   // GET /api/p2/sessions — list all sessions
   app.get('/api/p2/sessions', async (_request, reply) => {
     const service = getSessionService();
@@ -335,6 +341,16 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     const service = getSessionService();
     return reply.send(new MetaOrchestrator(service).recommendSchedule());
   });
+
+  app.get<{ Querystring: { limit?: string } }>(
+    '/api/p2/schedule/queue',
+    async (request, reply) => {
+      const service = getSessionService();
+      return reply.send(new MetaOrchestrator(service).buildGovernedRunQueue(
+        request.query.limit ? Number(request.query.limit) : 10,
+      ));
+    },
+  );
 
   app.get<{ Querystring: { limit?: string } }>(
     '/api/p2/healing/log',

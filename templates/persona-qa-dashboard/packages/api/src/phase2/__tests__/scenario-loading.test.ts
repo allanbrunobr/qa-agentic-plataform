@@ -1,8 +1,22 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterAll, beforeAll, describe, it, expect, vi, beforeEach } from 'vitest';
 import { loadScenario, listScenarios } from '../scenarios/index.js';
 import { Orchestrator } from '../services/orchestrator.js';
 import { SessionService } from '../services/session-service.js';
 import { AgentRuntime } from '../services/agent-runtime.js';
+
+const previousLegacyScenarioFlag = process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'];
+
+beforeAll(() => {
+  process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'] = '1';
+});
+
+afterAll(() => {
+  if (previousLegacyScenarioFlag === undefined) {
+    delete process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'];
+  } else {
+    process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'] = previousLegacyScenarioFlag;
+  }
+});
 
 describe('Scenario Loading', () => {
   it('should load first_order scenario', () => {
