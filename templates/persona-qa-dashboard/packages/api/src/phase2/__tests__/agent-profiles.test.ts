@@ -1,5 +1,19 @@
-import { describe, it, expect } from 'vitest'
+import { afterAll, beforeAll, describe, it, expect } from 'vitest'
 import { getProfile, listProfiles } from '../profiles/agent-profiles.js'
+
+const previousLegacyScenarioFlag = process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS']
+
+beforeAll(() => {
+  process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'] = '1'
+})
+
+afterAll(() => {
+  if (previousLegacyScenarioFlag === undefined) {
+    delete process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS']
+  } else {
+    process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'] = previousLegacyScenarioFlag
+  }
+})
 
 describe('agent-profiles', () => {
   describe('getProfile — sales-associate', () => {
@@ -80,9 +94,10 @@ describe('agent-profiles', () => {
       expect(p.timeoutMs).toBe(180_000)
     })
 
-    it('uses markdown prompt identity', () => {
+    it('uses generated runtime prompt identity without template agent files', () => {
       const p = getProfile('fulfillment-agent')
-      expect(p.promptPath).toContain('agent-fulfillment-agent.md')
+      expect(p.promptPath).toBeUndefined()
+      expect(p.systemPrompt).toContain('fulfillment-agent')
     })
   })
 
@@ -97,9 +112,10 @@ describe('agent-profiles', () => {
       expect(p.toolPolicy.allowedTools).toEqual(['findBillingGuideByEventId'])
     })
 
-    it('uses markdown prompt identity', () => {
+    it('uses generated runtime prompt identity without template agent files', () => {
       const p = getProfile('billing_clerk')
-      expect(p.promptPath).toContain('agent-billing-clerk.md')
+      expect(p.promptPath).toBeUndefined()
+      expect(p.systemPrompt).toContain('billing_clerk')
     })
   })
 
@@ -114,9 +130,10 @@ describe('agent-profiles', () => {
       expect(p.toolPolicy.allowedTools).toEqual(['verifyFinanceDashboard', 'verifyReportsPage'])
     })
 
-    it('uses markdown prompt identity', () => {
+    it('uses generated runtime prompt identity without template agent files', () => {
       const p = getProfile('store_manager')
-      expect(p.promptPath).toContain('agent-gestor.md')
+      expect(p.promptPath).toBeUndefined()
+      expect(p.systemPrompt).toContain('store_manager')
     })
   })
 

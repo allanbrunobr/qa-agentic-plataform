@@ -19,7 +19,6 @@ const COPY_ROOT_FILES = [
 ] as const
 
 const COPY_ROOT_DIRS = [
-  'agents',
   'docs',
   path.join('packages', 'api', 'src'),
   path.join('packages', 'web'),
@@ -201,7 +200,6 @@ async function patchInstalledRuntime(installedPath: string, repoPath: string) {
   const dbIndexPath = path.join(installedPath, 'packages', 'api', 'src', 'db', 'index.ts')
   const sessionServicePath = path.join(installedPath, 'packages', 'api', 'src', 'phase2', 'services', 'session-service.ts')
   const overviewPath = path.join(installedPath, 'packages', 'web', 'src', 'pages', 'Overview.tsx')
-  const personasRoutesPath = path.join(installedPath, 'packages', 'api', 'src', 'routes', 'personas.ts')
   const runnerPath = path.join(installedPath, 'packages', 'api', 'src', 'phase2', 'routes', 'runner.ts')
   const anthropicProviderPath = path.join(installedPath, 'packages', 'api', 'src', 'phase2', 'providers', 'anthropic-provider.ts')
   const workflowToolsPath = path.join(installedPath, 'packages', 'api', 'src', 'phase2', 'tools', 'workflow-tools.ts')
@@ -418,32 +416,6 @@ async function patchInstalledRuntime(installedPath: string, repoPath: string) {
     "              Última atividade {orderedSessions[0] ? formatRelativeTime(orderedSessions[0].startedAt) : 'sem atividade ainda'}",
   )
   await fs.writeFile(overviewPath, overviewPatched, 'utf8')
-
-  const personasRoutesSource = await fs.readFile(personasRoutesPath, 'utf8')
-  let personasRoutesPatched = personasRoutesSource
-  if (!personasRoutesPatched.includes("import fsSync from 'node:fs';")) {
-    personasRoutesPatched = personasRoutesPatched.replace(
-      "import fs from 'node:fs/promises';",
-      "import fsSync from 'node:fs';\nimport fs from 'node:fs/promises';",
-    )
-  }
-  personasRoutesPatched = personasRoutesPatched.replace(
-      `function getPersonasDir(): string {
-  // Agents live inside persona-qa-dashboard/agents/
-  return path.resolve(process.cwd(), '..', '..', 'agents');
-}`,
-      `function getPersonasDir(): string {
-  const candidates = [
-    process.env['PERSONA_QA_PERSONAS_DIR'],
-    path.resolve(process.cwd(), 'agents'),
-    path.resolve(process.cwd(), '..', '..', 'agents'),
-  ].filter((candidate): candidate is string => Boolean(candidate));
-
-  return candidates.find((candidate) => fsSync.existsSync(candidate))
-    ?? path.resolve(process.cwd(), 'agents');
-}`,
-  )
-  await fs.writeFile(personasRoutesPath, personasRoutesPatched, 'utf8')
 
   const workflowToolsSource = await fs.readFile(workflowToolsPath, 'utf8')
   const workflowToolsPatched = workflowToolsSource
