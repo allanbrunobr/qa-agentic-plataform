@@ -197,6 +197,20 @@ export type Phase2MaturitySignalTone = 'success' | 'warning' | 'danger' | 'neutr
 export type Phase2ClosedLoopRunStatus = 'completed' | 'needs_review' | 'blocked' | 'failed'
 export type Phase2ClosedLoopMode = 'observe' | 'apply_approved'
 
+export interface Phase2ClosedLoopLifecycleEvent {
+  type: string
+  timestamp: string
+  loop?: string
+  scenarioId?: string
+  status?: string
+  reason?: string
+  details?: Record<string, unknown>
+}
+
+export interface Phase2ClosedLoopRunMetadata extends Record<string, unknown> {
+  lifecycle?: Phase2ClosedLoopLifecycleEvent[]
+}
+
 export interface Phase2MaturityCapability {
   id: string
   label: string
@@ -297,7 +311,7 @@ export interface Phase2ClosedLoopRun {
   actions: Array<Record<string, unknown>>
   verification: Record<string, unknown>
   summary: Record<string, unknown>
-  metadata?: Record<string, unknown>
+  metadata?: Phase2ClosedLoopRunMetadata
   startedAt: string
   completedAt: string
 }

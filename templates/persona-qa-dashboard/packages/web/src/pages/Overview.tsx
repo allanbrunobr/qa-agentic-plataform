@@ -6,6 +6,7 @@ import { Card, StatCard } from '@/components/ui/Card'
 import { MaturityStatusPanel } from '@/components/MaturityStatusPanel'
 import {
   api,
+  type Phase2ClosedLoopLifecycleEvent,
   type Phase2ClosedLoopSchedulerStatus,
   type Phase2ClosedLoopStatusResponse,
   type Phase2MaturityStatus,
@@ -75,6 +76,13 @@ function scenarioLabel(session: Phase2SessionSummary) {
 
 function isMultiAgent(session: Phase2SessionSummary) {
   return session.scenarioId.includes('multi_role')
+}
+
+function formatLifecycleLabel(event: Phase2ClosedLoopLifecycleEvent) {
+  const label = event.type.replace(/_/g, ' ')
+  const scope = event.scenarioId ?? event.loop
+  if (!scope) return label
+  return `${label} · ${scope.replace(/_/g, ' ')}`
 }
 
 function parseOverviewHashScenario() {
@@ -249,6 +257,7 @@ export function Overview() {
   const selectedScenarioSummary = scenarios.find((scenario) => scenario.id === selectedScenario)
   const selectedScenarioGate = selectedScenarioSummary?.quality_gate
   const latestClosedLoop = closedLoop?.latestRun ?? null
+  const latestLifecycle = latestClosedLoop?.metadata?.lifecycle?.slice(-6).reverse() ?? []
   const schedulerEnabled = closedLoopScheduler?.enabled ?? false
 
   if (loading) return <LoadingState />
@@ -456,7 +465,7 @@ export function Overview() {
             </div>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-6">
             <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
               <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Última iteração</p>
               <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
@@ -473,6 +482,12 @@ export function Overview() {
               <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Ações</p>
               <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
                 {latestClosedLoop?.actions.length ?? 0}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Lifecycle</p>
+              <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
+                {latestClosedLoop?.metadata?.lifecycle?.length ?? 0}
               </p>
             </div>
             <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
@@ -496,6 +511,29 @@ export function Overview() {
             <p className="mt-4 text-xs text-[var(--text-muted)]">
               {String(latestClosedLoop.summary.statusReason ?? 'Iteração L5 registrada.')}
             </p>
+          ) : null}
+
+          {latestLifecycle.length > 0 ? (
+            <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                Lifecycle recente
+              </p>
+              <div className="mt-3 grid gap-2 md:grid-cols-3">
+                {latestLifecycle.map((event, index) => (
+                  <div
+                    key={`${event.timestamp}-${event.type}-${index}`}
+                    className="rounded-md border border-[var(--border)] px-3 py-2"
+                  >
+                    <p className="truncate text-xs font-medium text-[var(--text-secondary)]">
+                      {formatLifecycleLabel(event)}
+                    </p>
+                    <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                      {event.status ?? 'registrado'} · {formatRelativeTime(event.timestamp)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : null}
 
           {closedLoopError && (
