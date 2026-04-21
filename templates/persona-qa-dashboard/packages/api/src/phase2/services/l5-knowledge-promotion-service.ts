@@ -4,14 +4,36 @@ import { LearningControlService } from './learning-control-service.js'
 import { SelfHealingService } from './self-healing-service.js'
 import { GovernancePolicyService } from './governance-policy-service.js'
 import type {
+  GovernanceSubjectType,
+  HealingAction,
   KnowledgePromotionEvent,
   KnowledgePromotionEventAction,
   KnowledgePromotionEventInput,
   KnowledgePromotionEventStatus,
   L5Materialization,
+  LearningProposal,
   ScenarioDraft,
   SessionService,
 } from './session-service.js'
+
+export type L5PostPromotionVerificationStatus = 'passed' | 'warning' | 'failed'
+
+export interface L5PostPromotionVerificationCheck {
+  id: string
+  status: L5PostPromotionVerificationStatus
+  detail: string
+  evidence?: Record<string, unknown>
+}
+
+export interface L5PostPromotionVerification {
+  status: L5PostPromotionVerificationStatus
+  checkedAt: string
+  subjectType: GovernanceSubjectType
+  subjectId: string
+  action: KnowledgePromotionEventAction
+  checks: L5PostPromotionVerificationCheck[]
+  recommendation: string
+}
 
 export interface L5KnowledgePromotionActionResult {
   candidate: L5KnowledgePromotionCandidate
@@ -54,15 +76,25 @@ export class L5KnowledgePromotionService {
     }
 
     try {
-      const result = await this.executeAction(candidate, action, actor)
+      const actionResult = await this.executeAction(candidate, action, actor)
+      const postPromotionVerification = this.verifyPostPromotion(candidate, action, actionResult)
+      const result = {
+        ...actionResult,
+        postPromotionVerification,
+      }
       const event = this.recordEvent(candidate, {
         action,
-        status: 'completed',
+        status: postPromotionVerification.status === 'failed' ? 'failed' : 'completed',
         actor,
         result,
       })
+      if (postPromotionVerification.status === 'failed') {
+        throw withPromotionEvent(new Error(`Post-promotion verification failed for ${candidate.id}`), event)
+      }
       return { candidate, event, result }
     } catch (error) {
+      if (getAttachedPromotionEvent(error)) throw error
+
       const message = error instanceof Error ? error.message : String(error)
       const event = this.recordEvent(candidate, {
         action,
@@ -201,6 +233,266 @@ export class L5KnowledgePromotionService {
     return updated
   }
 
+  private verifyPostPromotion(
+    candidate: L5KnowledgePromotionCandidate,
+    action: KnowledgePromotionEventAction,
+    result: Record<string, unknown>,
+  ): L5PostPromotionVerification {
+    const checks: L5PostPromotionVerificationCheck[] = [
+      buildCheck({
+        id: 'source_run_available',
+        passed: Boolean(this.sessionService.getL5ClosedLoopRun(candidate.sourceRunId)),
+        detail: `Source run ${candidate.sourceRunId} is available for audit traceability.`,
+      }),
+      this.verifyGovernanceEvidence(candidate, action),
+    ]
+
+    if (candidate.subjectType === 'learning_proposal') {
+      checks.push(...this.verifyLearningProposalPromotion(candidate.subjectId, action, result))
+    } else if (candidate.subjectType === 'scenario_draft') {
+      checks.push(...this.verifyScenarioDraftPromotion(candidate.subjectId, action, result))
+    } else if (candidate.subjectType === 'healing_action') {
+      checks.push(...this.verifyHealingActionPromotion(candidate.subjectId))
+    } else {
+      checks.push({
+        id: 'subject_type_supported',
+        status: 'failed',
+        detail: `Unsupported promotion subject type: ${candidate.subjectType}`,
+      })
+    }
+
+    return {
+      status: aggregateStatus(checks),
+      checkedAt: new Date().toISOString(),
+      subjectType: candidate.subjectType,
+      subjectId: candidate.subjectId,
+      action,
+      checks,
+      recommendation: buildVerificationRecommendation(checks),
+    }
+  }
+
+  private verifyGovernanceEvidence(
+    candidate: L5KnowledgePromotionCandidate,
+    action: KnowledgePromotionEventAction,
+  ): L5PostPromotionVerificationCheck {
+    const decisions = this.sessionService.listGovernanceDecisions({
+      subjectType: candidate.subjectType,
+      subjectId: candidate.subjectId,
+      limit: 100,
+    })
+    const allowed = decisions.filter((decision) => (
+      decision.action === action && decision.verdict === 'allowed'
+    ))
+
+    return buildCheck({
+      id: 'allowed_governance_decision',
+      passed: allowed.length > 0,
+      detail: `Allowed governance decision exists for ${action}.`,
+      evidence: {
+        allowedDecisions: allowed.length,
+        latestDecisionId: allowed[0]?.id,
+      },
+    })
+  }
+
+  private verifyLearningProposalPromotion(
+    proposalId: string,
+    action: KnowledgePromotionEventAction,
+    result: Record<string, unknown>,
+  ): L5PostPromotionVerificationCheck[] {
+    const checks: L5PostPromotionVerificationCheck[] = []
+    const proposal = this.sessionService.getLearningProposal(proposalId)
+    checks.push(buildCheck({
+      id: 'learning_proposal_exists',
+      passed: Boolean(proposal),
+      detail: `Learning proposal ${proposalId} is persisted.`,
+    }))
+    if (!proposal) return checks
+
+    if (action === 'approve') {
+      checks.push(buildCheck({
+        id: 'learning_proposal_approved',
+        passed: proposal.status === 'approved' || proposal.status === 'applied',
+        detail: 'Learning proposal status permits future materialization.',
+        evidence: { status: proposal.status },
+      }))
+      return checks
+    }
+
+    if (action === 'apply') {
+      checks.push(buildCheck({
+        id: 'learning_proposal_applied',
+        passed: proposal.status === 'applied',
+        detail: 'Learning proposal is marked as applied.',
+        evidence: { status: proposal.status },
+      }))
+      checks.push(...this.verifyMaterialization('learning_proposal', proposal.id, result))
+      checks.push(this.verifyRuntimeOverlayLoadable(proposal))
+      return checks
+    }
+
+    checks.push({
+      id: 'learning_action_supported',
+      status: 'failed',
+      detail: `Learning proposal does not support ${action}.`,
+    })
+    return checks
+  }
+
+  private verifyScenarioDraftPromotion(
+    draftId: string,
+    action: KnowledgePromotionEventAction,
+    result: Record<string, unknown>,
+  ): L5PostPromotionVerificationCheck[] {
+    const checks: L5PostPromotionVerificationCheck[] = []
+    const draft = this.sessionService.getScenarioDraft(draftId)
+    checks.push(buildCheck({
+      id: 'scenario_draft_exists',
+      passed: Boolean(draft),
+      detail: `Scenario draft ${draftId} is persisted.`,
+    }))
+    if (!draft) return checks
+
+    if (action === 'approve') {
+      checks.push(buildCheck({
+        id: 'scenario_draft_approved',
+        passed: draft.status === 'approved' || draft.status === 'promoted',
+        detail: 'Scenario draft status permits future promotion.',
+        evidence: { status: draft.status },
+      }))
+      return checks
+    }
+
+    if (action === 'promote') {
+      checks.push(buildCheck({
+        id: 'scenario_draft_promoted',
+        passed: draft.status === 'promoted',
+        detail: 'Scenario draft is marked as promoted.',
+        evidence: { status: draft.status },
+      }))
+      checks.push(...this.verifyMaterialization('scenario_draft', draft.id, result))
+      return checks
+    }
+
+    checks.push({
+      id: 'scenario_action_supported',
+      status: 'failed',
+      detail: `Scenario draft does not support ${action}.`,
+    })
+    return checks
+  }
+
+  private verifyHealingActionPromotion(actionId: string): L5PostPromotionVerificationCheck[] {
+    const action = this.sessionService.getHealingAction(actionId)
+    return [
+      buildCheck({
+        id: 'healing_action_exists',
+        passed: Boolean(action),
+        detail: `Healing action ${actionId} is persisted.`,
+      }),
+      buildCheck({
+        id: 'healing_action_applied',
+        passed: action?.status === 'applied',
+        detail: 'Healing action is marked as applied.',
+        evidence: action ? healingActionEvidence(action) : undefined,
+      }),
+    ]
+  }
+
+  private verifyMaterialization(
+    subjectType: GovernanceSubjectType,
+    subjectId: string,
+    result: Record<string, unknown>,
+  ): L5PostPromotionVerificationCheck[] {
+    const materializationId = getMaterializationId(result)
+    const materializations = this.sessionService.listL5Materializations({
+      subjectType,
+      subjectId,
+      status: 'active',
+      limit: 100,
+    })
+    const materialization = materializationId
+      ? materializations.find((candidate) => candidate.id === materializationId)
+      : materializations[0]
+
+    const checks: L5PostPromotionVerificationCheck[] = [
+      buildCheck({
+        id: 'active_materialization_exists',
+        passed: Boolean(materialization),
+        detail: 'Active L5 materialization exists for promoted knowledge.',
+        evidence: {
+          requestedMaterializationId: materializationId,
+          activeMaterializations: materializations.length,
+        },
+      }),
+    ]
+    if (!materialization) return checks
+
+    const metadata = materialization.metadata ?? {}
+    const independentAudit = recordValue(metadata['independentAudit'])
+    const postWriteVerification = recordValue(metadata['postWriteVerification'])
+    checks.push(buildCheck({
+      id: 'materialization_independent_audit_passed',
+      passed: independentAudit['verdict'] === 'passed',
+      detail: 'Materialization independent audit passed.',
+      evidence: {
+        materializationId: materialization.id,
+        verdict: independentAudit['verdict'],
+      },
+    }))
+    checks.push(buildCheck({
+      id: 'materialization_checksum_verified',
+      passed: postWriteVerification['checksumMatches'] === true,
+      detail: 'Materialization checksum matches persisted content.',
+      evidence: {
+        materializationId: materialization.id,
+        checksumMatches: postWriteVerification['checksumMatches'],
+      },
+    }))
+    return checks
+  }
+
+  private verifyRuntimeOverlayLoadable(proposal: LearningProposal): L5PostPromotionVerificationCheck {
+    if (proposal.patchKind !== 'prompt_overlay') {
+      return {
+        id: 'runtime_overlay_loadable',
+        status: 'passed',
+        detail: `Patch kind ${proposal.patchKind} does not require runtime overlay loading.`,
+      }
+    }
+
+    const agentId = proposal.agentId ?? agentIdFromTarget(proposal.target)
+    if (!agentId) {
+      return {
+        id: 'runtime_overlay_loadable',
+        status: 'warning',
+        detail: 'Prompt overlay has no concrete agent target; runtime loading could not be scoped.',
+        evidence: {
+          target: proposal.target,
+        },
+      }
+    }
+
+    const overlays = this.sessionService.listRuntimeLearningOverlays({
+      scenarioId: proposal.scenarioId,
+      stepId: proposal.stepId,
+      agentId,
+      limit: 5,
+    })
+    const overlay = overlays.find((candidate) => candidate.proposalId === proposal.id)
+    return buildCheck({
+      id: 'runtime_overlay_loadable',
+      passed: Boolean(overlay),
+      detail: 'Applied prompt overlay is loadable by the agent runtime.',
+      evidence: {
+        agentId,
+        overlayCount: overlays.length,
+        materializationId: overlay?.materializationId,
+      },
+    })
+  }
+
   private requireScenarioDraft(id: string): ScenarioDraft {
     const draft = this.sessionService.getScenarioDraft(id)
     if (!draft) throw new Error(`Scenario draft ${id} not found`)
@@ -257,7 +549,73 @@ function serializeMaterialization(materialization: L5Materialization): Record<st
   }
 }
 
+function getMaterializationId(result: Record<string, unknown>): string | undefined {
+  const materialization = recordValue(result['materialization'])
+  return typeof materialization['id'] === 'string' ? materialization['id'] : undefined
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function healingActionEvidence(action: HealingAction): Record<string, unknown> {
+  return {
+    status: action.status,
+    automatic: action.automatic,
+    appliedBy: action.metadata?.['appliedBy'],
+    rollbackAvailable: action.metadata?.['rollbackAvailable'],
+  }
+}
+
+function agentIdFromTarget(target: string | undefined): string | undefined {
+  if (!target?.startsWith('agent:')) return undefined
+  const agentId = target.slice('agent:'.length)
+  return agentId && agentId !== '*' ? agentId : undefined
+}
+
+function buildCheck(input: {
+  id: string
+  passed: boolean
+  detail: string
+  evidence?: Record<string, unknown>
+}): L5PostPromotionVerificationCheck {
+  return {
+    id: input.id,
+    status: input.passed ? 'passed' : 'failed',
+    detail: input.detail,
+    evidence: input.evidence,
+  }
+}
+
+function aggregateStatus(checks: L5PostPromotionVerificationCheck[]): L5PostPromotionVerificationStatus {
+  if (checks.some((check) => check.status === 'failed')) return 'failed'
+  if (checks.some((check) => check.status === 'warning')) return 'warning'
+  return 'passed'
+}
+
+function buildVerificationRecommendation(checks: L5PostPromotionVerificationCheck[]): string {
+  const failed = checks.filter((check) => check.status === 'failed')
+  if (failed.length > 0) {
+    return `Review failed post-promotion checks before relying on promoted knowledge: ${failed.map((check) => check.id).join(', ')}.`
+  }
+
+  const warnings = checks.filter((check) => check.status === 'warning')
+  if (warnings.length > 0) {
+    return `Promotion completed with non-blocking verification warnings: ${warnings.map((check) => check.id).join(', ')}.`
+  }
+
+  return 'Promotion completed and post-promotion verification passed.'
+}
+
 function withPromotionEvent(error: Error, event: KnowledgePromotionEvent): Error {
   Object.assign(error, { promotionEvent: event })
   return error
+}
+
+function getAttachedPromotionEvent(error: unknown): KnowledgePromotionEvent | undefined {
+  return error && typeof error === 'object' && 'promotionEvent' in error
+    ? (error as { promotionEvent?: KnowledgePromotionEvent }).promotionEvent
+    : undefined
 }

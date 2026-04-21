@@ -307,9 +307,58 @@ describe('Phase 2 Session Routes', () => {
         result: expect.objectContaining({
           proposalId: proposal.id,
           proposalStatus: 'approved',
+          postPromotionVerification: expect.objectContaining({
+            status: 'passed',
+            checks: expect.arrayContaining([
+              expect.objectContaining({ id: 'allowed_governance_decision', status: 'passed' }),
+              expect.objectContaining({ id: 'learning_proposal_approved', status: 'passed' }),
+            ]),
+          }),
         }),
       }));
       expect(sessionService.getLearningProposal(proposal.id)?.status).toBe('approved');
+
+      const applyCandidate = {
+        ...candidate,
+        status: 'approved',
+        materializationReady: true,
+        nextAction: 'apply',
+      };
+      const applyAction = await app.inject({
+        method: 'POST',
+        url: '/api/p2/knowledge/promotions/actions',
+        payload: {
+          candidate: applyCandidate,
+          actor: 'qa_lead',
+        },
+      });
+
+      expect(applyAction.statusCode).toBe(201);
+      expect(applyAction.json()).toEqual(expect.objectContaining({
+        event: expect.objectContaining({
+          candidateId: applyCandidate.id,
+          action: 'apply',
+          status: 'completed',
+          actor: 'qa_lead',
+        }),
+        result: expect.objectContaining({
+          proposalId: proposal.id,
+          proposalStatus: 'applied',
+          materialization: expect.objectContaining({
+            subjectType: 'learning_proposal',
+            subjectId: proposal.id,
+          }),
+          postPromotionVerification: expect.objectContaining({
+            status: 'passed',
+            checks: expect.arrayContaining([
+              expect.objectContaining({ id: 'learning_proposal_applied', status: 'passed' }),
+              expect.objectContaining({ id: 'active_materialization_exists', status: 'passed' }),
+              expect.objectContaining({ id: 'runtime_overlay_loadable', status: 'passed' }),
+            ]),
+          }),
+        }),
+      }));
+      expect(sessionService.getLearningProposal(proposal.id)?.status).toBe('applied');
 
       const events = await app.inject({
         method: 'GET',
@@ -326,6 +375,27 @@ describe('Phase 2 Session Routes', () => {
         status: 'completed',
         actor: 'qa_lead',
         target: 'agent:sales-associate',
+        result: expect.objectContaining({
+          postPromotionVerification: expect.objectContaining({
+            status: 'passed',
+          }),
+        }),
+      }));
+      expect(events.json()).toContainEqual(expect.objectContaining({
+        sourceRunId: run.id,
+        candidateId: applyCandidate.id,
+        candidateVersion,
+        subjectType: 'learning_proposal',
+        subjectId: proposal.id,
+        action: 'apply',
+        status: 'completed',
+        actor: 'qa_lead',
+        target: 'agent:sales-associate',
+        result: expect.objectContaining({
+          postPromotionVerification: expect.objectContaining({
+            status: 'passed',
+          }),
+        }),
       }));
     });
 

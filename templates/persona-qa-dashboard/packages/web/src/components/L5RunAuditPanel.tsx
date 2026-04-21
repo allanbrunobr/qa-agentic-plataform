@@ -238,6 +238,8 @@ function PromotionEventHistory({ events }: { events: Phase2KnowledgePromotionEve
 }
 
 function PromotionEventRow({ event }: { event: Phase2KnowledgePromotionEvent }) {
+  const verification = event.result?.postPromotionVerification
+
   return (
     <div className="rounded-md border border-[var(--border)] px-3 py-2">
       <div className="flex items-start justify-between gap-3">
@@ -257,6 +259,12 @@ function PromotionEventRow({ event }: { event: Phase2KnowledgePromotionEvent }) 
         <span className="truncate">{event.target ?? event.subjectId}</span>
         <time className="shrink-0">{formatRelativeTime(event.createdAt)}</time>
       </div>
+      {verification ? (
+        <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-[var(--text-muted)]">
+          <span className="truncate">gate: {verification.status}</span>
+          <span className="shrink-0">{verification.checks.length} checks</span>
+        </div>
+      ) : null}
     </div>
   )
 }

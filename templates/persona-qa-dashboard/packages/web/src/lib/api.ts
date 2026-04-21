@@ -201,6 +201,7 @@ export type Phase2KnowledgePromotionStatus = 'requires_review' | 'approved' | 'm
 export type Phase2KnowledgePromotionNextAction = 'approve' | 'apply' | 'promote' | 'review' | 'none'
 export type Phase2KnowledgePromotionEventAction = 'approve' | 'apply' | 'promote'
 export type Phase2KnowledgePromotionEventStatus = 'completed' | 'blocked' | 'failed'
+export type Phase2KnowledgePromotionPostVerificationStatus = 'passed' | 'warning' | 'failed'
 
 export interface Phase2ClosedLoopLifecycleEvent {
   type: string
@@ -364,15 +365,34 @@ export interface Phase2KnowledgePromotionEvent {
   actor?: string
   reason?: string
   target?: string
-  result?: Record<string, unknown>
+  result?: Record<string, unknown> & {
+    postPromotionVerification?: Phase2KnowledgePromotionPostVerification
+  }
   metadata?: Record<string, unknown>
   createdAt: string
+}
+
+export interface Phase2KnowledgePromotionPostVerification {
+  status: Phase2KnowledgePromotionPostVerificationStatus
+  checkedAt: string
+  subjectType: Phase2GovernanceSubjectType
+  subjectId: string
+  action: Phase2KnowledgePromotionEventAction
+  checks: Array<{
+    id: string
+    status: Phase2KnowledgePromotionPostVerificationStatus
+    detail: string
+    evidence?: Record<string, unknown>
+  }>
+  recommendation: string
 }
 
 export interface Phase2KnowledgePromotionActionResult {
   candidate: Phase2KnowledgePromotionCandidate
   event: Phase2KnowledgePromotionEvent
-  result: Record<string, unknown>
+  result: Record<string, unknown> & {
+    postPromotionVerification?: Phase2KnowledgePromotionPostVerification
+  }
 }
 
 export interface Phase2ClosedLoopStatusResponse {
