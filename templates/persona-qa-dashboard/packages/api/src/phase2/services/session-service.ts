@@ -136,6 +136,8 @@ export type L5MaterializationSubjectType = 'learning_proposal' | 'scenario_draft
 export type L5MaterializationStatus = 'active' | 'rolled_back'
 export type L5ClosedLoopStatus = 'completed' | 'needs_review' | 'blocked' | 'failed'
 export type L5ClosedLoopMode = 'observe' | 'apply_approved'
+export type KnowledgePromotionEventAction = 'approve' | 'apply' | 'promote'
+export type KnowledgePromotionEventStatus = 'completed' | 'blocked' | 'failed'
 
 export interface LearningProposalInput {
   recommendationId: string
@@ -254,6 +256,27 @@ export interface L5ClosedLoopRun extends L5ClosedLoopRunInput {
   id: string
   startedAt: string
   completedAt: string
+}
+
+export interface KnowledgePromotionEventInput {
+  sourceRunId: string
+  candidateId: string
+  candidateVersion: string
+  subjectType: GovernanceSubjectType
+  subjectId: string
+  promotionType: string
+  action: KnowledgePromotionEventAction
+  status: KnowledgePromotionEventStatus
+  actor?: string
+  reason?: string
+  target?: string
+  result?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+}
+
+export interface KnowledgePromotionEvent extends KnowledgePromotionEventInput {
+  id: string
+  createdAt: string
 }
 
 type StepPerformanceRow = {
@@ -387,6 +410,24 @@ type L5ClosedLoopRunRow = {
   metadata: string | null
   started_at: string
   completed_at: string
+}
+
+type KnowledgePromotionEventRow = {
+  event_id: string
+  source_run_id: string
+  candidate_id: string
+  candidate_version: string
+  subject_type: GovernanceSubjectType
+  subject_id: string
+  promotion_type: string
+  action: KnowledgePromotionEventAction
+  status: KnowledgePromotionEventStatus
+  actor: string | null
+  reason: string | null
+  target: string | null
+  result_json: string | null
+  metadata: string | null
+  created_at: string
 }
 
 type ToolClosureRow = {
@@ -1415,6 +1456,75 @@ export class SessionService {
     return rows.map((row) => this.mapGovernanceDecision(row))
   }
 
+  recordKnowledgePromotionEvent(input: KnowledgePromotionEventInput): KnowledgePromotionEvent {
+    const id = randomUUID()
+    const createdAt = new Date().toISOString()
+    this.sqlite
+      .prepare(
+        `INSERT INTO p2_knowledge_promotion_events (
+           event_id, source_run_id, candidate_id, candidate_version, subject_type,
+           subject_id, promotion_type, action, status, actor, reason, target,
+           result_json, metadata, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.sourceRunId,
+        input.candidateId,
+        input.candidateVersion,
+        input.subjectType,
+        input.subjectId,
+        input.promotionType,
+        input.action,
+        input.status,
+        input.actor ?? null,
+        input.reason ?? null,
+        input.target ?? null,
+        input.result ? JSON.stringify(input.result) : null,
+        input.metadata ? JSON.stringify(input.metadata) : null,
+        createdAt,
+      )
+
+    return { ...input, id, createdAt }
+  }
+
+  listKnowledgePromotionEvents(filter: {
+    sourceRunId?: string
+    subjectType?: GovernanceSubjectType
+    subjectId?: string
+    limit?: number
+  } = {}): KnowledgePromotionEvent[] {
+    const where: string[] = []
+    const params: unknown[] = []
+    if (filter.sourceRunId) {
+      where.push('source_run_id = ?')
+      params.push(filter.sourceRunId)
+    }
+    if (filter.subjectType) {
+      where.push('subject_type = ?')
+      params.push(filter.subjectType)
+    }
+    if (filter.subjectId) {
+      where.push('subject_id = ?')
+      params.push(filter.subjectId)
+    }
+
+    const limit = Math.max(1, Math.min(filter.limit ?? 100, 500))
+    const rows = this.sqlite
+      .prepare(
+        `SELECT event_id, source_run_id, candidate_id, candidate_version,
+                subject_type, subject_id, promotion_type, action, status, actor,
+                reason, target, result_json, metadata, created_at
+         FROM p2_knowledge_promotion_events
+         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(...params, limit) as KnowledgePromotionEventRow[]
+
+    return rows.map((row) => this.mapKnowledgePromotionEvent(row))
+  }
+
   recordL5Materialization(input: L5MaterializationInput): L5Materialization {
     const id = randomUUID()
     const createdAt = new Date().toISOString()
@@ -1693,6 +1803,26 @@ export class SessionService {
     }
   }
 
+  private mapKnowledgePromotionEvent(row: KnowledgePromotionEventRow): KnowledgePromotionEvent {
+    return {
+      id: row.event_id,
+      sourceRunId: row.source_run_id,
+      candidateId: row.candidate_id,
+      candidateVersion: row.candidate_version,
+      subjectType: row.subject_type,
+      subjectId: row.subject_id,
+      promotionType: row.promotion_type,
+      action: row.action,
+      status: row.status,
+      actor: row.actor ?? undefined,
+      reason: row.reason ?? undefined,
+      target: row.target ?? undefined,
+      result: row.result_json ? JSON.parse(row.result_json) : undefined,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      createdAt: row.created_at,
+    }
+  }
+
   storeFinding(
     sessionId: string,
     finding: Omit<SessionFinding, 'id' | 'sessionId' | 'timestamp' | 'createdAt'>,
@@ -1946,6 +2076,24 @@ export class SessionService {
         completed_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS p2_knowledge_promotion_events (
+        event_id TEXT PRIMARY KEY,
+        source_run_id TEXT NOT NULL,
+        candidate_id TEXT NOT NULL,
+        candidate_version TEXT NOT NULL,
+        subject_type TEXT NOT NULL,
+        subject_id TEXT NOT NULL,
+        promotion_type TEXT NOT NULL,
+        action TEXT NOT NULL,
+        status TEXT NOT NULL,
+        actor TEXT,
+        reason TEXT,
+        target TEXT,
+        result_json TEXT,
+        metadata TEXT,
+        created_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS p2_tool_ledger_closures (
         session_id TEXT NOT NULL REFERENCES p2_sessions(session_id),
         tool_call_id TEXT NOT NULL,
@@ -1967,6 +2115,8 @@ export class SessionService {
       CREATE INDEX IF NOT EXISTS idx_p2_governance_subject ON p2_governance_decisions(subject_type, subject_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_l5_materializations_subject ON p2_l5_materializations(subject_type, subject_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_l5_closed_loop_status ON p2_l5_closed_loop_runs(status, scenario_id, completed_at);
+      CREATE INDEX IF NOT EXISTS idx_p2_knowledge_promotion_events_run ON p2_knowledge_promotion_events(source_run_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_p2_knowledge_promotion_events_subject ON p2_knowledge_promotion_events(subject_type, subject_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_tool_ledger_closures_session ON p2_tool_ledger_closures(session_id, closed_at);
     `)
   }

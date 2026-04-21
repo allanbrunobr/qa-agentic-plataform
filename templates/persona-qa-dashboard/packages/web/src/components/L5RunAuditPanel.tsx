@@ -4,6 +4,7 @@ import type {
   Phase2ClosedLoopLifecycleEvent,
   Phase2ClosedLoopRun,
   Phase2GovernanceDecision,
+  Phase2KnowledgePromotionEvent,
 } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
 
@@ -15,6 +16,7 @@ interface L5RunAuditPanelProps {
   auditBundleUrl?: string
   replayPreview?: Phase2ClosedLoopAuditBundle['replay'] | null
   promotionPreview?: Phase2ClosedLoopAuditBundle['promotion'] | null
+  promotionEvents?: Phase2KnowledgePromotionEvent[]
   promotionActionPendingId?: string | null
   promotionActionError?: string | null
   replayLoading?: boolean
@@ -40,6 +42,7 @@ export function L5RunAuditPanel({
   auditBundleUrl,
   replayPreview,
   promotionPreview,
+  promotionEvents = [],
   promotionActionPendingId,
   promotionActionError,
   replayLoading = false,
@@ -95,6 +98,7 @@ export function L5RunAuditPanel({
 
       <KnowledgePromotionPanel
         preview={promotionPreview}
+        events={promotionEvents}
         actionPendingId={promotionActionPendingId}
         actionError={promotionActionError}
         onRunPromotionAction={onRunPromotionAction}
@@ -170,11 +174,13 @@ export function L5RunAuditPanel({
 
 function KnowledgePromotionPanel({
   preview,
+  events,
   actionPendingId,
   actionError,
   onRunPromotionAction,
 }: {
   preview?: Phase2ClosedLoopAuditBundle['promotion'] | null
+  events: Phase2KnowledgePromotionEvent[]
   actionPendingId?: string | null
   actionError?: string | null
   onRunPromotionAction?: (candidate: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number]) => void
@@ -209,7 +215,49 @@ function KnowledgePromotionPanel({
         <p className="mt-2 text-xs text-[var(--text-muted)]">{preview.notes[0]}</p>
       ) : null}
       {actionError ? <p className="mt-2 text-xs text-red-300">{actionError}</p> : null}
+      <PromotionEventHistory events={events} />
     </section>
+  )
+}
+
+function PromotionEventHistory({ events }: { events: Phase2KnowledgePromotionEvent[] }) {
+  return (
+    <div className="mt-4 border-t border-[var(--border)] pt-3">
+      <SectionHeader title="Histórico de promoções" detail={`${events.length} evento(s)`} />
+      {events.length === 0 ? (
+        <EmptyLine>Nenhum evento de promoção registrado.</EmptyLine>
+      ) : (
+        <div className="space-y-2">
+          {events.slice(0, 6).map((event) => (
+            <PromotionEventRow key={event.id} event={event} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PromotionEventRow({ event }: { event: Phase2KnowledgePromotionEvent }) {
+  return (
+    <div className="rounded-md border border-[var(--border)] px-3 py-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-medium text-[var(--text-secondary)]">
+            {event.action} - {event.subjectType.replace(/_/g, ' ')}
+          </p>
+          <p className="mt-1 truncate text-[11px] text-[var(--text-muted)]">
+            {event.actor ?? 'system'} / v {event.candidateVersion.slice(0, 12)}
+          </p>
+        </div>
+        <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] uppercase ${promotionEventStatusClass(event.status)}`}>
+          {event.status}
+        </span>
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-[var(--text-muted)]">
+        <span className="truncate">{event.target ?? event.subjectId}</span>
+        <time className="shrink-0">{formatRelativeTime(event.createdAt)}</time>
+      </div>
+    </div>
   )
 }
 
@@ -564,6 +612,12 @@ function promotionStatusClass(status: Phase2ClosedLoopAuditBundle['promotion']['
   if (status === 'requires_review') return 'bg-amber-500/10 text-amber-200'
   if (status === 'blocked') return 'bg-red-500/10 text-red-200'
   return 'bg-[var(--bg-secondary)] text-[var(--text-muted)]'
+}
+
+function promotionEventStatusClass(status: Phase2KnowledgePromotionEvent['status']) {
+  if (status === 'completed') return 'bg-emerald-500/10 text-emerald-200'
+  if (status === 'blocked') return 'bg-amber-500/10 text-amber-200'
+  return 'bg-red-500/10 text-red-200'
 }
 
 function isActionablePromotionCandidate(

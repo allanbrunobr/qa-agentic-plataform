@@ -10,8 +10,9 @@ import {
   L5ClosedLoopScheduler,
   type L5ClosedLoopSchedulerOptions,
 } from '../services/l5-closed-loop-scheduler.js';
-import { L5AuditBundleService } from '../services/l5-audit-bundle-service.js';
+import { L5AuditBundleService, type L5KnowledgePromotionCandidate } from '../services/l5-audit-bundle-service.js';
 import { L5ClosedLoopService } from '../services/l5-closed-loop-service.js';
+import { L5KnowledgePromotionService } from '../services/l5-knowledge-promotion-service.js';
 import { L5MaterializationService } from '../services/l5-materialization-service.js';
 import { LearningControlService } from '../services/learning-control-service.js';
 import { LearningPlaybookService } from '../services/learning-playbook-service.js';
@@ -534,6 +535,46 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  app.get<{ Querystring: { sourceRunId?: string; subjectType?: string; subjectId?: string; limit?: string } }>(
+    '/api/p2/knowledge/promotions/events',
+    async (request, reply) => {
+      const service = getSessionService();
+      return reply.send(service.listKnowledgePromotionEvents({
+        sourceRunId: request.query.sourceRunId,
+        subjectType: isGovernanceSubjectType(request.query.subjectType) ? request.query.subjectType : undefined,
+        subjectId: request.query.subjectId,
+        limit: request.query.limit ? Number(request.query.limit) : 100,
+      }));
+    },
+  );
+
+  app.post<{ Body: { candidate?: unknown; actor?: unknown } }>(
+    '/api/p2/knowledge/promotions/actions',
+    async (request, reply) => {
+      if (!isKnowledgePromotionCandidate(request.body?.candidate)) {
+        return reply.status(400).send({ error: 'Invalid knowledge promotion candidate' });
+      }
+
+      try {
+        const service = getSessionService();
+        const actor = typeof request.body?.actor === 'string' && request.body.actor.trim()
+          ? request.body.actor
+          : 'dashboard';
+        const result = await new L5KnowledgePromotionService(service).runCandidateAction(
+          request.body.candidate,
+          actor,
+        );
+        return reply.status(201).send(result);
+      } catch (error) {
+        const promotionEvent = getPromotionEventFromError(error);
+        return reply.status(409).send({
+          error: error instanceof Error ? error.message : String(error),
+          promotionEvent,
+        });
+      }
+    },
+  );
+
   app.get<{ Querystring: { subjectType?: string; subjectId?: string; status?: string; limit?: string } }>(
     '/api/p2/materializations',
     async (request, reply) => {
@@ -680,6 +721,49 @@ function isScenarioDraftStatus(value: unknown): value is 'pending' | 'approved' 
 
 function isGovernanceSubjectType(value: unknown): value is GovernanceSubjectType {
   return value === 'learning_proposal' || value === 'scenario_draft' || value === 'healing_action';
+}
+
+function isKnowledgePromotionCandidate(value: unknown): value is L5KnowledgePromotionCandidate {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.id === 'string'
+    && typeof record.sourceRunId === 'string'
+    && isGovernanceSubjectType(record.subjectType)
+    && typeof record.subjectId === 'string'
+    && isKnowledgePromotionType(record.promotionType)
+    && isKnowledgePromotionStatus(record.status)
+    && typeof record.version === 'string'
+    && typeof record.title === 'string'
+    && typeof record.target === 'string'
+    && typeof record.reason === 'string'
+    && typeof record.approvalRequired === 'boolean'
+    && typeof record.materializationReady === 'boolean'
+    && isKnowledgePromotionNextAction(record.nextAction)
+    && Boolean(record.evidence)
+    && typeof record.evidence === 'object'
+    && !Array.isArray(record.evidence);
+}
+
+function isKnowledgePromotionType(value: unknown): value is L5KnowledgePromotionCandidate['promotionType'] {
+  return value === 'learning_overlay' || value === 'scenario_contract' || value === 'healing_policy';
+}
+
+function isKnowledgePromotionStatus(value: unknown): value is L5KnowledgePromotionCandidate['status'] {
+  return value === 'requires_review'
+    || value === 'approved'
+    || value === 'materialized'
+    || value === 'blocked'
+    || value === 'rejected';
+}
+
+function isKnowledgePromotionNextAction(value: unknown): value is L5KnowledgePromotionCandidate['nextAction'] {
+  return value === 'approve' || value === 'apply' || value === 'promote' || value === 'review' || value === 'none';
+}
+
+function getPromotionEventFromError(error: unknown): unknown {
+  return error && typeof error === 'object' && 'promotionEvent' in error
+    ? (error as { promotionEvent?: unknown }).promotionEvent
+    : undefined;
 }
 
 function isL5MaterializationSubjectType(value: unknown): value is L5MaterializationSubjectType {

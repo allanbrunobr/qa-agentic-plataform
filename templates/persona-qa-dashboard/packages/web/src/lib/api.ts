@@ -199,6 +199,8 @@ export type Phase2ClosedLoopMode = 'observe' | 'apply_approved'
 export type Phase2KnowledgePromotionType = 'learning_overlay' | 'scenario_contract' | 'healing_policy'
 export type Phase2KnowledgePromotionStatus = 'requires_review' | 'approved' | 'materialized' | 'blocked' | 'rejected'
 export type Phase2KnowledgePromotionNextAction = 'approve' | 'apply' | 'promote' | 'review' | 'none'
+export type Phase2KnowledgePromotionEventAction = 'approve' | 'apply' | 'promote'
+export type Phase2KnowledgePromotionEventStatus = 'completed' | 'blocked' | 'failed'
 
 export interface Phase2ClosedLoopLifecycleEvent {
   type: string
@@ -347,6 +349,30 @@ export interface Phase2KnowledgePromotionCandidate {
   materializationReady: boolean
   nextAction: Phase2KnowledgePromotionNextAction
   evidence: Record<string, unknown>
+}
+
+export interface Phase2KnowledgePromotionEvent {
+  id: string
+  sourceRunId: string
+  candidateId: string
+  candidateVersion: string
+  subjectType: Phase2GovernanceSubjectType
+  subjectId: string
+  promotionType: string
+  action: Phase2KnowledgePromotionEventAction
+  status: Phase2KnowledgePromotionEventStatus
+  actor?: string
+  reason?: string
+  target?: string
+  result?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  createdAt: string
+}
+
+export interface Phase2KnowledgePromotionActionResult {
+  candidate: Phase2KnowledgePromotionCandidate
+  event: Phase2KnowledgePromotionEvent
+  result: Record<string, unknown>
 }
 
 export interface Phase2ClosedLoopStatusResponse {
@@ -563,6 +589,26 @@ export const api = {
       subjectId: params?.subjectId,
       limit: params?.limit ? String(params.limit) : undefined,
     }))}`),
+  getPhase2KnowledgePromotionEvents: (params?: {
+    sourceRunId?: string
+    subjectType?: Phase2GovernanceSubjectType
+    subjectId?: string
+    limit?: number
+  }) =>
+    fetchJSON<Phase2KnowledgePromotionEvent[]>(`${API_BASE}/api/p2/knowledge/promotions/events?${new URLSearchParams(compactParams({
+      sourceRunId: params?.sourceRunId,
+      subjectType: params?.subjectType,
+      subjectId: params?.subjectId,
+      limit: params?.limit ? String(params.limit) : undefined,
+    }))}`),
+  runPhase2KnowledgePromotionAction: (candidate: Phase2KnowledgePromotionCandidate, payload?: { actor?: string }) =>
+    fetchJSON<Phase2KnowledgePromotionActionResult>(`${API_BASE}/api/p2/knowledge/promotions/actions`, {
+      method: 'POST',
+      body: JSON.stringify({
+        candidate,
+        actor: payload?.actor,
+      }),
+    }),
   getPhase2ScenarioDrafts: (params?: {
     status?: Phase2ScenarioDraftStatus
     limit?: number
