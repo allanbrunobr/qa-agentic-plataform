@@ -1,7 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { L5RunAuditPanel } from '../L5RunAuditPanel'
-import type { Phase2ClosedLoopAuditBundle, Phase2ClosedLoopRun, Phase2GovernanceDecision } from '@/lib/api'
+import type {
+  Phase2ClosedLoopAuditBundle,
+  Phase2ClosedLoopRun,
+  Phase2GovernanceDecision,
+  Phase2KnowledgePromotionEvent,
+} from '@/lib/api'
 
 const now = '2026-04-20T18:00:00.000Z'
 
@@ -113,6 +118,7 @@ describe('L5RunAuditPanel', () => {
           notes: ['Replay is observe only.'],
         }}
         promotionPreview={promotion}
+        promotionEvents={[promotionEvent()]}
         onLoadReplayPreview={onLoadReplayPreview}
         onRunSafeReplay={onRunSafeReplay}
         onRunPromotionAction={onRunPromotionAction}
@@ -125,6 +131,9 @@ describe('L5RunAuditPanel', () => {
     expect(screen.getByText('Prompt patch for create_customer')).toBeInTheDocument()
     expect(screen.getByText('next: approve')).toBeInTheDocument()
     expect(screen.getByText('v abc123def456')).toBeInTheDocument()
+    expect(screen.getByText('Histórico de promoções')).toBeInTheDocument()
+    expect(screen.getByText('approve - learning proposal')).toBeInTheDocument()
+    expect(screen.getByText('qa_lead / v abc123def456')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Preparar replay' }))
     fireEvent.click(screen.getByRole('button', { name: 'Executar observe' }))
@@ -237,5 +246,23 @@ function promotionPreview(): Phase2ClosedLoopAuditBundle['promotion'] {
       },
     ],
     notes: ['Promotion candidates are derived from the audit bundle and do not mutate runtime behavior.'],
+  }
+}
+
+function promotionEvent(): Phase2KnowledgePromotionEvent {
+  return {
+    id: 'promotion-event-1',
+    sourceRunId: 'run-1',
+    candidateId: 'learning_proposal:proposal-1:abc123def456',
+    candidateVersion: 'abc123def4567890abc123def4567890abc123def4567890abc123def4567890',
+    subjectType: 'learning_proposal',
+    subjectId: 'proposal-1',
+    promotionType: 'learning_overlay',
+    action: 'approve',
+    status: 'completed',
+    actor: 'qa_lead',
+    target: 'agent:sales-associate',
+    result: { proposalStatus: 'approved' },
+    createdAt: now,
   }
 }

@@ -240,6 +240,95 @@ describe('Phase 2 Session Routes', () => {
       expect(bundle.statusCode).toBe(404);
     });
 
+    it('should execute knowledge promotion actions and expose promotion event history', async () => {
+      const proposal = sessionService.createLearningProposal({
+        recommendationId: 'promotion-event-route',
+        scenarioId: 'test_scenario',
+        stepId: 'step_1',
+        agentId: 'sales-associate',
+        type: 'prompt_patch',
+        severity: 'medium',
+        recommendation: { reason: 'promotion event route test' },
+        patchKind: 'prompt_overlay',
+        target: 'agent:sales-associate',
+        patchContent: '[LEARNING OVERLAY]',
+      });
+      const run = sessionService.recordL5ClosedLoopRun({
+        status: 'needs_review',
+        mode: 'observe',
+        scenarioId: 'test_scenario',
+        queuedScenarios: ['test_scenario'],
+        actions: [{ type: 'learning_proposal_generated', proposalId: proposal.id }],
+        verification: { rerunRequired: true },
+        summary: { pendingReviews: 1 },
+      });
+      const candidateVersion = 'abc123def4567890abc123def4567890abc123def4567890abc123def4567890';
+      const candidate = {
+        id: `learning_proposal:${proposal.id}:abc123def456`,
+        sourceRunId: run.id,
+        subjectType: 'learning_proposal',
+        subjectId: proposal.id,
+        promotionType: 'learning_overlay',
+        status: 'requires_review',
+        version: candidateVersion,
+        title: 'Prompt patch for step_1',
+        target: 'agent:sales-associate',
+        reason: 'Promotion event route test.',
+        approvalRequired: true,
+        materializationReady: false,
+        nextAction: 'approve',
+        evidence: {
+          scenarioId: 'test_scenario',
+          stepId: 'step_1',
+        },
+      };
+
+      const action = await app.inject({
+        method: 'POST',
+        url: '/api/p2/knowledge/promotions/actions',
+        payload: {
+          candidate,
+          actor: 'qa_lead',
+        },
+      });
+
+      expect(action.statusCode).toBe(201);
+      expect(action.json()).toEqual(expect.objectContaining({
+        event: expect.objectContaining({
+          sourceRunId: run.id,
+          candidateId: candidate.id,
+          candidateVersion,
+          subjectType: 'learning_proposal',
+          subjectId: proposal.id,
+          action: 'approve',
+          status: 'completed',
+          actor: 'qa_lead',
+        }),
+        result: expect.objectContaining({
+          proposalId: proposal.id,
+          proposalStatus: 'approved',
+        }),
+      }));
+      expect(sessionService.getLearningProposal(proposal.id)?.status).toBe('approved');
+
+      const events = await app.inject({
+        method: 'GET',
+        url: `/api/p2/knowledge/promotions/events?sourceRunId=${run.id}`,
+      });
+      expect(events.statusCode).toBe(200);
+      expect(events.json()).toContainEqual(expect.objectContaining({
+        sourceRunId: run.id,
+        candidateId: candidate.id,
+        candidateVersion,
+        subjectType: 'learning_proposal',
+        subjectId: proposal.id,
+        action: 'approve',
+        status: 'completed',
+        actor: 'qa_lead',
+        target: 'agent:sales-associate',
+      }));
+    });
+
     it('should expose and control closed-loop scheduler automation', async () => {
       const status = await app.inject({ method: 'GET', url: '/api/p2/closed-loop/scheduler' });
       expect(status.statusCode).toBe(200);
