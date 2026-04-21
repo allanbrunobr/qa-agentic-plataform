@@ -451,6 +451,46 @@ describe('L5 controlled feedback services', () => {
     }))
   })
 
+  it('blocks subsequent meta-orchestration after failed independent audits', async () => {
+    const service = new SessionService(':memory:')
+    service.recordL5ClosedLoopRun({
+      status: 'needs_review',
+      mode: 'observe',
+      queuedScenarios: ['first_order'],
+      actions: [],
+      verification: {
+        independentAudit: {
+          agentRole: 'auditor',
+          verdict: 'failed',
+          checkedAt: new Date().toISOString(),
+          sessionAudits: [],
+          findings: [{ severity: 'error', code: 'agent_start_without_stop' }],
+          summary: { findings: 1 },
+        },
+      },
+      summary: {
+        independentAuditVerdict: 'failed',
+      },
+    })
+
+    const guards = new L5LoopGuardService(service).summarize()
+    expect(guards).toContainEqual(expect.objectContaining({
+      loop: 'meta_orchestration',
+      status: 'blocked',
+      current: 1,
+      limit: 1,
+      reason: 'Meta-orchestration is blocked until failed independent audits are reviewed.',
+    }))
+
+    const loop = await new L5ClosedLoopService(service).runOnce({ maxScenarios: 1 })
+    expect(loop).toEqual(expect.objectContaining({
+      status: 'blocked',
+      summary: expect.objectContaining({
+        blockedLoop: 'meta_orchestration',
+      }),
+    }))
+  })
+
   it('records bounded self-healing actions for repeated timeout failures', () => {
     const service = new SessionService(':memory:')
     const session = service.createSession('first_order')

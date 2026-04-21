@@ -8,6 +8,7 @@ export interface L5LoopGuardLimits {
   maxPendingScenarioDrafts: number
   maxBlockedGovernanceDecisions: number
   maxAutomaticHealingActionsPerHour: number
+  maxFailedIndependentAudits: number
 }
 
 export interface L5LoopGuard {
@@ -23,6 +24,7 @@ export const DEFAULT_L5_LOOP_GUARD_LIMITS: L5LoopGuardLimits = {
   maxPendingScenarioDrafts: 20,
   maxBlockedGovernanceDecisions: 5,
   maxAutomaticHealingActionsPerHour: 10,
+  maxFailedIndependentAudits: 1,
 }
 
 export class L5LoopGuardService {
@@ -93,6 +95,17 @@ export class L5LoopGuardService {
   }
 
   private metaOrchestrationGuard(): L5LoopGuard {
+    const failedIndependentAudits = this.countFailedIndependentAudits()
+    if (failedIndependentAudits >= this.limits.maxFailedIndependentAudits) {
+      return {
+        loop: 'meta_orchestration',
+        status: 'blocked',
+        reason: 'Meta-orchestration is blocked until failed independent audits are reviewed.',
+        current: failedIndependentAudits,
+        limit: this.limits.maxFailedIndependentAudits,
+      }
+    }
+
     const blocked = this.countBlockedGovernanceDecisions()
     return boundedGuard({
       loop: 'meta_orchestration',
@@ -107,6 +120,19 @@ export class L5LoopGuardService {
     return this.sessionService
       .listGovernanceDecisions({ limit: 500 })
       .filter((decision) => decision.verdict === 'blocked')
+      .length
+  }
+
+  private countFailedIndependentAudits(): number {
+    return this.sessionService
+      .listL5ClosedLoopRuns({ limit: 100 })
+      .filter((run) => {
+        const independentAudit = run.verification['independentAudit']
+        return independentAudit
+          && typeof independentAudit === 'object'
+          && !Array.isArray(independentAudit)
+          && (independentAudit as Record<string, unknown>)['verdict'] === 'failed'
+      })
       .length
   }
 }
