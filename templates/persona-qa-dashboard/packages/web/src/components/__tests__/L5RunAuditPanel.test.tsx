@@ -88,6 +88,8 @@ describe('L5RunAuditPanel', () => {
   it('renders safe replay controls from a loaded bundle preview', () => {
     const onLoadReplayPreview = vi.fn()
     const onRunSafeReplay = vi.fn()
+    const onRunPromotionAction = vi.fn()
+    const promotion = promotionPreview()
 
     render(
       <L5RunAuditPanel
@@ -110,9 +112,10 @@ describe('L5RunAuditPanel', () => {
           },
           notes: ['Replay is observe only.'],
         }}
-        promotionPreview={promotionPreview()}
+        promotionPreview={promotion}
         onLoadReplayPreview={onLoadReplayPreview}
         onRunSafeReplay={onRunSafeReplay}
+        onRunPromotionAction={onRunPromotionAction}
       />,
     )
 
@@ -125,9 +128,11 @@ describe('L5RunAuditPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Preparar replay' }))
     fireEvent.click(screen.getByRole('button', { name: 'Executar observe' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }))
 
     expect(onLoadReplayPreview).toHaveBeenCalledTimes(1)
     expect(onRunSafeReplay).toHaveBeenCalledTimes(1)
+    expect(onRunPromotionAction).toHaveBeenCalledWith(promotion.candidates[0])
   })
 })
 

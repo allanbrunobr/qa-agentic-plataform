@@ -11,6 +11,7 @@ import {
   type Phase2ClosedLoopSchedulerStatus,
   type Phase2ClosedLoopStatusResponse,
   type Phase2GovernanceDecision,
+  type Phase2KnowledgePromotionCandidate,
   type Phase2MaturityStatus,
   type Phase2ScenarioSummary,
   type Phase2SessionSummary,
@@ -80,6 +81,37 @@ function isMultiAgent(session: Phase2SessionSummary) {
   return session.scenarioId.includes('multi_role')
 }
 
+async function runGovernedPromotionAction(candidate: Phase2KnowledgePromotionCandidate): Promise<void> {
+  if (candidate.subjectType === 'learning_proposal') {
+    if (candidate.nextAction === 'approve') {
+      await api.approvePhase2LearningProposal(candidate.subjectId)
+      return
+    }
+    if (candidate.nextAction === 'apply') {
+      await api.applyPhase2LearningProposal(candidate.subjectId)
+      return
+    }
+  }
+
+  if (candidate.subjectType === 'scenario_draft') {
+    if (candidate.nextAction === 'approve') {
+      await api.updatePhase2ScenarioDraft(candidate.subjectId, { status: 'approved', reviewedBy: 'dashboard' })
+      return
+    }
+    if (candidate.nextAction === 'promote') {
+      await api.promotePhase2ScenarioDraft(candidate.subjectId, { reviewedBy: 'dashboard' })
+      return
+    }
+  }
+
+  if (candidate.subjectType === 'healing_action' && candidate.nextAction === 'apply') {
+    await api.applyPhase2HealingAction(candidate.subjectId, { actor: 'dashboard' })
+    return
+  }
+
+  throw new Error(`Ação L5 não suportada para ${candidate.subjectType}:${candidate.nextAction}`)
+}
+
 function parseOverviewHashScenario() {
   const hash = window.location.hash.replace(/^#/, '')
   const [page, query = ''] = hash.split('?')
@@ -120,6 +152,8 @@ export function Overview() {
   const [closedLoopReplayRunId, setClosedLoopReplayRunId] = useState<string | null>(null)
   const [closedLoopReplay, setClosedLoopReplay] = useState<Phase2ClosedLoopAuditBundle['replay'] | null>(null)
   const [closedLoopPromotion, setClosedLoopPromotion] = useState<Phase2ClosedLoopAuditBundle['promotion'] | null>(null)
+  const [closedLoopPromotionActionPendingId, setClosedLoopPromotionActionPendingId] = useState<string | null>(null)
+  const [closedLoopPromotionActionError, setClosedLoopPromotionActionError] = useState<string | null>(null)
   const [closedLoopReplayLoading, setClosedLoopReplayLoading] = useState(false)
   const [closedLoopReplayError, setClosedLoopReplayError] = useState<string | null>(null)
 
@@ -280,6 +314,8 @@ export function Overview() {
     setClosedLoopReplay(null)
     setClosedLoopPromotion(null)
     setClosedLoopReplayError(null)
+    setClosedLoopPromotionActionError(null)
+    setClosedLoopPromotionActionPendingId(null)
   }, [auditedClosedLoop?.id])
 
   if (loading) return <LoadingState />
@@ -398,6 +434,31 @@ export function Overview() {
       setClosedLoopReplayError(error instanceof Error ? error.message : 'Falha ao carregar bundle L5')
     } finally {
       setClosedLoopReplayLoading(false)
+    }
+  }
+
+  const handleClosedLoopPromotionAction = async (candidate: Phase2KnowledgePromotionCandidate) => {
+    if (!auditedClosedLoop || closedLoopPromotionActionPendingId) return
+    setClosedLoopPromotionActionPendingId(candidate.id)
+    setClosedLoopPromotionActionError(null)
+    try {
+      await runGovernedPromotionAction(candidate)
+      const [bundle, nextStatus, nextGovernance, nextMaturity] = await Promise.all([
+        api.getPhase2ClosedLoopAuditBundle(auditedClosedLoop.id),
+        api.getPhase2ClosedLoopStatus(),
+        api.getPhase2GovernanceDecisions({ limit: 12 }).catch(() => governanceDecisions),
+        api.getPhase2Maturity().catch(() => maturity),
+      ])
+      setClosedLoopReplayRunId(auditedClosedLoop.id)
+      setClosedLoopReplay(bundle.replay)
+      setClosedLoopPromotion(bundle.promotion)
+      setClosedLoop(nextStatus)
+      setGovernanceDecisions(nextGovernance)
+      setMaturity(nextMaturity)
+    } catch (error) {
+      setClosedLoopPromotionActionError(error instanceof Error ? error.message : 'Falha ao executar ação governada L5')
+    } finally {
+      setClosedLoopPromotionActionPendingId(null)
     }
   }
 
@@ -603,10 +664,13 @@ export function Overview() {
           auditBundleUrl={auditedClosedLoop ? api.getPhase2ClosedLoopAuditBundleUrl(auditedClosedLoop.id) : undefined}
           replayPreview={activeReplayPreview}
           promotionPreview={activePromotionPreview}
+          promotionActionPendingId={closedLoopPromotionActionPendingId}
+          promotionActionError={closedLoopPromotionActionError}
           replayLoading={closedLoopReplayLoading}
           replayError={closedLoopReplayError}
           onLoadReplayPreview={() => void handleLoadClosedLoopReplayPreview()}
           onRunSafeReplay={() => void handleClosedLoopSafeReplay()}
+          onRunPromotionAction={(candidate) => void handleClosedLoopPromotionAction(candidate)}
           guards={closedLoop?.guards ?? []}
           governanceDecisions={governanceDecisions}
         />

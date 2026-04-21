@@ -533,6 +533,16 @@ export const api = {
     fetchJSON<Phase2HealingAction[]>(`${API_BASE}/api/p2/healing/log?${new URLSearchParams({ limit: String(limit) })}`),
   evaluatePhase2Healing: () =>
     fetchJSON<Phase2HealingAction[]>(`${API_BASE}/api/p2/healing/evaluate`, { method: 'POST' }),
+  applyPhase2HealingAction: (id: string, payload?: { actor?: string }) =>
+    fetchJSON<Phase2HealingAction>(`${API_BASE}/api/p2/healing/actions/${id}/apply`, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    }),
+  rollbackPhase2HealingAction: (id: string, payload?: { actor?: string }) =>
+    fetchJSON<Phase2HealingAction>(`${API_BASE}/api/p2/healing/actions/${id}/rollback`, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    }),
   getPhase2LearningProposals: (params?: {
     scenarioId?: string
     status?: Phase2LearningProposalStatus
@@ -574,6 +584,11 @@ export const api = {
     fetchJSON<Phase2ScenarioDraft>(`${API_BASE}/api/p2/scenarios/drafts/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
+    }),
+  promotePhase2ScenarioDraft: (id: string, payload?: { reviewedBy?: string }) =>
+    fetchJSON<Phase2ScenarioDraft>(`${API_BASE}/api/p2/scenarios/drafts/${id}/promote`, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
     }),
   startPhase2Run: (payload: {
     scenario_id: string

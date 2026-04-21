@@ -15,10 +15,13 @@ interface L5RunAuditPanelProps {
   auditBundleUrl?: string
   replayPreview?: Phase2ClosedLoopAuditBundle['replay'] | null
   promotionPreview?: Phase2ClosedLoopAuditBundle['promotion'] | null
+  promotionActionPendingId?: string | null
+  promotionActionError?: string | null
   replayLoading?: boolean
   replayError?: string | null
   onLoadReplayPreview?: () => void
   onRunSafeReplay?: () => void
+  onRunPromotionAction?: (candidate: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number]) => void
   guards?: Array<{
     loop: string
     status: 'open' | 'blocked'
@@ -37,10 +40,13 @@ export function L5RunAuditPanel({
   auditBundleUrl,
   replayPreview,
   promotionPreview,
+  promotionActionPendingId,
+  promotionActionError,
   replayLoading = false,
   replayError,
   onLoadReplayPreview,
   onRunSafeReplay,
+  onRunPromotionAction,
   guards = [],
   governanceDecisions = [],
 }: L5RunAuditPanelProps) {
@@ -87,7 +93,12 @@ export function L5RunAuditPanel({
         onRunSafeReplay={onRunSafeReplay}
       />
 
-      <KnowledgePromotionPanel preview={promotionPreview} />
+      <KnowledgePromotionPanel
+        preview={promotionPreview}
+        actionPendingId={promotionActionPendingId}
+        actionError={promotionActionError}
+        onRunPromotionAction={onRunPromotionAction}
+      />
 
       <div className="grid gap-3 md:grid-cols-5">
         <Metric label="Status" value={selectedRun.status.replace('_', ' ')} tone={runStatusTone(selectedRun.status)} />
@@ -159,8 +170,14 @@ export function L5RunAuditPanel({
 
 function KnowledgePromotionPanel({
   preview,
+  actionPendingId,
+  actionError,
+  onRunPromotionAction,
 }: {
   preview?: Phase2ClosedLoopAuditBundle['promotion'] | null
+  actionPendingId?: string | null
+  actionError?: string | null
+  onRunPromotionAction?: (candidate: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number]) => void
 }) {
   const candidates = preview?.candidates ?? []
 
@@ -173,7 +190,13 @@ function KnowledgePromotionPanel({
         ) : (
           <div className="grid gap-2 lg:grid-cols-2">
             {candidates.slice(0, 6).map((candidate) => (
-              <PromotionCandidateRow key={candidate.id} candidate={candidate} />
+              <PromotionCandidateRow
+                key={candidate.id}
+                candidate={candidate}
+                pending={actionPendingId === candidate.id}
+                disabled={Boolean(actionPendingId)}
+                onRunPromotionAction={onRunPromotionAction}
+              />
             ))}
           </div>
         )
@@ -185,15 +208,24 @@ function KnowledgePromotionPanel({
       {preview?.notes[0] ? (
         <p className="mt-2 text-xs text-[var(--text-muted)]">{preview.notes[0]}</p>
       ) : null}
+      {actionError ? <p className="mt-2 text-xs text-red-300">{actionError}</p> : null}
     </section>
   )
 }
 
 function PromotionCandidateRow({
   candidate,
+  pending,
+  disabled,
+  onRunPromotionAction,
 }: {
   candidate: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number]
+  pending?: boolean
+  disabled?: boolean
+  onRunPromotionAction?: (candidate: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number]) => void
 }) {
+  const actionable = isActionablePromotionCandidate(candidate)
+
   return (
     <div className="rounded-md border border-[var(--border)] px-3 py-2">
       <div className="flex items-start justify-between gap-3">
@@ -210,7 +242,19 @@ function PromotionCandidateRow({
         <span className="truncate">{candidate.promotionType.replace(/_/g, ' ')}</span>
         <span className="shrink-0">next: {candidate.nextAction}</span>
       </div>
-      <p className="mt-1 truncate text-[10px] text-[var(--text-muted)]">v {candidate.version.slice(0, 12)}</p>
+      <div className="mt-2 flex items-center justify-between gap-3">
+        <p className="truncate text-[10px] text-[var(--text-muted)]">v {candidate.version.slice(0, 12)}</p>
+        {actionable ? (
+          <button
+            type="button"
+            disabled={!onRunPromotionAction || disabled}
+            onClick={() => onRunPromotionAction?.(candidate)}
+            className="shrink-0 rounded-md border border-[var(--accent)] bg-[var(--accent)]/10 px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] transition hover:bg-[var(--accent)]/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {pending ? 'Executando...' : promotionActionLabel(candidate.nextAction)}
+          </button>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -520,6 +564,21 @@ function promotionStatusClass(status: Phase2ClosedLoopAuditBundle['promotion']['
   if (status === 'requires_review') return 'bg-amber-500/10 text-amber-200'
   if (status === 'blocked') return 'bg-red-500/10 text-red-200'
   return 'bg-[var(--bg-secondary)] text-[var(--text-muted)]'
+}
+
+function isActionablePromotionCandidate(
+  candidate: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number],
+): boolean {
+  return candidate.nextAction === 'approve'
+    || candidate.nextAction === 'apply'
+    || candidate.nextAction === 'promote'
+}
+
+function promotionActionLabel(action: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number]['nextAction']) {
+  if (action === 'approve') return 'Aprovar'
+  if (action === 'apply') return 'Aplicar'
+  if (action === 'promote') return 'Promover'
+  return 'Revisar'
 }
 
 function toneClass(tone: 'success' | 'warning' | 'danger' | 'neutral') {
