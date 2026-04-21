@@ -134,6 +134,8 @@ describe('L5RunAuditPanel', () => {
     expect(screen.getByText('Histórico de promoções')).toBeInTheDocument()
     expect(screen.getByText('approve - learning proposal')).toBeInTheDocument()
     expect(screen.getByText('qa_lead / v abc123def456')).toBeInTheDocument()
+    expect(screen.getByText('gate: passed')).toBeInTheDocument()
+    expect(screen.getByText('2 checks')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Preparar replay' }))
     fireEvent.click(screen.getByRole('button', { name: 'Executar observe' }))
@@ -262,7 +264,29 @@ function promotionEvent(): Phase2KnowledgePromotionEvent {
     status: 'completed',
     actor: 'qa_lead',
     target: 'agent:sales-associate',
-    result: { proposalStatus: 'approved' },
+    result: {
+      proposalStatus: 'approved',
+      postPromotionVerification: {
+        status: 'passed',
+        checkedAt: now,
+        subjectType: 'learning_proposal',
+        subjectId: 'proposal-1',
+        action: 'approve',
+        checks: [
+          {
+            id: 'source_run_available',
+            status: 'passed',
+            detail: 'Source run is available.',
+          },
+          {
+            id: 'allowed_governance_decision',
+            status: 'passed',
+            detail: 'Allowed governance decision exists.',
+          },
+        ],
+        recommendation: 'Promotion completed and post-promotion verification passed.',
+      },
+    },
     createdAt: now,
   }
 }
