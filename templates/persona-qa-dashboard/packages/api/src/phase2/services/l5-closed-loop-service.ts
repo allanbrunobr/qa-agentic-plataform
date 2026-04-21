@@ -4,6 +4,7 @@ import { L5LoopGuardService, type L5LoopGuard, type L5LoopId } from './l5-loop-g
 import { L5MaterializationService } from './l5-materialization-service.js'
 import { LearningControlService } from './learning-control-service.js'
 import { MetaOrchestrator, type MetaOrchestrationQueueItem } from './meta-orchestrator.js'
+import { IndependentAuditorService, type AuditorEvaluation, type AuditorFinding, type AuditorVerdict } from './independent-auditor-service.js'
 import { buildScenarioQualityGateForSessions } from './scenario-quality-gates.js'
 import { SelfHealingService } from './self-healing-service.js'
 import type {
@@ -55,6 +56,24 @@ interface SessionComparison {
   reason: string
 }
 
+interface L5IndependentLoopVerification {
+  agentRole: 'auditor'
+  verdict: AuditorVerdict
+  checkedAt: string
+  sessionAudits: AuditorEvaluation[]
+  findings: AuditorFinding[]
+  summary: {
+    auditedSessions: number
+    failedSessionAudits: number
+    warningSessionAudits: number
+    lifecycleFindings: number
+    findings: number
+    actionCount: number
+    pendingReviews: number
+    materializedChanges: number
+  }
+}
+
 type L5LifecycleLoopId = L5LoopId | 'verification'
 
 type L5LifecycleEventType =
@@ -65,6 +84,8 @@ type L5LifecycleEventType =
   | 'loop_blocked'
   | 'scenario_started'
   | 'scenario_completed'
+  | 'independent_audit_started'
+  | 'independent_audit_completed'
 
 type L5LifecycleEvent = {
   type: L5LifecycleEventType
@@ -300,7 +321,31 @@ export class L5ClosedLoopService {
     )
     const comparisons = scenarios.map((scenarioId) => this.compareLatestSessions(scenarioId))
     const rerunRequired = appliedMaterializations > 0 || automaticHealingActions > 0
-    const status = pendingReviews > 0 ? 'needs_review' : 'completed'
+    appendLifecycle(lifecycle, 'independent_audit_started', {
+      loop: 'verification',
+      details: {
+        queuedScenarios: scenarios.length,
+        actions: actions.length,
+      },
+    })
+    const independentAudit = this.verifyClosedLoopIndependently({
+      lifecycle,
+      scenarios,
+      actions,
+      pendingReviews,
+      appliedMaterializations,
+      automaticHealingActions,
+      scenarioDrafts,
+    })
+    appendLifecycle(lifecycle, 'independent_audit_completed', {
+      loop: 'verification',
+      status: independentAudit.verdict,
+      details: {
+        auditedSessions: independentAudit.summary.auditedSessions,
+        findings: independentAudit.summary.findings,
+      },
+    })
+    const status = pendingReviews > 0 || independentAudit.verdict === 'failed' ? 'needs_review' : 'completed'
     appendLifecycle(lifecycle, 'loop_completed', {
       loop: 'verification',
       status,
@@ -309,6 +354,8 @@ export class L5ClosedLoopService {
         rerunRequired,
         improvedScenarios: comparisons.filter((comparison) => comparison.verdict === 'improved').length,
         regressedScenarios: comparisons.filter((comparison) => comparison.verdict === 'regressed').length,
+        independentAudit: independentAudit.verdict,
+        independentFindings: independentAudit.summary.findings,
       },
     })
     appendLifecycle(lifecycle, 'closed_loop_completed', {
@@ -329,19 +376,21 @@ export class L5ClosedLoopService {
       verification: {
         comparisons,
         rerunRequired,
-        recommendation: rerunRequired
-          ? 'Reexecute affected scenarios to verify the materialized change.'
-          : 'No materialized change requires rerun in this iteration.',
+        independentAudit,
+        recommendation: buildClosedLoopRecommendation({ rerunRequired, independentAudit }),
       },
       summary: {
         statusReason: status === 'needs_review'
-          ? 'Closed loop produced items that require review before further automatic change.'
+          ? 'Closed loop produced items or independent audit findings that require review before further automatic change.'
           : 'Closed loop completed without pending review items.',
         generatedProposals,
         appliedMaterializations,
         automaticHealingActions,
         scenarioDrafts,
         pendingReviews,
+        independentAuditVerdict: independentAudit.verdict,
+        independentAuditFindings: independentAudit.summary.findings,
+        independentAuditedSessions: independentAudit.summary.auditedSessions,
         improvedScenarios: comparisons.filter((comparison) => comparison.verdict === 'improved').length,
         regressedScenarios: comparisons.filter((comparison) => comparison.verdict === 'regressed').length,
       },
@@ -355,6 +404,69 @@ export class L5ClosedLoopService {
       },
       startedAt,
     })
+  }
+
+  private verifyClosedLoopIndependently(input: {
+    lifecycle: L5LifecycleEvent[]
+    scenarios: string[]
+    actions: Record<string, unknown>[]
+    pendingReviews: number
+    appliedMaterializations: number
+    automaticHealingActions: number
+    scenarioDrafts: number
+  }): L5IndependentLoopVerification {
+    const auditor = new IndependentAuditorService()
+    const findings: AuditorFinding[] = []
+    const sessionAudits: AuditorEvaluation[] = []
+
+    for (const scenarioId of input.scenarios) {
+      const latest = this.findLatestFinalSession(scenarioId)
+      if (!latest) {
+        findings.push(warningFinding('closed_loop_terminal_session_missing', 'No terminal session is available for independent scenario audit.', {
+          scenarioId,
+        }))
+        continue
+      }
+      sessionAudits.push(auditor.evaluateSession(latest))
+    }
+
+    const lifecycleFindings = auditClosedLoopLifecycle(input.lifecycle, input.scenarios)
+    const sessionFindings = sessionAudits.flatMap((audit) => audit.findings.map((finding) => ({
+      ...finding,
+      evidence: {
+        ...finding.evidence,
+        sessionId: audit.sessionId,
+      },
+    })))
+    const allFindings = [...findings, ...lifecycleFindings, ...sessionFindings]
+    const failedSessionAudits = sessionAudits.filter((audit) => audit.verdict === 'failed').length
+    const warningSessionAudits = sessionAudits.filter((audit) => audit.verdict === 'warning').length
+    const hasErrors = allFindings.some((finding) => finding.severity === 'error') || failedSessionAudits > 0
+    const hasWarnings = allFindings.length > 0 || warningSessionAudits > 0
+
+    return {
+      agentRole: 'auditor',
+      verdict: hasErrors ? 'failed' : hasWarnings ? 'warning' : 'passed',
+      checkedAt: new Date().toISOString(),
+      sessionAudits,
+      findings: allFindings,
+      summary: {
+        auditedSessions: sessionAudits.length,
+        failedSessionAudits,
+        warningSessionAudits,
+        lifecycleFindings: lifecycleFindings.length,
+        findings: allFindings.length,
+        actionCount: input.actions.length,
+        pendingReviews: input.pendingReviews,
+        materializedChanges: input.appliedMaterializations + input.automaticHealingActions + input.scenarioDrafts,
+      },
+    }
+  }
+
+  private findLatestFinalSession(scenarioId: string): Session | undefined {
+    return this.sessionService.getAllSessions()
+      .filter((session) => session.scenarioId === scenarioId && (session.status === 'complete' || session.status === 'failed'))
+      .sort((a, b) => new Date(b.completedAt ?? b.startedAt).getTime() - new Date(a.completedAt ?? a.startedAt).getTime())[0]
   }
 
   private selectQueue(scenarioId: string | undefined, maxScenarios: number): MetaOrchestrationQueueItem[] {
@@ -450,6 +562,93 @@ function buildComparisonReason(verdict: SessionComparison['verdict'], scoreDelta
   if (verdict === 'improved') return `Latest run improved by ${scoreDelta} point(s).`
   if (verdict === 'regressed') return `Latest run regressed by ${Math.abs(scoreDelta)} point(s).`
   return 'Latest run score is unchanged.'
+}
+
+function buildClosedLoopRecommendation(input: {
+  rerunRequired: boolean
+  independentAudit: L5IndependentLoopVerification
+}): string {
+  if (input.independentAudit.verdict === 'failed') {
+    return 'Review independent auditor findings before relying on this closed-loop iteration.'
+  }
+
+  if (input.rerunRequired) {
+    return 'Reexecute affected scenarios to verify the materialized change.'
+  }
+
+  if (input.independentAudit.verdict === 'warning') {
+    return 'Closed-loop iteration completed with non-blocking independent audit warnings.'
+  }
+
+  return 'No materialized change requires rerun in this iteration.'
+}
+
+function auditClosedLoopLifecycle(lifecycle: L5LifecycleEvent[], scenarios: string[]): AuditorFinding[] {
+  const findings: AuditorFinding[] = []
+  const openLoops = new Map<string, number>()
+
+  if (!lifecycle.some((event) => event.type === 'closed_loop_started')) {
+    findings.push(errorFinding('closed_loop_started_missing', 'Closed-loop lifecycle is missing the start event.', {}))
+  }
+
+  for (const event of lifecycle) {
+    if (event.loop === 'verification') continue
+    if (event.type === 'loop_started') {
+      const key = lifecycleLoopKey(event)
+      openLoops.set(key, (openLoops.get(key) ?? 0) + 1)
+      continue
+    }
+
+    if (event.type === 'loop_completed') {
+      const key = lifecycleLoopKey(event)
+      const count = openLoops.get(key) ?? 0
+      if (count === 0) {
+        findings.push(errorFinding('loop_completed_without_start', 'Closed-loop lifecycle has a completed loop without a matching start.', {
+          loop: event.loop,
+          scenarioId: event.scenarioId,
+        }))
+        continue
+      }
+      if (count === 1) {
+        openLoops.delete(key)
+      } else {
+        openLoops.set(key, count - 1)
+      }
+    }
+  }
+
+  for (const [key, count] of openLoops) {
+    findings.push(errorFinding('loop_started_without_completion', 'Closed-loop lifecycle has an unclosed loop.', {
+      key,
+      count,
+    }))
+  }
+
+  for (const scenarioId of scenarios) {
+    const started = lifecycle.some((event) => event.type === 'scenario_started' && event.scenarioId === scenarioId)
+    const completed = lifecycle.some((event) => event.type === 'scenario_completed' && event.scenarioId === scenarioId)
+    if (!started || !completed) {
+      findings.push(errorFinding('scenario_lifecycle_unbalanced', 'Queued scenario lifecycle must include start and completion events.', {
+        scenarioId,
+        started,
+        completed,
+      }))
+    }
+  }
+
+  return findings
+}
+
+function lifecycleLoopKey(event: L5LifecycleEvent): string {
+  return `${event.loop ?? 'unknown_loop'}:${event.scenarioId ?? 'all'}`
+}
+
+function errorFinding(code: string, message: string, evidence: Record<string, unknown>): AuditorFinding {
+  return { severity: 'error', code, message, evidence }
+}
+
+function warningFinding(code: string, message: string, evidence: Record<string, unknown>): AuditorFinding {
+  return { severity: 'warning', code, message, evidence }
 }
 
 function appendLifecycle(

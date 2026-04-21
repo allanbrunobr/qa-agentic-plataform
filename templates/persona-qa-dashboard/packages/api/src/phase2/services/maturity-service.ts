@@ -101,6 +101,7 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
   const completedClosedLoops = closedLoopRuns.filter((run) => run.status === 'completed').length
   const closedLoopsNeedingReview = closedLoopRuns.filter((run) => run.status === 'needs_review').length
   const closedLoopLifecycle = summarizeClosedLoopLifecycle(closedLoopRuns)
+  const closedLoopIndependentAudits = summarizeClosedLoopIndependentAudits(closedLoopRuns)
   const runtimeLearningUsage = summarizeRuntimeLearningUsage(sessions)
   const terminalSessionAudits = summarizeTerminalSessionAudits(sessions)
 
@@ -188,9 +189,13 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
           {
             id: 'independent_audit',
             label: 'Independent audit',
-            state: terminalSessionAudits.failed > 0 ? 'guarded' : terminalSessionAudits.total > 0 ? 'complete' : 'guarded',
-            evidence: terminalSessionAudits.total > 0
-              ? `${terminalSessionAudits.total} sessão(ões) receberam verificação independente de lifecycle; ${terminalSessionAudits.failed} falharam.`
+            state: terminalSessionAudits.failed > 0 || closedLoopIndependentAudits.failed > 0
+              ? 'guarded'
+              : terminalSessionAudits.total > 0 || closedLoopIndependentAudits.total > 0
+                ? 'complete'
+                : 'guarded',
+            evidence: terminalSessionAudits.total > 0 || closedLoopIndependentAudits.total > 0
+              ? `${terminalSessionAudits.total} sessão(ões) e ${closedLoopIndependentAudits.total} closed-loop(s) receberam verificação independente; ${terminalSessionAudits.failed + closedLoopIndependentAudits.failed} falharam.`
               : 'Decisões de governança recebem auditoria independente; auditoria terminal é registrada ao final das execuções.',
           },
           {
@@ -255,6 +260,11 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
             value: terminalSessionAudits.total,
             tone: terminalSessionAudits.failed > 0 ? 'danger' : terminalSessionAudits.total > 0 ? 'success' : 'neutral',
           },
+          {
+            label: 'Auditorias closed-loop',
+            value: closedLoopIndependentAudits.total,
+            tone: closedLoopIndependentAudits.failed > 0 ? 'danger' : closedLoopIndependentAudits.total > 0 ? 'success' : 'neutral',
+          },
           { label: 'Ações bounded', value: boundedAutomaticActions, tone: boundedAutomaticActions > 0 ? 'success' : 'neutral' },
           { label: 'Materializações ativas', value: activeMaterializations, tone: activeMaterializations > 0 ? 'success' : 'neutral' },
           { label: 'Materializações verificadas', value: verifiedMaterializations, tone: verifiedMaterializations > 0 ? 'success' : 'neutral' },
@@ -301,6 +311,29 @@ function summarizeClosedLoopLifecycle(closedLoopRuns: ReturnType<SessionService[
   }
 
   return { events, runsWithLifecycle }
+}
+
+function summarizeClosedLoopIndependentAudits(closedLoopRuns: ReturnType<SessionService['listL5ClosedLoopRuns']>): {
+  total: number
+  failed: number
+} {
+  let total = 0
+  let failed = 0
+
+  for (const run of closedLoopRuns) {
+    const independentAudit = run.verification['independentAudit']
+    if (!independentAudit || typeof independentAudit !== 'object' || Array.isArray(independentAudit)) continue
+
+    const verdict = (independentAudit as Record<string, unknown>)['verdict']
+    if (verdict !== 'passed' && verdict !== 'warning' && verdict !== 'failed') continue
+
+    total += 1
+    if (verdict === 'failed') {
+      failed += 1
+    }
+  }
+
+  return { total, failed }
 }
 
 function summarizeRuntimeLearningUsage(sessions: ReturnType<SessionService['getAllSessions']>): {

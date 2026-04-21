@@ -74,6 +74,11 @@ export function L5RunAuditPanel({
   const visibleLifecycle = lifecycle.slice(-8).reverse()
   const visibleActions = selectedRun.actions.slice(0, 6)
   const comparisons = arrayValue(selectedRun.verification['comparisons'])
+  const independentAudit = recordValue(selectedRun.verification['independentAudit'])
+  const independentAuditSummary = recordValue(independentAudit['summary'])
+  const independentAuditVerdict = stringValue(independentAudit['verdict'], 'not run')
+  const independentAuditFindings = numberValue(independentAuditSummary['findings'])
+  const independentAuditedSessions = numberValue(independentAuditSummary['auditedSessions'])
   const blockedGuards = guards.filter((guard) => guard.status === 'blocked').length
   const pendingReviews = numberValue(selectedRun.summary['pendingReviews'])
   const rerunRequired = selectedRun.verification['rerunRequired'] === true
@@ -104,12 +109,13 @@ export function L5RunAuditPanel({
         onRunPromotionAction={onRunPromotionAction}
       />
 
-      <div className="grid gap-3 md:grid-cols-5">
+      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Metric label="Status" value={selectedRun.status.replace('_', ' ')} tone={runStatusTone(selectedRun.status)} />
         <Metric label="Modo" value={selectedRun.mode.replace('_', ' ')} />
         <Metric label="Lifecycle" value={lifecycle.length} tone={lifecycle.length > 0 ? 'success' : 'neutral'} />
         <Metric label="Pendências" value={pendingReviews} tone={pendingReviews > 0 ? 'warning' : 'success'} />
         <Metric label="Reexecução" value={rerunRequired ? 'necessária' : 'não'} tone={rerunRequired ? 'warning' : 'success'} />
+        <Metric label="Auditor" value={independentAuditVerdict} tone={auditVerdictTone(independentAuditVerdict)} />
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
@@ -129,6 +135,9 @@ export function L5RunAuditPanel({
         <section className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
           <SectionHeader title="Verificação" detail={String(selectedRun.verification['recommendation'] ?? 'sem recomendação')} />
           <div className="mt-3 space-y-2">
+            <AuditLine label="Auditor independente" value={independentAuditVerdict} tone={auditVerdictTone(independentAuditVerdict)} />
+            <AuditLine label="Sessões auditadas" value={independentAuditedSessions} tone={independentAuditedSessions > 0 ? 'success' : 'neutral'} />
+            <AuditLine label="Findings auditor" value={independentAuditFindings} tone={independentAuditFindings > 0 ? 'warning' : 'success'} />
             <AuditLine label="Comparações" value={comparisons.length} />
             <AuditLine label="Cenários melhores" value={numberValue(selectedRun.summary['improvedScenarios'])} />
             <AuditLine label="Cenários regrediram" value={numberValue(selectedRun.summary['regressedScenarios'])} />
@@ -577,6 +586,12 @@ function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
 function uniqueRuns(run: Phase2ClosedLoopRun | null, runs: Phase2ClosedLoopRun[]): Phase2ClosedLoopRun[] {
   const byId = new Map<string, Phase2ClosedLoopRun>()
   for (const candidate of [...runs, run].filter((item): item is Phase2ClosedLoopRun => Boolean(item))) {
@@ -604,6 +619,13 @@ function runStatusTone(status: Phase2ClosedLoopRun['status']): 'success' | 'warn
   if (status === 'completed') return 'success'
   if (status === 'needs_review') return 'warning'
   if (status === 'blocked' || status === 'failed') return 'danger'
+  return 'neutral'
+}
+
+function auditVerdictTone(verdict: string): 'success' | 'warning' | 'danger' | 'neutral' {
+  if (verdict === 'passed') return 'success'
+  if (verdict === 'warning') return 'warning'
+  if (verdict === 'failed') return 'danger'
   return 'neutral'
 }
 

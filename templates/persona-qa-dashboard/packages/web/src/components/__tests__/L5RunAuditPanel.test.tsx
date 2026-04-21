@@ -48,6 +48,10 @@ describe('L5RunAuditPanel', () => {
     expect(screen.getByText('loop completed - self healing')).toBeInTheDocument()
     expect(screen.getByText('self healing evaluated')).toBeInTheDocument()
     expect(screen.getByText('Circuit breakers bloqueados')).toBeInTheDocument()
+    expect(screen.getByText('Auditor independente')).toBeInTheDocument()
+    expect(screen.getAllByText('warning').length).toBeGreaterThan(0)
+    expect(screen.getByText('Sessões auditadas')).toBeInTheDocument()
+    expect(screen.getByText('Findings auditor')).toBeInTheDocument()
     expect(screen.getByText('Governança recente')).toBeInTheDocument()
     expect(screen.getByText('apply - healing action')).toBeInTheDocument()
     expect(screen.getByText('Self-healing action permitted by bounded policy.')).toBeInTheDocument()
@@ -165,6 +169,30 @@ function closedLoopRun(overrides: Partial<Phase2ClosedLoopRun> = {}): Phase2Clos
       rerunRequired: true,
       recommendation: 'Reexecute affected scenarios.',
       comparisons: [{ verdict: 'insufficient_history' }],
+      independentAudit: {
+        agentRole: 'auditor',
+        verdict: 'warning',
+        checkedAt: now,
+        sessionAudits: [],
+        findings: [
+          {
+            severity: 'warning',
+            code: 'closed_loop_terminal_session_missing',
+            message: 'No terminal session is available for independent scenario audit.',
+            evidence: { scenarioId: 'first_order' },
+          },
+        ],
+        summary: {
+          auditedSessions: 0,
+          failedSessionAudits: 0,
+          warningSessionAudits: 0,
+          lifecycleFindings: 0,
+          findings: 1,
+          actionCount: 1,
+          pendingReviews: 1,
+          materializedChanges: 0,
+        },
+      },
     },
     summary: {
       statusReason: 'Closed loop produced items that require review.',
