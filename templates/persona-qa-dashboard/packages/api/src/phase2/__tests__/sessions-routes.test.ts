@@ -199,10 +199,28 @@ describe('Phase 2 Session Routes', () => {
             generateScenarioDrafts: false,
           }),
         }),
+        promotion: expect.objectContaining({
+          candidates: expect.arrayContaining([
+            expect.objectContaining({
+              sourceRunId: run.id,
+              subjectType: 'learning_proposal',
+              subjectId: proposalId,
+              promotionType: 'learning_overlay',
+              status: 'requires_review',
+              approvalRequired: true,
+              nextAction: 'approve',
+              version: expect.stringMatching(/^[a-f0-9]{64}$/),
+              evidence: expect.objectContaining({
+                governanceEvidence: 1,
+              }),
+            }),
+          ]),
+        }),
         integrity: expect.objectContaining({
           checksum: expect.any(String),
           counts: expect.objectContaining({
             governanceDecisions: 1,
+            promotionCandidates: 1,
           }),
         }),
       }));

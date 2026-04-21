@@ -119,6 +119,7 @@ export function Overview() {
   const [closedLoopError, setClosedLoopError] = useState<string | null>(null)
   const [closedLoopReplayRunId, setClosedLoopReplayRunId] = useState<string | null>(null)
   const [closedLoopReplay, setClosedLoopReplay] = useState<Phase2ClosedLoopAuditBundle['replay'] | null>(null)
+  const [closedLoopPromotion, setClosedLoopPromotion] = useState<Phase2ClosedLoopAuditBundle['promotion'] | null>(null)
   const [closedLoopReplayLoading, setClosedLoopReplayLoading] = useState(false)
   const [closedLoopReplayError, setClosedLoopReplayError] = useState<string | null>(null)
 
@@ -271,11 +272,13 @@ export function Overview() {
     : null
   const auditedClosedLoop = selectedClosedLoopRun ?? latestClosedLoop
   const activeReplayPreview = auditedClosedLoop?.id === closedLoopReplayRunId ? closedLoopReplay : null
+  const activePromotionPreview = auditedClosedLoop?.id === closedLoopReplayRunId ? closedLoopPromotion : null
   const schedulerEnabled = closedLoopScheduler?.enabled ?? false
 
   useEffect(() => {
     setClosedLoopReplayRunId(null)
     setClosedLoopReplay(null)
+    setClosedLoopPromotion(null)
     setClosedLoopReplayError(null)
   }, [auditedClosedLoop?.id])
 
@@ -390,6 +393,7 @@ export function Overview() {
       const bundle = await api.getPhase2ClosedLoopAuditBundle(auditedClosedLoop.id)
       setClosedLoopReplayRunId(auditedClosedLoop.id)
       setClosedLoopReplay(bundle.replay)
+      setClosedLoopPromotion(bundle.promotion)
     } catch (error) {
       setClosedLoopReplayError(error instanceof Error ? error.message : 'Falha ao carregar bundle L5')
     } finally {
@@ -414,6 +418,7 @@ export function Overview() {
       setSelectedClosedLoopRunId(nextStatus.latestRun?.id ?? null)
       setClosedLoopReplayRunId(null)
       setClosedLoopReplay(null)
+      setClosedLoopPromotion(null)
     } catch (error) {
       setClosedLoopReplayError(error instanceof Error ? error.message : 'Falha ao executar replay seguro L5')
     } finally {
@@ -597,6 +602,7 @@ export function Overview() {
           onSelectRun={setSelectedClosedLoopRunId}
           auditBundleUrl={auditedClosedLoop ? api.getPhase2ClosedLoopAuditBundleUrl(auditedClosedLoop.id) : undefined}
           replayPreview={activeReplayPreview}
+          promotionPreview={activePromotionPreview}
           replayLoading={closedLoopReplayLoading}
           replayError={closedLoopReplayError}
           onLoadReplayPreview={() => void handleLoadClosedLoopReplayPreview()}

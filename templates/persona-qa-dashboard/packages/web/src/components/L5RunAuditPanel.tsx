@@ -14,6 +14,7 @@ interface L5RunAuditPanelProps {
   onSelectRun?: (runId: string) => void
   auditBundleUrl?: string
   replayPreview?: Phase2ClosedLoopAuditBundle['replay'] | null
+  promotionPreview?: Phase2ClosedLoopAuditBundle['promotion'] | null
   replayLoading?: boolean
   replayError?: string | null
   onLoadReplayPreview?: () => void
@@ -35,6 +36,7 @@ export function L5RunAuditPanel({
   onSelectRun,
   auditBundleUrl,
   replayPreview,
+  promotionPreview,
   replayLoading = false,
   replayError,
   onLoadReplayPreview,
@@ -84,6 +86,8 @@ export function L5RunAuditPanel({
         onLoadPreview={onLoadReplayPreview}
         onRunSafeReplay={onRunSafeReplay}
       />
+
+      <KnowledgePromotionPanel preview={promotionPreview} />
 
       <div className="grid gap-3 md:grid-cols-5">
         <Metric label="Status" value={selectedRun.status.replace('_', ' ')} tone={runStatusTone(selectedRun.status)} />
@@ -150,6 +154,64 @@ export function L5RunAuditPanel({
         {String(selectedRun.summary['statusReason'] ?? 'Iteração L5 registrada.')}
       </p>
     </Card>
+  )
+}
+
+function KnowledgePromotionPanel({
+  preview,
+}: {
+  preview?: Phase2ClosedLoopAuditBundle['promotion'] | null
+}) {
+  const candidates = preview?.candidates ?? []
+
+  return (
+    <section className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
+      <SectionHeader title="Promoção de conhecimento" detail={preview ? `${candidates.length} candidato(s)` : 'aguardando bundle'} />
+      {preview ? (
+        candidates.length === 0 ? (
+          <EmptyLine>Nenhum candidato de promoção foi derivado desta run.</EmptyLine>
+        ) : (
+          <div className="grid gap-2 lg:grid-cols-2">
+            {candidates.slice(0, 6).map((candidate) => (
+              <PromotionCandidateRow key={candidate.id} candidate={candidate} />
+            ))}
+          </div>
+        )
+      ) : (
+        <p className="rounded-md border border-dashed border-[var(--border)] p-3 text-xs text-[var(--text-muted)]">
+          Carregue o bundle da run para ver quais aprendizados podem virar conhecimento durável.
+        </p>
+      )}
+      {preview?.notes[0] ? (
+        <p className="mt-2 text-xs text-[var(--text-muted)]">{preview.notes[0]}</p>
+      ) : null}
+    </section>
+  )
+}
+
+function PromotionCandidateRow({
+  candidate,
+}: {
+  candidate: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number]
+}) {
+  return (
+    <div className="rounded-md border border-[var(--border)] px-3 py-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-medium text-[var(--text-secondary)]">{candidate.title}</p>
+          <p className="mt-1 truncate text-[11px] text-[var(--text-muted)]">{candidate.target}</p>
+        </div>
+        <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] uppercase ${promotionStatusClass(candidate.status)}`}>
+          {candidate.status.replace(/_/g, ' ')}
+        </span>
+      </div>
+      <p className="mt-2 line-clamp-2 text-[11px] text-[var(--text-muted)]">{candidate.reason}</p>
+      <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-[var(--text-muted)]">
+        <span className="truncate">{candidate.promotionType.replace(/_/g, ' ')}</span>
+        <span className="shrink-0">next: {candidate.nextAction}</span>
+      </div>
+      <p className="mt-1 truncate text-[10px] text-[var(--text-muted)]">v {candidate.version.slice(0, 12)}</p>
+    </div>
   )
 }
 
@@ -449,6 +511,14 @@ function historyStatusClass(tone: 'success' | 'warning' | 'danger' | 'neutral') 
   if (tone === 'success') return 'bg-emerald-500/10 text-emerald-200'
   if (tone === 'warning') return 'bg-amber-500/10 text-amber-200'
   if (tone === 'danger') return 'bg-red-500/10 text-red-200'
+  return 'bg-[var(--bg-secondary)] text-[var(--text-muted)]'
+}
+
+function promotionStatusClass(status: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number]['status']) {
+  if (status === 'materialized') return 'bg-emerald-500/10 text-emerald-200'
+  if (status === 'approved') return 'bg-cyan-500/10 text-cyan-200'
+  if (status === 'requires_review') return 'bg-amber-500/10 text-amber-200'
+  if (status === 'blocked') return 'bg-red-500/10 text-red-200'
   return 'bg-[var(--bg-secondary)] text-[var(--text-muted)]'
 }
 

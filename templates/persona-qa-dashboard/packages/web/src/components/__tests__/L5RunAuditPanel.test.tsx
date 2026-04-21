@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { L5RunAuditPanel } from '../L5RunAuditPanel'
-import type { Phase2ClosedLoopRun, Phase2GovernanceDecision } from '@/lib/api'
+import type { Phase2ClosedLoopAuditBundle, Phase2ClosedLoopRun, Phase2GovernanceDecision } from '@/lib/api'
 
 const now = '2026-04-20T18:00:00.000Z'
 
@@ -110,6 +110,7 @@ describe('L5RunAuditPanel', () => {
           },
           notes: ['Replay is observe only.'],
         }}
+        promotionPreview={promotionPreview()}
         onLoadReplayPreview={onLoadReplayPreview}
         onRunSafeReplay={onRunSafeReplay}
       />,
@@ -117,6 +118,10 @@ describe('L5RunAuditPanel', () => {
 
     expect(screen.getByText('Replay seguro')).toBeInTheDocument()
     expect(screen.getByText('Replay bloqueia aplicação automática e geração de cenários; apenas reavalia o loop.')).toBeInTheDocument()
+    expect(screen.getByText('Promoção de conhecimento')).toBeInTheDocument()
+    expect(screen.getByText('Prompt patch for create_customer')).toBeInTheDocument()
+    expect(screen.getByText('next: approve')).toBeInTheDocument()
+    expect(screen.getByText('v abc123def456')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Preparar replay' }))
     fireEvent.click(screen.getByRole('button', { name: 'Executar observe' }))
@@ -199,5 +204,33 @@ function governanceDecision(): Phase2GovernanceDecision {
     requirements: ['independent_audit', 'bounded_policy'],
     actor: 'self_healing',
     createdAt: now,
+  }
+}
+
+function promotionPreview(): Phase2ClosedLoopAuditBundle['promotion'] {
+  return {
+    candidates: [
+      {
+        id: 'learning_proposal:proposal-1:abc123def456',
+        sourceRunId: 'run-1',
+        subjectType: 'learning_proposal',
+        subjectId: 'proposal-1',
+        promotionType: 'learning_overlay',
+        status: 'requires_review',
+        version: 'abc123def4567890abc123def4567890abc123def4567890abc123def4567890',
+        title: 'Prompt patch for create_customer',
+        target: 'agent:sales-associate',
+        reason: 'Step success rate is below the adaptive threshold.',
+        approvalRequired: true,
+        materializationReady: false,
+        nextAction: 'approve',
+        evidence: {
+          scenarioId: 'first_order',
+          stepId: 'create_customer',
+          governanceEvidence: 1,
+        },
+      },
+    ],
+    notes: ['Promotion candidates are derived from the audit bundle and do not mutate runtime behavior.'],
   }
 }

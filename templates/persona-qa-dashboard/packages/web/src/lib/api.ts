@@ -196,6 +196,9 @@ export type Phase2MaturityCapabilityState = 'complete' | 'guarded' | 'beta'
 export type Phase2MaturitySignalTone = 'success' | 'warning' | 'danger' | 'neutral'
 export type Phase2ClosedLoopRunStatus = 'completed' | 'needs_review' | 'blocked' | 'failed'
 export type Phase2ClosedLoopMode = 'observe' | 'apply_approved'
+export type Phase2KnowledgePromotionType = 'learning_overlay' | 'scenario_contract' | 'healing_policy'
+export type Phase2KnowledgePromotionStatus = 'requires_review' | 'approved' | 'materialized' | 'blocked' | 'rejected'
+export type Phase2KnowledgePromotionNextAction = 'approve' | 'apply' | 'promote' | 'review' | 'none'
 
 export interface Phase2ClosedLoopLifecycleEvent {
   type: string
@@ -316,6 +319,36 @@ export interface Phase2ClosedLoopRun {
   completedAt: string
 }
 
+export interface Phase2L5Materialization {
+  id: string
+  subjectType: Phase2GovernanceSubjectType
+  subjectId: string
+  kind: string
+  status: 'active' | 'rolled_back'
+  filePath: string
+  checksum: string
+  metadata?: Record<string, unknown>
+  createdAt: string
+  rolledBackAt?: string
+}
+
+export interface Phase2KnowledgePromotionCandidate {
+  id: string
+  sourceRunId: string
+  subjectType: Phase2GovernanceSubjectType
+  subjectId: string
+  promotionType: Phase2KnowledgePromotionType
+  status: Phase2KnowledgePromotionStatus
+  version: string
+  title: string
+  target: string
+  reason: string
+  approvalRequired: boolean
+  materializationReady: boolean
+  nextAction: Phase2KnowledgePromotionNextAction
+  evidence: Record<string, unknown>
+}
+
 export interface Phase2ClosedLoopStatusResponse {
   generatedAt: string
   guards: Array<{
@@ -388,7 +421,7 @@ export interface Phase2ClosedLoopAuditBundle {
     learningProposals: Phase2LearningProposal[]
     healingActions: Phase2HealingAction[]
     scenarioDrafts: Phase2ScenarioDraft[]
-    materializations: Array<Record<string, unknown>>
+    materializations: Phase2L5Materialization[]
     governanceDecisions: Phase2GovernanceDecision[]
   }
   replay: {
@@ -407,6 +440,10 @@ export interface Phase2ClosedLoopAuditBundle {
       applyApprovedChanges: boolean
       generateScenarioDrafts: boolean
     }
+    notes: string[]
+  }
+  promotion: {
+    candidates: Phase2KnowledgePromotionCandidate[]
     notes: string[]
   }
   integrity: {
