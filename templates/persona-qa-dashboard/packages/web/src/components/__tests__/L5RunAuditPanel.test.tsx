@@ -94,6 +94,43 @@ describe('L5RunAuditPanel', () => {
     expect(onSelectRun).toHaveBeenCalledWith('run-historical')
   })
 
+  it('emits independent audit review actions for failed auditor runs', () => {
+    const onReviewIndependentAudit = vi.fn()
+    const run = closedLoopRun({
+      verification: {
+        independentAudit: {
+          agentRole: 'auditor',
+          verdict: 'failed',
+          checkedAt: now,
+          sessionAudits: [],
+          findings: [{ severity: 'error', code: 'agent_start_without_stop' }],
+          summary: {
+            auditedSessions: 1,
+            failedSessionAudits: 1,
+            warningSessionAudits: 0,
+            lifecycleFindings: 1,
+            findings: 1,
+            actionCount: 0,
+            pendingReviews: 1,
+            materializedChanges: 0,
+          },
+        },
+      },
+    })
+
+    render(
+      <L5RunAuditPanel
+        run={run}
+        onReviewIndependentAudit={onReviewIndependentAudit}
+      />,
+    )
+
+    expect(screen.getByText('Auditoria independente failed; registre a revisão para liberar o circuit breaker L5.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar auditoria revisada' }))
+
+    expect(onReviewIndependentAudit).toHaveBeenCalledWith(run)
+  })
+
   it('renders safe replay controls from a loaded bundle preview', () => {
     const onLoadReplayPreview = vi.fn()
     const onRunSafeReplay = vi.fn()

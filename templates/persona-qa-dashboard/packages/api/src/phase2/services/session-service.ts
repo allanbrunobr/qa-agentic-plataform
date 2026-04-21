@@ -258,6 +258,21 @@ export interface L5ClosedLoopRun extends L5ClosedLoopRunInput {
   completedAt: string
 }
 
+export type L5IndependentAuditReviewStatus = 'reviewed'
+
+export interface L5IndependentAuditReviewInput {
+  runId: string
+  status: L5IndependentAuditReviewStatus
+  actor?: string
+  reason?: string
+  metadata?: Record<string, unknown>
+}
+
+export interface L5IndependentAuditReview extends L5IndependentAuditReviewInput {
+  id: string
+  createdAt: string
+}
+
 export interface KnowledgePromotionEventInput {
   sourceRunId: string
   candidateId: string
@@ -410,6 +425,16 @@ type L5ClosedLoopRunRow = {
   metadata: string | null
   started_at: string
   completed_at: string
+}
+
+type L5IndependentAuditReviewRow = {
+  review_id: string
+  run_id: string
+  status: L5IndependentAuditReviewStatus
+  actor: string | null
+  reason: string | null
+  metadata: string | null
+  created_at: string
 }
 
 type KnowledgePromotionEventRow = {
@@ -1690,6 +1715,54 @@ export class SessionService {
     return rows.map((row) => this.mapL5ClosedLoopRun(row))
   }
 
+  recordL5IndependentAuditReview(input: L5IndependentAuditReviewInput): L5IndependentAuditReview {
+    const id = randomUUID()
+    const createdAt = new Date().toISOString()
+
+    this.sqlite
+      .prepare(
+        `INSERT INTO p2_l5_independent_audit_reviews (
+           review_id, run_id, status, actor, reason, metadata, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.runId,
+        input.status,
+        input.actor ?? null,
+        input.reason ?? null,
+        input.metadata ? JSON.stringify(input.metadata) : null,
+        createdAt,
+      )
+
+    return { ...input, id, createdAt }
+  }
+
+  listL5IndependentAuditReviews(filter: {
+    runId?: string
+    limit?: number
+  } = {}): L5IndependentAuditReview[] {
+    const where: string[] = []
+    const params: unknown[] = []
+    if (filter.runId) {
+      where.push('run_id = ?')
+      params.push(filter.runId)
+    }
+
+    const limit = Math.max(1, Math.min(filter.limit ?? 100, 500))
+    const rows = this.sqlite
+      .prepare(
+        `SELECT review_id, run_id, status, actor, reason, metadata, created_at
+         FROM p2_l5_independent_audit_reviews
+         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(...params, limit) as L5IndependentAuditReviewRow[]
+
+    return rows.map((row) => this.mapL5IndependentAuditReview(row))
+  }
+
   private mapLearningProposal(row: LearningProposalRow): LearningProposal {
     return {
       id: row.proposal_id,
@@ -1800,6 +1873,18 @@ export class SessionService {
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       startedAt: row.started_at,
       completedAt: row.completed_at,
+    }
+  }
+
+  private mapL5IndependentAuditReview(row: L5IndependentAuditReviewRow): L5IndependentAuditReview {
+    return {
+      id: row.review_id,
+      runId: row.run_id,
+      status: row.status,
+      actor: row.actor ?? undefined,
+      reason: row.reason ?? undefined,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      createdAt: row.created_at,
     }
   }
 
@@ -2076,6 +2161,16 @@ export class SessionService {
         completed_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS p2_l5_independent_audit_reviews (
+        review_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        actor TEXT,
+        reason TEXT,
+        metadata TEXT,
+        created_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS p2_knowledge_promotion_events (
         event_id TEXT PRIMARY KEY,
         source_run_id TEXT NOT NULL,
@@ -2115,6 +2210,7 @@ export class SessionService {
       CREATE INDEX IF NOT EXISTS idx_p2_governance_subject ON p2_governance_decisions(subject_type, subject_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_l5_materializations_subject ON p2_l5_materializations(subject_type, subject_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_l5_closed_loop_status ON p2_l5_closed_loop_runs(status, scenario_id, completed_at);
+      CREATE INDEX IF NOT EXISTS idx_p2_l5_independent_audit_reviews_run ON p2_l5_independent_audit_reviews(run_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_knowledge_promotion_events_run ON p2_knowledge_promotion_events(source_run_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_knowledge_promotion_events_subject ON p2_knowledge_promotion_events(subject_type, subject_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_tool_ledger_closures_session ON p2_tool_ledger_closures(session_id, closed_at);

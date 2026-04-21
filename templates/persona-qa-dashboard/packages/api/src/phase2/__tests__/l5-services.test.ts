@@ -451,9 +451,9 @@ describe('L5 controlled feedback services', () => {
     }))
   })
 
-  it('blocks subsequent meta-orchestration after failed independent audits', async () => {
+  it('blocks subsequent meta-orchestration until failed independent audits are reviewed', async () => {
     const service = new SessionService(':memory:')
-    service.recordL5ClosedLoopRun({
+    const failedRun = service.recordL5ClosedLoopRun({
       status: 'needs_review',
       mode: 'observe',
       queuedScenarios: ['first_order'],
@@ -488,6 +488,25 @@ describe('L5 controlled feedback services', () => {
       summary: expect.objectContaining({
         blockedLoop: 'meta_orchestration',
       }),
+    }))
+
+    const review = service.recordL5IndependentAuditReview({
+      runId: failedRun.id,
+      status: 'reviewed',
+      actor: 'qa_lead',
+      reason: 'Independent audit finding was triaged and accepted.',
+    })
+    expect(review).toEqual(expect.objectContaining({
+      runId: failedRun.id,
+      status: 'reviewed',
+      actor: 'qa_lead',
+    }))
+
+    const reviewedGuards = new L5LoopGuardService(service).summarize()
+    expect(reviewedGuards).toContainEqual(expect.objectContaining({
+      loop: 'meta_orchestration',
+      status: 'open',
+      current: 0,
     }))
   })
 

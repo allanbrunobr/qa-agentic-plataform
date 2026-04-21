@@ -124,9 +124,17 @@ export class L5LoopGuardService {
   }
 
   private countFailedIndependentAudits(): number {
+    const reviewedRunIds = new Set(
+      this.sessionService
+        .listL5IndependentAuditReviews({ limit: 500 })
+        .filter((review) => review.status === 'reviewed')
+        .map((review) => review.runId),
+    )
+
     return this.sessionService
       .listL5ClosedLoopRuns({ limit: 100 })
       .filter((run) => {
+        if (reviewedRunIds.has(run.id)) return false
         const independentAudit = run.verification['independentAudit']
         return independentAudit
           && typeof independentAudit === 'object'

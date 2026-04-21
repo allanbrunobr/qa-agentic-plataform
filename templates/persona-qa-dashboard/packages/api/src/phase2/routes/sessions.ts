@@ -13,6 +13,7 @@ import {
 import { L5AuditBundleService, type L5KnowledgePromotionCandidate } from '../services/l5-audit-bundle-service.js';
 import { L5ClosedLoopService } from '../services/l5-closed-loop-service.js';
 import { L5KnowledgePromotionService } from '../services/l5-knowledge-promotion-service.js';
+import { L5LoopGuardService } from '../services/l5-loop-guard-service.js';
 import { L5MaterializationService } from '../services/l5-materialization-service.js';
 import { LearningControlService } from '../services/learning-control-service.js';
 import { LearningPlaybookService } from '../services/learning-playbook-service.js';
@@ -152,6 +153,17 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  app.get<{ Querystring: { runId?: string; limit?: string } }>(
+    '/api/p2/closed-loop/audit-reviews',
+    async (request, reply) => {
+      const service = getSessionService();
+      return reply.send(service.listL5IndependentAuditReviews({
+        runId: request.query.runId,
+        limit: request.query.limit ? Number(request.query.limit) : 100,
+      }));
+    },
+  );
+
   app.get<{ Params: { id: string } }>(
     '/api/p2/closed-loop/runs/:id/audit-bundle',
     async (request, reply) => {
@@ -161,6 +173,46 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
 
       reply.header('Content-Disposition', `attachment; filename="l5-audit-bundle-${request.params.id}.json"`);
       return reply.send(bundle);
+    },
+  );
+
+  app.post<{
+    Params: { id: string }
+    Body: {
+      actor?: string
+      reason?: string
+    }
+  }>(
+    '/api/p2/closed-loop/runs/:id/independent-audit/review',
+    async (request, reply) => {
+      const service = getSessionService();
+      const run = service.getL5ClosedLoopRun(request.params.id);
+      if (!run) return reply.status(404).send({ error: 'Closed-loop run not found' });
+
+      const independentAudit = asRecord(run.verification['independentAudit']);
+      const verdict = independentAudit?.['verdict'];
+      if (!independentAudit || (verdict !== 'failed' && verdict !== 'warning')) {
+        return reply.status(409).send({ error: 'Closed-loop run has no failed or warning independent audit to review' });
+      }
+
+      const review = service.recordL5IndependentAuditReview({
+        runId: run.id,
+        status: 'reviewed',
+        actor: request.body?.actor ?? 'dashboard',
+        reason: request.body?.reason ?? `Independent audit ${String(verdict)} reviewed.`,
+        metadata: {
+          auditVerdict: verdict,
+          auditCheckedAt: typeof independentAudit['checkedAt'] === 'string' ? independentAudit['checkedAt'] : undefined,
+          findingCount: Array.isArray(independentAudit['findings']) ? independentAudit['findings'].length : 0,
+          runStatus: run.status,
+        },
+      });
+
+      return reply.status(201).send({
+        review,
+        run,
+        guards: new L5LoopGuardService(service).summarize(),
+      });
     },
   );
 
@@ -721,6 +773,11 @@ function isScenarioDraftStatus(value: unknown): value is 'pending' | 'approved' 
 
 function isGovernanceSubjectType(value: unknown): value is GovernanceSubjectType {
   return value === 'learning_proposal' || value === 'scenario_draft' || value === 'healing_action';
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
 }
 
 function isKnowledgePromotionCandidate(value: unknown): value is L5KnowledgePromotionCandidate {

@@ -202,6 +202,7 @@ export type Phase2KnowledgePromotionNextAction = 'approve' | 'apply' | 'promote'
 export type Phase2KnowledgePromotionEventAction = 'approve' | 'apply' | 'promote'
 export type Phase2KnowledgePromotionEventStatus = 'completed' | 'blocked' | 'failed'
 export type Phase2KnowledgePromotionPostVerificationStatus = 'passed' | 'warning' | 'failed'
+export type Phase2IndependentAuditReviewStatus = 'reviewed'
 
 export interface Phase2ClosedLoopLifecycleEvent {
   type: string
@@ -320,6 +321,22 @@ export interface Phase2ClosedLoopRun {
   metadata?: Phase2ClosedLoopRunMetadata
   startedAt: string
   completedAt: string
+}
+
+export interface Phase2IndependentAuditReview {
+  id: string
+  runId: string
+  status: Phase2IndependentAuditReviewStatus
+  actor?: string
+  reason?: string
+  metadata?: Record<string, unknown>
+  createdAt: string
+}
+
+export interface Phase2IndependentAuditReviewResult {
+  review: Phase2IndependentAuditReview
+  run: Phase2ClosedLoopRun
+  guards: Phase2ClosedLoopStatusResponse['guards']
 }
 
 export interface Phase2L5Materialization {
@@ -536,6 +553,22 @@ export const api = {
     `${API_BASE}/api/p2/closed-loop/runs/${encodeURIComponent(runId)}/audit-bundle`,
   getPhase2ClosedLoopAuditBundle: (runId: string) =>
     fetchJSON<Phase2ClosedLoopAuditBundle>(`${API_BASE}/api/p2/closed-loop/runs/${encodeURIComponent(runId)}/audit-bundle`),
+  getPhase2IndependentAuditReviews: (params?: {
+    runId?: string
+    limit?: number
+  }) =>
+    fetchJSON<Phase2IndependentAuditReview[]>(`${API_BASE}/api/p2/closed-loop/audit-reviews?${new URLSearchParams(compactParams({
+      runId: params?.runId,
+      limit: params?.limit ? String(params.limit) : undefined,
+    }))}`),
+  reviewPhase2IndependentAudit: (runId: string, payload?: { actor?: string; reason?: string }) =>
+    fetchJSON<Phase2IndependentAuditReviewResult>(
+      `${API_BASE}/api/p2/closed-loop/runs/${encodeURIComponent(runId)}/independent-audit/review`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {}),
+      },
+    ),
   runPhase2ClosedLoop: (payload: {
     scenarioId?: string
     maxScenarios?: number

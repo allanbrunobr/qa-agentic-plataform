@@ -19,11 +19,14 @@ interface L5RunAuditPanelProps {
   promotionEvents?: Phase2KnowledgePromotionEvent[]
   promotionActionPendingId?: string | null
   promotionActionError?: string | null
+  auditReviewPendingRunId?: string | null
+  auditReviewError?: string | null
   replayLoading?: boolean
   replayError?: string | null
   onLoadReplayPreview?: () => void
   onRunSafeReplay?: () => void
   onRunPromotionAction?: (candidate: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number]) => void
+  onReviewIndependentAudit?: (run: Phase2ClosedLoopRun) => void
   guards?: Array<{
     loop: string
     status: 'open' | 'blocked'
@@ -45,11 +48,14 @@ export function L5RunAuditPanel({
   promotionEvents = [],
   promotionActionPendingId,
   promotionActionError,
+  auditReviewPendingRunId,
+  auditReviewError,
   replayLoading = false,
   replayError,
   onLoadReplayPreview,
   onRunSafeReplay,
   onRunPromotionAction,
+  onReviewIndependentAudit,
   guards = [],
   governanceDecisions = [],
 }: L5RunAuditPanelProps) {
@@ -79,6 +85,7 @@ export function L5RunAuditPanel({
   const independentAuditVerdict = stringValue(independentAudit['verdict'], 'not run')
   const independentAuditFindings = numberValue(independentAuditSummary['findings'])
   const independentAuditedSessions = numberValue(independentAuditSummary['auditedSessions'])
+  const independentAuditReviewable = independentAuditVerdict === 'failed' || independentAuditVerdict === 'warning'
   const blockedGuards = guards.filter((guard) => guard.status === 'blocked').length
   const pendingReviews = numberValue(selectedRun.summary['pendingReviews'])
   const rerunRequired = selectedRun.verification['rerunRequired'] === true
@@ -143,6 +150,15 @@ export function L5RunAuditPanel({
             <AuditLine label="Cenários regrediram" value={numberValue(selectedRun.summary['regressedScenarios'])} />
             <AuditLine label="Circuit breakers bloqueados" value={blockedGuards} tone={blockedGuards > 0 ? 'danger' : 'success'} />
           </div>
+          {independentAuditReviewable ? (
+            <IndependentAuditReviewAction
+              run={selectedRun}
+              verdict={independentAuditVerdict}
+              pending={auditReviewPendingRunId === selectedRun.id}
+              error={auditReviewError}
+              onReviewIndependentAudit={onReviewIndependentAudit}
+            />
+          ) : null}
         </section>
       </div>
 
@@ -178,6 +194,39 @@ export function L5RunAuditPanel({
         {String(selectedRun.summary['statusReason'] ?? 'Iteração L5 registrada.')}
       </p>
     </Card>
+  )
+}
+
+function IndependentAuditReviewAction({
+  run,
+  verdict,
+  pending,
+  error,
+  onReviewIndependentAudit,
+}: {
+  run: Phase2ClosedLoopRun
+  verdict: string
+  pending: boolean
+  error?: string | null
+  onReviewIndependentAudit?: (run: Phase2ClosedLoopRun) => void
+}) {
+  return (
+    <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-amber-100">
+          Auditoria independente {verdict}; registre a revisão para liberar o circuit breaker L5.
+        </p>
+        <button
+          type="button"
+          disabled={!onReviewIndependentAudit || pending}
+          onClick={() => onReviewIndependentAudit?.(run)}
+          className="shrink-0 rounded-md border border-amber-400/60 bg-amber-400/10 px-3 py-2 text-xs font-medium text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {pending ? 'Registrando...' : 'Marcar auditoria revisada'}
+        </button>
+      </div>
+      {error ? <p className="mt-2 text-xs text-red-300">{error}</p> : null}
+    </div>
   )
 }
 

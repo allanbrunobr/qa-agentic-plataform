@@ -240,6 +240,71 @@ describe('Phase 2 Session Routes', () => {
       expect(bundle.statusCode).toBe(404);
     });
 
+    it('should record independent audit reviews and release the L5 audit guard', async () => {
+      const run = sessionService.recordL5ClosedLoopRun({
+        status: 'needs_review',
+        mode: 'observe',
+        queuedScenarios: ['first_order'],
+        actions: [],
+        verification: {
+          independentAudit: {
+            agentRole: 'auditor',
+            verdict: 'failed',
+            checkedAt: '2026-04-20T18:00:00.000Z',
+            sessionAudits: [],
+            findings: [{ severity: 'error', code: 'agent_start_without_stop' }],
+            summary: { findings: 1 },
+          },
+        },
+        summary: {
+          independentAuditVerdict: 'failed',
+        },
+      });
+
+      const blockedStatus = await app.inject({ method: 'GET', url: '/api/p2/closed-loop/status' });
+      expect(blockedStatus.json().guards).toContainEqual(expect.objectContaining({
+        loop: 'meta_orchestration',
+        status: 'blocked',
+        current: 1,
+      }));
+
+      const review = await app.inject({
+        method: 'POST',
+        url: `/api/p2/closed-loop/runs/${run.id}/independent-audit/review`,
+        payload: {
+          actor: 'qa_lead',
+          reason: 'Reviewed during route test.',
+        },
+      });
+
+      expect(review.statusCode).toBe(201);
+      expect(review.json()).toEqual(expect.objectContaining({
+        review: expect.objectContaining({
+          runId: run.id,
+          status: 'reviewed',
+          actor: 'qa_lead',
+          reason: 'Reviewed during route test.',
+        }),
+        guards: expect.arrayContaining([
+          expect.objectContaining({
+            loop: 'meta_orchestration',
+            status: 'open',
+            current: 0,
+          }),
+        ]),
+      }));
+
+      const reviews = await app.inject({
+        method: 'GET',
+        url: `/api/p2/closed-loop/audit-reviews?runId=${run.id}`,
+      });
+      expect(reviews.statusCode).toBe(200);
+      expect(reviews.json()).toContainEqual(expect.objectContaining({
+        runId: run.id,
+        status: 'reviewed',
+      }));
+    });
+
     it('should execute knowledge promotion actions and expose promotion event history', async () => {
       const proposal = sessionService.createLearningProposal({
         recommendationId: 'promotion-event-route',
