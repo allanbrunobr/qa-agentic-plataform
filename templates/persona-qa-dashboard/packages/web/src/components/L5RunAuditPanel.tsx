@@ -1,5 +1,6 @@
 import { Card } from '@/components/ui/Card'
 import type {
+  Phase2ClosedLoopAuditBundle,
   Phase2ClosedLoopLifecycleEvent,
   Phase2ClosedLoopRun,
   Phase2GovernanceDecision,
@@ -12,6 +13,11 @@ interface L5RunAuditPanelProps {
   selectedRunId?: string | null
   onSelectRun?: (runId: string) => void
   auditBundleUrl?: string
+  replayPreview?: Phase2ClosedLoopAuditBundle['replay'] | null
+  replayLoading?: boolean
+  replayError?: string | null
+  onLoadReplayPreview?: () => void
+  onRunSafeReplay?: () => void
   guards?: Array<{
     loop: string
     status: 'open' | 'blocked'
@@ -28,6 +34,11 @@ export function L5RunAuditPanel({
   selectedRunId,
   onSelectRun,
   auditBundleUrl,
+  replayPreview,
+  replayLoading = false,
+  replayError,
+  onLoadReplayPreview,
+  onRunSafeReplay,
   guards = [],
   governanceDecisions = [],
 }: L5RunAuditPanelProps) {
@@ -64,6 +75,14 @@ export function L5RunAuditPanel({
         runs={auditRuns}
         selectedRunId={selectedRun.id}
         onSelectRun={onSelectRun}
+      />
+
+      <SafeReplayPanel
+        preview={replayPreview}
+        loading={replayLoading}
+        error={replayError}
+        onLoadPreview={onLoadReplayPreview}
+        onRunSafeReplay={onRunSafeReplay}
       />
 
       <div className="grid gap-3 md:grid-cols-5">
@@ -131,6 +150,64 @@ export function L5RunAuditPanel({
         {String(selectedRun.summary['statusReason'] ?? 'Iteração L5 registrada.')}
       </p>
     </Card>
+  )
+}
+
+function SafeReplayPanel({
+  preview,
+  loading,
+  error,
+  onLoadPreview,
+  onRunSafeReplay,
+}: {
+  preview?: Phase2ClosedLoopAuditBundle['replay'] | null
+  loading: boolean
+  error?: string | null
+  onLoadPreview?: () => void
+  onRunSafeReplay?: () => void
+}) {
+  return (
+    <section className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
+      <SectionHeader title="Replay seguro" detail={preview ? 'payload carregado' : 'aguardando bundle'} />
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0">
+          {preview ? (
+            <pre className="overflow-x-auto rounded-md border border-[var(--border)] bg-[var(--bg-secondary)] p-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
+              {JSON.stringify(preview.safeReplayPayload, null, 2)}
+            </pre>
+          ) : (
+            <p className="rounded-md border border-dashed border-[var(--border)] p-3 text-xs text-[var(--text-muted)]">
+              Carregue o bundle da run selecionada para executar uma reanálise em observe mode.
+            </p>
+          )}
+          {error ? <p className="mt-2 text-xs text-red-300">{error}</p> : null}
+          {preview ? (
+            <p className="mt-2 text-xs text-[var(--text-muted)]">
+              Replay bloqueia aplicação automática e geração de cenários; apenas reavalia o loop.
+            </p>
+          ) : null}
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            disabled={!onLoadPreview || loading}
+            onClick={onLoadPreview}
+            className="rounded-md border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loading && !preview ? 'Carregando...' : 'Preparar replay'}
+          </button>
+          <button
+            type="button"
+            disabled={!preview || !onRunSafeReplay || loading}
+            onClick={onRunSafeReplay}
+            className="rounded-md border border-[var(--accent)] bg-[var(--accent)]/10 px-3 py-2 text-xs font-medium text-[var(--text-primary)] transition hover:bg-[var(--accent)]/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loading && preview ? 'Executando...' : 'Executar observe'}
+          </button>
+        </div>
+      </div>
+    </section>
   )
 }
 

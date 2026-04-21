@@ -7,6 +7,7 @@ import { MaturityStatusPanel } from '@/components/MaturityStatusPanel'
 import { L5RunAuditPanel } from '@/components/L5RunAuditPanel'
 import {
   api,
+  type Phase2ClosedLoopAuditBundle,
   type Phase2ClosedLoopSchedulerStatus,
   type Phase2ClosedLoopStatusResponse,
   type Phase2GovernanceDecision,
@@ -116,6 +117,10 @@ export function Overview() {
   const [workflowError, setWorkflowError] = useState<string | null>(null)
   const [closedLoopRunning, setClosedLoopRunning] = useState(false)
   const [closedLoopError, setClosedLoopError] = useState<string | null>(null)
+  const [closedLoopReplayRunId, setClosedLoopReplayRunId] = useState<string | null>(null)
+  const [closedLoopReplay, setClosedLoopReplay] = useState<Phase2ClosedLoopAuditBundle['replay'] | null>(null)
+  const [closedLoopReplayLoading, setClosedLoopReplayLoading] = useState(false)
+  const [closedLoopReplayError, setClosedLoopReplayError] = useState<string | null>(null)
 
   useEffect(() => {
     const syncFromHash = () => {
@@ -265,7 +270,14 @@ export function Overview() {
     ? recentClosedLoopRuns.find((candidate) => candidate.id === selectedClosedLoopRunId) ?? null
     : null
   const auditedClosedLoop = selectedClosedLoopRun ?? latestClosedLoop
+  const activeReplayPreview = auditedClosedLoop?.id === closedLoopReplayRunId ? closedLoopReplay : null
   const schedulerEnabled = closedLoopScheduler?.enabled ?? false
+
+  useEffect(() => {
+    setClosedLoopReplayRunId(null)
+    setClosedLoopReplay(null)
+    setClosedLoopReplayError(null)
+  }, [auditedClosedLoop?.id])
 
   if (loading) return <LoadingState />
 
@@ -366,6 +378,46 @@ export function Overview() {
     } catch (error) {
       setClosedLoopError(error instanceof Error ? error.message : 'Falha ao executar automação L5')
     } finally {
+      setClosedLoopRunning(false)
+    }
+  }
+
+  const handleLoadClosedLoopReplayPreview = async () => {
+    if (!auditedClosedLoop || closedLoopReplayLoading) return
+    setClosedLoopReplayLoading(true)
+    setClosedLoopReplayError(null)
+    try {
+      const bundle = await api.getPhase2ClosedLoopAuditBundle(auditedClosedLoop.id)
+      setClosedLoopReplayRunId(auditedClosedLoop.id)
+      setClosedLoopReplay(bundle.replay)
+    } catch (error) {
+      setClosedLoopReplayError(error instanceof Error ? error.message : 'Falha ao carregar bundle L5')
+    } finally {
+      setClosedLoopReplayLoading(false)
+    }
+  }
+
+  const handleClosedLoopSafeReplay = async () => {
+    if (!activeReplayPreview || closedLoopReplayLoading || closedLoopRunning) return
+    setClosedLoopReplayLoading(true)
+    setClosedLoopRunning(true)
+    setClosedLoopReplayError(null)
+    setClosedLoopError(null)
+    try {
+      await api.runPhase2ClosedLoop(activeReplayPreview.safeReplayPayload)
+      const [nextStatus, nextGovernance] = await Promise.all([
+        api.getPhase2ClosedLoopStatus(),
+        api.getPhase2GovernanceDecisions({ limit: 12 }).catch(() => governanceDecisions),
+      ])
+      setClosedLoop(nextStatus)
+      setGovernanceDecisions(nextGovernance)
+      setSelectedClosedLoopRunId(nextStatus.latestRun?.id ?? null)
+      setClosedLoopReplayRunId(null)
+      setClosedLoopReplay(null)
+    } catch (error) {
+      setClosedLoopReplayError(error instanceof Error ? error.message : 'Falha ao executar replay seguro L5')
+    } finally {
+      setClosedLoopReplayLoading(false)
       setClosedLoopRunning(false)
     }
   }
@@ -544,6 +596,11 @@ export function Overview() {
           selectedRunId={auditedClosedLoop?.id ?? selectedClosedLoopRunId}
           onSelectRun={setSelectedClosedLoopRunId}
           auditBundleUrl={auditedClosedLoop ? api.getPhase2ClosedLoopAuditBundleUrl(auditedClosedLoop.id) : undefined}
+          replayPreview={activeReplayPreview}
+          replayLoading={closedLoopReplayLoading}
+          replayError={closedLoopReplayError}
+          onLoadReplayPreview={() => void handleLoadClosedLoopReplayPreview()}
+          onRunSafeReplay={() => void handleClosedLoopSafeReplay()}
           guards={closedLoop?.guards ?? []}
           governanceDecisions={governanceDecisions}
         />

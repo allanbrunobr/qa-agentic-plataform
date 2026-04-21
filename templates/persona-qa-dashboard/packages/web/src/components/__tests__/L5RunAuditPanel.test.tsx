@@ -84,6 +84,46 @@ describe('L5RunAuditPanel', () => {
 
     expect(onSelectRun).toHaveBeenCalledWith('run-historical')
   })
+
+  it('renders safe replay controls from a loaded bundle preview', () => {
+    const onLoadReplayPreview = vi.fn()
+    const onRunSafeReplay = vi.fn()
+
+    render(
+      <L5RunAuditPanel
+        run={closedLoopRun()}
+        replayPreview={{
+          endpoint: '/api/p2/closed-loop/run',
+          method: 'POST',
+          safeReplayPayload: {
+            scenarioId: 'first_order',
+            maxScenarios: 1,
+            applyApprovedChanges: false,
+            generateScenarioDrafts: false,
+          },
+          originalIntent: {
+            mode: 'apply_approved',
+            scenarioId: 'first_order',
+            maxScenarios: 1,
+            applyApprovedChanges: true,
+            generateScenarioDrafts: true,
+          },
+          notes: ['Replay is observe only.'],
+        }}
+        onLoadReplayPreview={onLoadReplayPreview}
+        onRunSafeReplay={onRunSafeReplay}
+      />,
+    )
+
+    expect(screen.getByText('Replay seguro')).toBeInTheDocument()
+    expect(screen.getByText('Replay bloqueia aplicação automática e geração de cenários; apenas reavalia o loop.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preparar replay' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Executar observe' }))
+
+    expect(onLoadReplayPreview).toHaveBeenCalledTimes(1)
+    expect(onRunSafeReplay).toHaveBeenCalledTimes(1)
+  })
 })
 
 function closedLoopRun(overrides: Partial<Phase2ClosedLoopRun> = {}): Phase2ClosedLoopRun {
