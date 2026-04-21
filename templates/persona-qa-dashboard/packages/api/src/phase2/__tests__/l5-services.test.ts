@@ -263,9 +263,16 @@ describe('L5 controlled feedback services', () => {
       status: 'needs_review',
       mode: 'observe',
       queuedScenarios: ['first_order'],
+      verification: expect.objectContaining({
+        independentAudit: expect.objectContaining({
+          agentRole: 'auditor',
+          verdict: 'warning',
+        }),
+      }),
       summary: expect.objectContaining({
         generatedProposals: expect.any(Number),
         pendingReviews: expect.any(Number),
+        independentAuditVerdict: 'warning',
       }),
     }))
     expect(Number(loop.summary.generatedProposals)).toBeGreaterThan(0)
@@ -318,9 +325,14 @@ describe('L5 controlled feedback services', () => {
         mode: 'apply_approved',
         summary: expect.objectContaining({
           appliedMaterializations: 1,
+          independentAuditVerdict: 'warning',
         }),
         verification: expect.objectContaining({
           rerunRequired: true,
+          independentAudit: expect.objectContaining({
+            agentRole: 'auditor',
+            verdict: 'warning',
+          }),
         }),
       }))
       expect(service.listL5Materializations({
@@ -395,12 +407,47 @@ describe('L5 controlled feedback services', () => {
     expect(service.listL5ClosedLoopRuns()).toContainEqual(expect.objectContaining({
       id: tick.run!.id,
     }))
-    expect(tick.run!.metadata?.['lifecycle']).toHaveLength(12)
+    expect(tick.run!.metadata?.['lifecycle']).toHaveLength(14)
 
     const stopped = scheduler.stop('test_complete')
     expect(stopped).toEqual(expect.objectContaining({
       enabled: false,
       nextTickAt: null,
+    }))
+  })
+
+  it('routes failed independent terminal audits into closed-loop review', async () => {
+    const service = new SessionService(':memory:')
+    const session = service.createSession('first_order')
+    service.appendEvent(session.id, {
+      type: 'agent_started',
+      agentRole: 'sales-associate',
+      payload: {
+        agentId: 'sales-associate',
+        stepId: 'create_customer',
+        attempt: 1,
+      },
+    })
+    service.updateStatus(session.id, 'complete')
+
+    const loop = await new L5ClosedLoopService(service).runOnce({
+      scenarioId: 'first_order',
+      maxScenarios: 1,
+    })
+    const independentAudit = loop.verification['independentAudit'] as Record<string, unknown>
+
+    expect(loop.status).toBe('needs_review')
+    expect(independentAudit).toEqual(expect.objectContaining({
+      agentRole: 'auditor',
+      verdict: 'failed',
+    }))
+    expect(independentAudit['findings']).toContainEqual(expect.objectContaining({
+      code: 'agent_start_without_stop',
+      severity: 'error',
+    }))
+    expect(loop.summary).toEqual(expect.objectContaining({
+      independentAuditVerdict: 'failed',
+      independentAuditedSessions: 1,
     }))
   })
 
