@@ -643,7 +643,7 @@ export async function installLocalPackage(input: { repoPath: string }) {
       '',
       'echo "[.agentic-qa] starting web on ${WEB_PORT} -> api ${API_PORT}"',
       'trap \'kill "${API_PID}" >/dev/null 2>&1 || true\' EXIT',
-      'cd "${ROOT_DIR}" && NODE_NO_WARNINGS=1 VITE_API_URL="http://localhost:${API_PORT}" npm exec vite -- packages/web --config packages/web/vite.config.ts --host 0.0.0.0 --port "${WEB_PORT}"',
+      'cd "${ROOT_DIR}" && NODE_NO_WARNINGS=1 VITE_API_URL="http://localhost:${API_PORT}" npm exec vite -- packages/web --config packages/web/vite.config.ts --host 0.0.0.0 --port "${WEB_PORT}" --strictPort',
       '',
     ].join('\n'),
     'utf8',

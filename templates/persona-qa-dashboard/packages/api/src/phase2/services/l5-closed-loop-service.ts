@@ -191,6 +191,8 @@ export class L5ClosedLoopService {
         l5SignalPolicies: queue.map((item) => ({
           scenarioId: item.scenarioId,
           retainedSignals: item.l5SignalPolicy.retainedSignals,
+          decayedSignals: item.l5SignalPolicy.decayedSignals,
+          averageEffectiveConfidence: item.l5SignalPolicy.averageEffectiveConfidence,
           riskModifier: item.l5SignalPolicy.riskModifier,
           requiresReplay: item.l5SignalPolicy.requiresReplay,
           requiresIndependentAudit: item.l5SignalPolicy.requiresIndependentAudit,

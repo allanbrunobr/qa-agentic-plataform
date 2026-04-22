@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import net from 'node:net'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -53,13 +54,12 @@ const webReleaseTests = [
 ]
 
 const portSeed = Number(process.env.RELEASE_PORT_SEED ?? 3280 + (process.pid % 400))
-const releaseEnv = {
+const baseReleaseEnv = {
   ...process.env,
-  API_PORT: process.env.API_PORT ?? String(portSeed),
-  WEB_PORT: process.env.WEB_PORT ?? String(portSeed + 2000),
   NODE_NO_WARNINGS: process.env.NODE_NO_WARNINGS ?? '1',
   PATH: releasePath,
 }
+let releaseEnv = baseReleaseEnv
 
 const steps = [
   {
@@ -125,6 +125,76 @@ function assertNodeVersion() {
   }
 }
 
+function parsePort(name, value) {
+  const port = Number(value)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`${name} must be a valid TCP port; got=${value}`)
+  }
+  return port
+}
+
+async function canBind(port, host) {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.once('error', (error) => {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'EADDRNOTAVAIL') {
+        resolve(true)
+        return
+      }
+      resolve(false)
+    })
+    server.listen({ port, host, exclusive: true }, () => {
+      server.close((error) => {
+        if (error) reject(error)
+        else resolve(true)
+      })
+    })
+  })
+}
+
+async function isPortAvailable(port) {
+  return (
+    await canBind(port, '127.0.0.1')
+    && await canBind(port, '0.0.0.0')
+    && await canBind(port, '::')
+  )
+}
+
+async function findAvailablePort(start, reservedPorts) {
+  const normalizedStart = parsePort('RELEASE_PORT_SEED', String(start))
+  for (let offset = 0; offset < 2000; offset += 1) {
+    const candidate = normalizedStart + offset
+    if (candidate > 65535) break
+    if (reservedPorts.has(candidate)) continue
+    if (await isPortAvailable(candidate)) return candidate
+  }
+  throw new Error(`could not find available port from ${normalizedStart}`)
+}
+
+async function resolveReleasePort(envName, preferredPort, reservedPorts) {
+  const override = process.env[envName]
+  if (override) {
+    const port = parsePort(envName, override)
+    if (reservedPorts.has(port)) throw new Error(`${envName}=${port} collides with another release port`)
+    if (!await isPortAvailable(port)) throw new Error(`${envName}=${port} is already in use`)
+    return port
+  }
+  return findAvailablePort(preferredPort, reservedPorts)
+}
+
+async function prepareReleaseEnv() {
+  const reservedPorts = new Set()
+  const apiPort = await resolveReleasePort('API_PORT', portSeed, reservedPorts)
+  reservedPorts.add(apiPort)
+  const webPort = await resolveReleasePort('WEB_PORT', portSeed + 2000, reservedPorts)
+
+  releaseEnv = {
+    ...baseReleaseEnv,
+    API_PORT: String(apiPort),
+    WEB_PORT: String(webPort),
+  }
+}
+
 function runStep(step) {
   log(`START ${step.name}`)
   const startedAt = Date.now()
@@ -141,8 +211,9 @@ function runStep(step) {
   log(`PASS ${step.name} (${durationSeconds}s)`)
 }
 
-function main() {
+async function main() {
   assertNodeVersion()
+  await prepareReleaseEnv()
   log(`node=${releaseNodePath}`)
   log(`ports api=${releaseEnv.API_PORT} web=${releaseEnv.WEB_PORT}`)
   for (const step of steps) runStep(step)
@@ -150,7 +221,7 @@ function main() {
 }
 
 try {
-  main()
+  await main()
 } catch (error) {
   process.stderr.write(`[verify-release] FAIL ${error instanceof Error ? error.stack ?? error.message : String(error)}\n`)
   process.exitCode = 1

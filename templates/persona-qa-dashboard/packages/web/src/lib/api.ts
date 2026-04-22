@@ -475,10 +475,21 @@ export interface Phase2ClosedLoopStatusResponse {
     baseRiskScore: number
     l5SignalPolicy: {
       retainedSignals: number
+      decayedSignals: number
+      averageEffectiveConfidence: number
       riskModifier: number
       requiresReplay: boolean
       requiresIndependentAudit: boolean
       signalIds: string[]
+      signalImpacts: Array<{
+        signalId: string
+        signalType: Phase2L5LearningSignalType
+        ageDays: number
+        decayFactor: number
+        confidence: number
+        effectiveConfidence: number
+        riskContribution: number
+      }>
       reasons: string[]
     }
     queueId: string

@@ -4,11 +4,24 @@ import { L5LoopGuardService, type L5LoopGuard } from './l5-loop-guard-service.js
 
 export interface L5SignalPolicyImpact {
   retainedSignals: number
+  decayedSignals: number
+  averageEffectiveConfidence: number
   riskModifier: number
   requiresReplay: boolean
   requiresIndependentAudit: boolean
   signalIds: string[]
+  signalImpacts: L5SignalPolicySignalImpact[]
   reasons: string[]
+}
+
+export interface L5SignalPolicySignalImpact {
+  signalId: string
+  signalType: L5LearningSignal['signalType']
+  ageDays: number
+  decayFactor: number
+  confidence: number
+  effectiveConfidence: number
+  riskContribution: number
 }
 
 export interface ScheduleRecommendation {
@@ -129,43 +142,87 @@ export function calculateRiskScore(input: {
   return Math.min(1, Number(score.toFixed(2)))
 }
 
-export function evaluateL5SignalPolicy(signals: L5LearningSignal[]): L5SignalPolicyImpact {
+export function evaluateL5SignalPolicy(
+  signals: L5LearningSignal[],
+  options: { now?: Date } = {},
+): L5SignalPolicyImpact {
+  const now = options.now ?? new Date()
   let riskModifier = 0
   let requiresReplay = false
   let requiresIndependentAudit = false
   const reasons: string[] = []
+  const signalImpacts: L5SignalPolicySignalImpact[] = []
 
   for (const signal of signals) {
+    const decay = calculateL5SignalDecay(signal.createdAt, now)
+    const confidence = clamp(signal.confidence, 0, 1)
+    const effectiveConfidence = round2(confidence * decay.factor)
+    let rawContribution = 0
+    let reason: string | undefined
+
     if (signal.signalType === 'audit_reviewed') {
       const verdict = stringValue(signal.evidence?.['auditVerdict'], 'unknown')
       const findingCount = numberValue(signal.evidence?.['findingCount'])
       const modifier = verdict === 'failed' ? 0.18 : verdict === 'warning' ? 0.12 : 0.06
-      riskModifier += modifier
-      requiresReplay ||= verdict === 'failed' || verdict === 'warning'
-      requiresIndependentAudit ||= verdict === 'failed' || verdict === 'warning' || findingCount > 0
-      reasons.push(`reviewed audit ${verdict}${findingCount > 0 ? ` with ${findingCount} finding(s)` : ''}`)
-      continue
-    }
-
-    if (signal.signalType === 'promotion_verified') {
+      rawContribution = modifier
+      const actionable = effectiveConfidence >= 0.35
+      requiresReplay ||= actionable && (verdict === 'failed' || verdict === 'warning')
+      requiresIndependentAudit ||= actionable && (verdict === 'failed' || verdict === 'warning' || findingCount > 0)
+      reason = `reviewed audit ${verdict}${findingCount > 0 ? ` with ${findingCount} finding(s)` : ''}`
+    } else if (signal.signalType === 'promotion_verified') {
       const verificationStatus = stringValue(signal.evidence?.['verificationStatus'], 'unknown')
       const modifier = verificationStatus === 'warning' ? 0.06 : 0.03
-      riskModifier += modifier
-      requiresReplay ||= verificationStatus === 'warning'
-      requiresIndependentAudit ||= verificationStatus === 'warning'
-      reasons.push(`verified promotion ${verificationStatus}`)
+      rawContribution = modifier
+      const actionable = effectiveConfidence >= 0.35
+      requiresReplay ||= actionable && verificationStatus === 'warning'
+      requiresIndependentAudit ||= actionable && verificationStatus === 'warning'
+      reason = `verified promotion ${verificationStatus}`
+    }
+
+    const riskContribution = round2(rawContribution * effectiveConfidence)
+    riskModifier += riskContribution
+    signalImpacts.push({
+      signalId: signal.id,
+      signalType: signal.signalType,
+      ageDays: decay.ageDays,
+      decayFactor: decay.factor,
+      confidence,
+      effectiveConfidence,
+      riskContribution,
+    })
+    if (reason) {
+      reasons.push(decay.factor < 1 ? `${reason}; decayed ${decay.factor.toFixed(2)}` : reason)
     }
   }
 
-  const cappedModifier = Math.min(0.3, Number(riskModifier.toFixed(2)))
+  const cappedModifier = Math.min(0.3, round2(riskModifier))
+  const effectiveConfidenceTotal = signalImpacts.reduce((sum, impact) => sum + impact.effectiveConfidence, 0)
   return {
     retainedSignals: signals.length,
+    decayedSignals: signalImpacts.filter((impact) => impact.decayFactor < 1).length,
+    averageEffectiveConfidence: signals.length > 0 ? round2(effectiveConfidenceTotal / signals.length) : 0,
     riskModifier: cappedModifier,
     requiresReplay,
     requiresIndependentAudit,
     signalIds: signals.map((signal) => signal.id),
+    signalImpacts,
     reasons: reasons.slice(0, 5),
   }
+}
+
+export function calculateL5SignalDecay(createdAt: string, now = new Date()): { ageDays: number; factor: number } {
+  const created = new Date(createdAt).getTime()
+  const current = now.getTime()
+  if (!Number.isFinite(created) || !Number.isFinite(current)) {
+    return { ageDays: 0, factor: 1 }
+  }
+
+  const ageDays = Math.max(0, Math.floor((current - created) / 86_400_000))
+  if (ageDays <= 14) return { ageDays, factor: 1 }
+  if (ageDays <= 45) return { ageDays, factor: 0.75 }
+  if (ageDays <= 90) return { ageDays, factor: 0.45 }
+  if (ageDays <= 180) return { ageDays, factor: 0.2 }
+  return { ageDays, factor: 0.1 }
 }
 
 function applyRiskModifier(baseRiskScore: number, modifier: number): number {
@@ -186,7 +243,7 @@ function buildReason(input: {
   if (input.timeoutRate > 0) parts.push(`timeout rate ${(input.timeoutRate * 100).toFixed(0)}%`)
   if (input.l5SignalPolicy && input.l5SignalPolicy.retainedSignals > 0) {
     parts.push(
-      `L5 retained signals ${input.l5SignalPolicy.retainedSignals} (+${input.l5SignalPolicy.riskModifier.toFixed(2)})`,
+      `L5 retained signals ${input.l5SignalPolicy.retainedSignals} (+${input.l5SignalPolicy.riskModifier.toFixed(2)}, ${input.l5SignalPolicy.decayedSignals} decayed)`,
     )
   }
   return parts.join('; ')
@@ -198,4 +255,12 @@ function stringValue(value: unknown, fallback: string): string {
 
 function numberValue(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function round2(value: number): number {
+  return Number(value.toFixed(2))
 }

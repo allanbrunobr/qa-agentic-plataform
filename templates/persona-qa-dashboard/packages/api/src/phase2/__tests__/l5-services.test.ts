@@ -9,10 +9,10 @@ import { L5ClosedLoopService } from '../services/l5-closed-loop-service.js'
 import { L5LoopGuardService } from '../services/l5-loop-guard-service.js'
 import { L5MaterializationService } from '../services/l5-materialization-service.js'
 import { LearningControlService } from '../services/learning-control-service.js'
-import { calculateRiskScore, evaluateL5SignalPolicy, MetaOrchestrator } from '../services/meta-orchestrator.js'
+import { calculateL5SignalDecay, calculateRiskScore, evaluateL5SignalPolicy, MetaOrchestrator } from '../services/meta-orchestrator.js'
 import { ProfileTuningService } from '../services/profile-tuning-service.js'
 import { SelfHealingService } from '../services/self-healing-service.js'
-import { SessionService } from '../services/session-service.js'
+import { type L5LearningSignal, SessionService } from '../services/session-service.js'
 import { ToolRegistry } from '../services/tool-registry.js'
 import { registerWorkflowTools } from '../tools/workflow-tools.js'
 
@@ -229,7 +229,9 @@ describe('L5 controlled feedback services', () => {
       baseRiskScore: expect.any(Number),
       l5SignalPolicy: expect.objectContaining({
         retainedSignals: 1,
-        riskModifier: 0.12,
+        decayedSignals: 0,
+        averageEffectiveConfidence: 0.8,
+        riskModifier: 0.1,
         requiresReplay: true,
         requiresIndependentAudit: true,
         signalIds: [signal.id],
@@ -249,11 +251,11 @@ describe('L5 controlled feedback services', () => {
     }))
     expect(queue.find((item) => item.scenarioId === 'first_order')?.l5SignalPolicy).toEqual(expect.objectContaining({
       requiresReplay: true,
-      riskModifier: 0.12,
+      riskModifier: 0.1,
     }))
   })
 
-  it('caps retained L5 learning signal risk policy and ignores superseded signals', () => {
+  it('weights retained L5 learning signals by confidence and ignores superseded signals', () => {
     const service = new SessionService(':memory:')
     service.recordL5LearningSignal({
       sourceType: 'independent_audit_review',
@@ -314,15 +316,85 @@ describe('L5 controlled feedback services', () => {
     expect(retained).toHaveLength(3)
     expect(policy).toEqual(expect.objectContaining({
       retainedSignals: 3,
-      riskModifier: 0.27,
+      decayedSignals: 0,
+      averageEffectiveConfidence: 0.88,
+      riskModifier: 0.23,
       requiresReplay: true,
       requiresIndependentAudit: true,
     }))
+    expect(policy.signalImpacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        signalType: 'audit_reviewed',
+        effectiveConfidence: 0.9,
+        riskContribution: 0.16,
+      }),
+      expect.objectContaining({
+        signalType: 'promotion_verified',
+        effectiveConfidence: 0.75,
+        riskContribution: 0.04,
+      }),
+      expect.objectContaining({
+        signalType: 'promotion_verified',
+        effectiveConfidence: 1,
+        riskContribution: 0.03,
+      }),
+    ]))
     expect(policy.reasons).toEqual(expect.arrayContaining([
       'reviewed audit failed with 3 finding(s)',
       'verified promotion warning',
       'verified promotion passed',
     ]))
+  })
+
+  it('decays old retained L5 learning signals without deleting ledger memory', () => {
+    const now = new Date('2026-04-22T00:00:00.000Z')
+    expect(calculateL5SignalDecay('2026-04-15T00:00:00.000Z', now)).toEqual({ ageDays: 7, factor: 1 })
+    expect(calculateL5SignalDecay('2026-01-01T00:00:00.000Z', now)).toEqual({ ageDays: 111, factor: 0.2 })
+
+    const freshPolicy = evaluateL5SignalPolicy([
+      makeLearningSignal({
+        id: 'fresh-failed-audit',
+        createdAt: '2026-04-15T00:00:00.000Z',
+        confidence: 1,
+        evidence: { auditVerdict: 'failed', findingCount: 2 },
+      }),
+    ], { now })
+    expect(freshPolicy).toEqual(expect.objectContaining({
+      retainedSignals: 1,
+      decayedSignals: 0,
+      averageEffectiveConfidence: 1,
+      riskModifier: 0.18,
+      requiresReplay: true,
+      requiresIndependentAudit: true,
+    }))
+
+    const oldPolicy = evaluateL5SignalPolicy([
+      makeLearningSignal({
+        id: 'old-failed-audit',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        confidence: 1,
+        evidence: { auditVerdict: 'failed', findingCount: 2 },
+      }),
+    ], { now })
+    expect(oldPolicy).toEqual(expect.objectContaining({
+      retainedSignals: 1,
+      decayedSignals: 1,
+      averageEffectiveConfidence: 0.2,
+      riskModifier: 0.04,
+      requiresReplay: false,
+      requiresIndependentAudit: false,
+    }))
+    expect(oldPolicy.signalIds).toEqual(['old-failed-audit'])
+    expect(oldPolicy.signalImpacts).toEqual([
+      expect.objectContaining({
+        signalId: 'old-failed-audit',
+        ageDays: 111,
+        decayFactor: 0.2,
+        effectiveConfidence: 0.2,
+        riskContribution: 0.04,
+      }),
+    ])
+    expect(oldPolicy.reasons[0]).toContain('decayed 0.20')
   })
 
   it('reports formal circuit breaker status for every L5 loop', () => {
@@ -392,7 +464,7 @@ describe('L5 controlled feedback services', () => {
         retainedLearningSignals: 1,
         l5PolicyReplayRequired: true,
         l5PolicyIndependentAuditRequired: true,
-        l5PolicyMaxRiskModifier: 0.12,
+        l5PolicyMaxRiskModifier: 0.1,
         independentAuditVerdict: 'warning',
       }),
     }))
@@ -872,3 +944,20 @@ describe('L5 controlled feedback services', () => {
     ]))
   })
 })
+
+function makeLearningSignal(overrides: Partial<L5LearningSignal> = {}): L5LearningSignal {
+  return {
+    id: 'signal-id',
+    sourceType: 'independent_audit_review',
+    sourceId: 'review-id',
+    signalType: 'audit_reviewed',
+    sourceRunId: 'loop-id',
+    scenarioId: 'first_order',
+    version: 'review:review-id',
+    confidence: 1,
+    status: 'retained',
+    summary: 'Reviewed signal.',
+    createdAt: '2026-04-22T00:00:00.000Z',
+    ...overrides,
+  }
+}
