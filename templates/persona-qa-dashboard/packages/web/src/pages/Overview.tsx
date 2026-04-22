@@ -16,6 +16,7 @@ import {
   type Phase2IndependentAuditReviewQueueItem,
   type Phase2KnowledgePromotionCandidate,
   type Phase2KnowledgePromotionEvent,
+  type Phase2L5LearningSignal,
   type Phase2MaturityStatus,
   type Phase2ScenarioSummary,
   type Phase2SessionSummary,
@@ -128,6 +129,7 @@ export function Overview() {
   const [closedLoopPromotionEvents, setClosedLoopPromotionEvents] = useState<Phase2KnowledgePromotionEvent[]>([])
   const [closedLoopAuditReviews, setClosedLoopAuditReviews] = useState<Phase2IndependentAuditReview[]>([])
   const [closedLoopAuditReviewQueue, setClosedLoopAuditReviewQueue] = useState<Phase2IndependentAuditReviewQueueItem[]>([])
+  const [closedLoopLearningSignals, setClosedLoopLearningSignals] = useState<Phase2L5LearningSignal[]>([])
   const [closedLoopPromotionActionPendingId, setClosedLoopPromotionActionPendingId] = useState<string | null>(null)
   const [closedLoopPromotionActionError, setClosedLoopPromotionActionError] = useState<string | null>(null)
   const [closedLoopAuditReviewPendingRunId, setClosedLoopAuditReviewPendingRunId] = useState<string | null>(null)
@@ -162,6 +164,7 @@ export function Overview() {
           governanceData,
           auditReviewData,
           auditReviewQueueData,
+          learningSignalData,
         ] = await Promise.all([
           api.getPhase2Sessions(),
           api.getPhase2Scenarios(),
@@ -172,6 +175,7 @@ export function Overview() {
           api.getPhase2GovernanceDecisions({ limit: 12 }).catch(() => []),
           api.getPhase2IndependentAuditReviews({ limit: 30 }).catch(() => []),
           api.getPhase2IndependentAuditReviewQueue({ limit: 12 }).catch(() => []),
+          api.getPhase2L5LearningSignals({ limit: 12 }).catch(() => []),
         ])
         if (!mounted) return
         setSessions(sessionData)
@@ -183,6 +187,7 @@ export function Overview() {
         setGovernanceDecisions(governanceData)
         setClosedLoopAuditReviews(auditReviewData)
         setClosedLoopAuditReviewQueue(auditReviewQueueData)
+        setClosedLoopLearningSignals(learningSignalData)
         setSelectedClosedLoopRunId((current) => {
           const recentRuns = closedLoopData?.recentRuns ?? []
           if (current && recentRuns.some((candidate) => candidate.id === current)) return current
@@ -456,12 +461,13 @@ export function Overview() {
     setClosedLoopPromotionActionError(null)
     try {
       await api.runPhase2KnowledgePromotionAction(candidate, { actor: 'dashboard' })
-      const [bundle, nextStatus, nextGovernance, nextMaturity, nextPromotionEvents] = await Promise.all([
+      const [bundle, nextStatus, nextGovernance, nextMaturity, nextPromotionEvents, nextLearningSignals] = await Promise.all([
         api.getPhase2ClosedLoopAuditBundle(auditedClosedLoop.id),
         api.getPhase2ClosedLoopStatus(),
         api.getPhase2GovernanceDecisions({ limit: 12 }).catch(() => governanceDecisions),
         api.getPhase2Maturity().catch(() => maturity),
         api.getPhase2KnowledgePromotionEvents({ sourceRunId: auditedClosedLoop.id, limit: 12 }).catch(() => closedLoopPromotionEvents),
+        api.getPhase2L5LearningSignals({ limit: 12 }).catch(() => closedLoopLearningSignals),
       ])
       setClosedLoopReplayRunId(auditedClosedLoop.id)
       setClosedLoopReplay(bundle.replay)
@@ -470,6 +476,7 @@ export function Overview() {
       setClosedLoop(nextStatus)
       setGovernanceDecisions(nextGovernance)
       setMaturity(nextMaturity)
+      setClosedLoopLearningSignals(nextLearningSignals)
     } catch (error) {
       setClosedLoopPromotionActionError(error instanceof Error ? error.message : 'Falha ao executar ação governada L5')
     } finally {
@@ -486,16 +493,18 @@ export function Overview() {
         actor: 'dashboard',
         reason,
       })
-      const [nextStatus, nextMaturity, nextReviews, nextReviewQueue] = await Promise.all([
+      const [nextStatus, nextMaturity, nextReviews, nextReviewQueue, nextLearningSignals] = await Promise.all([
         api.getPhase2ClosedLoopStatus(),
         api.getPhase2Maturity().catch(() => maturity),
         api.getPhase2IndependentAuditReviews({ limit: 30 }).catch(() => closedLoopAuditReviews),
         api.getPhase2IndependentAuditReviewQueue({ limit: 12 }).catch(() => closedLoopAuditReviewQueue),
+        api.getPhase2L5LearningSignals({ limit: 12 }).catch(() => closedLoopLearningSignals),
       ])
       setClosedLoop(nextStatus)
       setMaturity(nextMaturity)
       setClosedLoopAuditReviews(nextReviews)
       setClosedLoopAuditReviewQueue(nextReviewQueue)
+      setClosedLoopLearningSignals(nextLearningSignals)
       setSelectedClosedLoopRunId(run.id)
     } catch (error) {
       setClosedLoopAuditReviewError(error instanceof Error ? error.message : 'Falha ao registrar revisão da auditoria')
@@ -709,6 +718,7 @@ export function Overview() {
           promotionEvents={closedLoopPromotionEvents}
           auditReviews={closedLoopAuditReviews}
           auditReviewQueue={closedLoopAuditReviewQueue}
+          learningSignals={closedLoopLearningSignals}
           promotionActionPendingId={closedLoopPromotionActionPendingId}
           promotionActionError={closedLoopPromotionActionError}
           auditReviewPendingRunId={closedLoopAuditReviewPendingRunId}

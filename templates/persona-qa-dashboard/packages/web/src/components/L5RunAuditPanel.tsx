@@ -8,6 +8,7 @@ import type {
   Phase2IndependentAuditReview,
   Phase2IndependentAuditReviewQueueItem,
   Phase2KnowledgePromotionEvent,
+  Phase2L5LearningSignal,
 } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
 
@@ -24,6 +25,7 @@ interface L5RunAuditPanelProps {
   promotionActionError?: string | null
   auditReviews?: Phase2IndependentAuditReview[]
   auditReviewQueue?: Phase2IndependentAuditReviewQueueItem[]
+  learningSignals?: Phase2L5LearningSignal[]
   auditReviewPendingRunId?: string | null
   auditReviewError?: string | null
   replayLoading?: boolean
@@ -55,6 +57,7 @@ export function L5RunAuditPanel({
   promotionActionError,
   auditReviews = [],
   auditReviewQueue = [],
+  learningSignals = [],
   auditReviewPendingRunId,
   auditReviewError,
   replayLoading = false,
@@ -117,6 +120,8 @@ export function L5RunAuditPanel({
         selectedRunId={selectedRun.id}
         onSelectRun={onSelectRun}
       />
+
+      <LearningSignalLedger signals={learningSignals} selectedRunId={selectedRun.id} />
 
       <SafeReplayPanel
         preview={replayPreview}
@@ -328,6 +333,55 @@ function IndependentAuditReviewQueue({
               {item.statusReason ?? `Run ${item.status.replace('_', ' ')}`}
             </p>
           </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function LearningSignalLedger({
+  signals,
+  selectedRunId,
+}: {
+  signals: Phase2L5LearningSignal[]
+  selectedRunId: string
+}) {
+  if (signals.length === 0) return null
+
+  const retained = signals.filter((signal) => signal.status === 'retained').length
+  return (
+    <section className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
+      <SectionHeader title="Memória L5" detail={`${retained} sinal(is) retido(s)`} />
+      <div className="grid gap-2 lg:grid-cols-2">
+        {signals.slice(0, 6).map((signal) => (
+          <article
+            key={signal.id}
+            className={`rounded-md border px-3 py-2 ${
+              signal.sourceRunId === selectedRunId
+                ? 'border-emerald-300 bg-emerald-400/20'
+                : 'border-emerald-500/30 bg-[var(--bg-primary)]'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-xs font-medium text-emerald-100">
+                  {signal.signalType.replace(/_/g, ' ')}
+                </p>
+                <p className="mt-1 truncate text-[11px] text-emerald-100/70">
+                  {signal.scenarioId?.replace(/_/g, ' ') ?? signal.subjectType?.replace(/_/g, ' ') ?? signal.sourceRunId?.slice(0, 8) ?? 'global'}
+                </p>
+              </div>
+              <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] uppercase ${signalStatusClass(signal.status)}`}>
+                {signal.status}
+              </span>
+            </div>
+            <p className="mt-2 line-clamp-2 text-[11px] text-emerald-100/80">{signal.summary}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] uppercase text-emerald-100/60">
+              <span>{signal.sourceType.replace(/_/g, ' ')}</span>
+              <span>conf {Math.round(signal.confidence * 100)}%</span>
+              <span>v {signal.version.slice(0, 12)}</span>
+            </div>
+          </article>
         ))}
       </div>
     </section>
@@ -789,6 +843,12 @@ function auditVerdictClass(verdict: string) {
   if (verdict === 'failed') return 'bg-red-500/10 text-red-200'
   if (verdict === 'warning') return 'bg-amber-500/10 text-amber-200'
   if (verdict === 'passed') return 'bg-emerald-500/10 text-emerald-200'
+  return 'bg-[var(--bg-secondary)] text-[var(--text-muted)]'
+}
+
+function signalStatusClass(status: string) {
+  if (status === 'retained') return 'bg-emerald-500/10 text-emerald-200'
+  if (status === 'superseded') return 'bg-[var(--bg-secondary)] text-[var(--text-muted)]'
   return 'bg-[var(--bg-secondary)] text-[var(--text-muted)]'
 }
 

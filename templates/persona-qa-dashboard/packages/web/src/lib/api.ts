@@ -203,6 +203,9 @@ export type Phase2KnowledgePromotionEventAction = 'approve' | 'apply' | 'promote
 export type Phase2KnowledgePromotionEventStatus = 'completed' | 'blocked' | 'failed'
 export type Phase2KnowledgePromotionPostVerificationStatus = 'passed' | 'warning' | 'failed'
 export type Phase2IndependentAuditReviewStatus = 'reviewed'
+export type Phase2L5LearningSignalSourceType = 'independent_audit_review' | 'knowledge_promotion'
+export type Phase2L5LearningSignalType = 'audit_reviewed' | 'promotion_verified'
+export type Phase2L5LearningSignalStatus = 'retained' | 'superseded'
 
 export interface Phase2ClosedLoopLifecycleEvent {
   type: string
@@ -351,6 +354,35 @@ export interface Phase2IndependentAuditReviewResult {
   guards: Phase2ClosedLoopStatusResponse['guards']
 }
 
+export interface Phase2L5LearningSignal {
+  id: string
+  sourceType: Phase2L5LearningSignalSourceType
+  sourceId: string
+  signalType: Phase2L5LearningSignalType
+  sourceRunId?: string
+  subjectType?: Phase2GovernanceSubjectType
+  subjectId?: string
+  scenarioId?: string
+  stepId?: string
+  agentId?: string
+  version: string
+  confidence: number
+  status: Phase2L5LearningSignalStatus
+  summary: string
+  evidence?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  createdAt: string
+}
+
+export interface Phase2L5LearningSignalSummary {
+  total: number
+  retained: number
+  superseded: number
+  bySignalType: Record<string, number>
+  bySourceType: Record<string, number>
+  latestSignals: Phase2L5LearningSignal[]
+}
+
 export interface Phase2L5Materialization {
   id: string
   subjectType: Phase2GovernanceSubjectType
@@ -444,6 +476,7 @@ export interface Phase2ClosedLoopStatusResponse {
     position: number
     status: 'queued' | 'blocked'
   }>
+  learningSignals: Phase2L5LearningSignalSummary
   latestRun: Phase2ClosedLoopRun | null
   recentRuns: Phase2ClosedLoopRun[]
 }
@@ -575,6 +608,29 @@ export const api = {
     }))}`),
   getPhase2IndependentAuditReviewQueue: (params?: { limit?: number }) =>
     fetchJSON<Phase2IndependentAuditReviewQueueItem[]>(`${API_BASE}/api/p2/closed-loop/audit-review-queue?${new URLSearchParams(compactParams({
+      limit: params?.limit ? String(params.limit) : undefined,
+    }))}`),
+  getPhase2L5LearningSignals: (params?: {
+    sourceRunId?: string
+    subjectType?: Phase2GovernanceSubjectType
+    subjectId?: string
+    scenarioId?: string
+    signalType?: Phase2L5LearningSignalType
+    status?: Phase2L5LearningSignalStatus
+    limit?: number
+  }) =>
+    fetchJSON<Phase2L5LearningSignal[]>(`${API_BASE}/api/p2/learning/signals?${new URLSearchParams(compactParams({
+      sourceRunId: params?.sourceRunId,
+      subjectType: params?.subjectType,
+      subjectId: params?.subjectId,
+      scenarioId: params?.scenarioId,
+      signalType: params?.signalType,
+      status: params?.status,
+      limit: params?.limit ? String(params.limit) : undefined,
+    }))}`),
+  getPhase2L5LearningSignalSummary: (params?: { scenarioId?: string; limit?: number }) =>
+    fetchJSON<Phase2L5LearningSignalSummary>(`${API_BASE}/api/p2/learning/signals/summary?${new URLSearchParams(compactParams({
+      scenarioId: params?.scenarioId,
       limit: params?.limit ? String(params.limit) : undefined,
     }))}`),
   reviewPhase2IndependentAudit: (runId: string, payload?: { actor?: string; reason?: string }) =>

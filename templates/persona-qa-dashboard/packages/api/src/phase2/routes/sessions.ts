@@ -26,6 +26,8 @@ import {
   SessionService,
   type GovernanceSubjectType,
   type L5ClosedLoopStatus,
+  type L5LearningSignalStatus,
+  type L5LearningSignalType,
   type L5MaterializationStatus,
   type L5MaterializationSubjectType,
 } from '../services/session-service.js';
@@ -170,6 +172,43 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
       const service = getSessionService();
       return reply.send(service.listL5IndependentAuditReviewQueue({
         limit: request.query.limit ? Number(request.query.limit) : 25,
+      }));
+    },
+  );
+
+  app.get<{
+    Querystring: {
+      sourceRunId?: string
+      subjectType?: string
+      subjectId?: string
+      scenarioId?: string
+      signalType?: string
+      status?: string
+      limit?: string
+    }
+  }>(
+    '/api/p2/learning/signals',
+    async (request, reply) => {
+      const service = getSessionService();
+      return reply.send(service.listL5LearningSignals({
+        sourceRunId: request.query.sourceRunId,
+        subjectType: isGovernanceSubjectType(request.query.subjectType) ? request.query.subjectType : undefined,
+        subjectId: request.query.subjectId,
+        scenarioId: request.query.scenarioId,
+        signalType: isL5LearningSignalType(request.query.signalType) ? request.query.signalType : undefined,
+        status: isL5LearningSignalStatus(request.query.status) ? request.query.status : undefined,
+        limit: request.query.limit ? Number(request.query.limit) : 100,
+      }));
+    },
+  );
+
+  app.get<{ Querystring: { scenarioId?: string; limit?: string } }>(
+    '/api/p2/learning/signals/summary',
+    async (request, reply) => {
+      const service = getSessionService();
+      return reply.send(service.summarizeL5LearningSignals({
+        scenarioId: request.query.scenarioId,
+        limit: request.query.limit ? Number(request.query.limit) : 500,
       }));
     },
   );
@@ -831,6 +870,14 @@ function isKnowledgePromotionStatus(value: unknown): value is L5KnowledgePromoti
 
 function isKnowledgePromotionNextAction(value: unknown): value is L5KnowledgePromotionCandidate['nextAction'] {
   return value === 'approve' || value === 'apply' || value === 'promote' || value === 'review' || value === 'none';
+}
+
+function isL5LearningSignalType(value: unknown): value is L5LearningSignalType {
+  return value === 'audit_reviewed' || value === 'promotion_verified';
+}
+
+function isL5LearningSignalStatus(value: unknown): value is L5LearningSignalStatus {
+  return value === 'retained' || value === 'superseded';
 }
 
 function getPromotionEventFromError(error: unknown): unknown {

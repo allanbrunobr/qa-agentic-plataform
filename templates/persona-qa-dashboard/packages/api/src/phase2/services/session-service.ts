@@ -138,6 +138,9 @@ export type L5ClosedLoopStatus = 'completed' | 'needs_review' | 'blocked' | 'fai
 export type L5ClosedLoopMode = 'observe' | 'apply_approved'
 export type KnowledgePromotionEventAction = 'approve' | 'apply' | 'promote'
 export type KnowledgePromotionEventStatus = 'completed' | 'blocked' | 'failed'
+export type L5LearningSignalSourceType = 'independent_audit_review' | 'knowledge_promotion'
+export type L5LearningSignalType = 'audit_reviewed' | 'promotion_verified'
+export type L5LearningSignalStatus = 'retained' | 'superseded'
 
 export interface LearningProposalInput {
   recommendationId: string
@@ -306,6 +309,38 @@ export interface KnowledgePromotionEvent extends KnowledgePromotionEventInput {
   createdAt: string
 }
 
+export interface L5LearningSignalInput {
+  sourceType: L5LearningSignalSourceType
+  sourceId: string
+  signalType: L5LearningSignalType
+  sourceRunId?: string
+  subjectType?: GovernanceSubjectType
+  subjectId?: string
+  scenarioId?: string
+  stepId?: string
+  agentId?: string
+  version: string
+  confidence: number
+  summary: string
+  evidence?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+}
+
+export interface L5LearningSignal extends L5LearningSignalInput {
+  id: string
+  status: L5LearningSignalStatus
+  createdAt: string
+}
+
+export interface L5LearningSignalSummary {
+  total: number
+  retained: number
+  superseded: number
+  bySignalType: Record<string, number>
+  bySourceType: Record<string, number>
+  latestSignals: L5LearningSignal[]
+}
+
 type StepPerformanceRow = {
   id: number
   session_id: string
@@ -463,6 +498,26 @@ type KnowledgePromotionEventRow = {
   reason: string | null
   target: string | null
   result_json: string | null
+  metadata: string | null
+  created_at: string
+}
+
+type L5LearningSignalRow = {
+  signal_id: string
+  source_type: L5LearningSignalSourceType
+  source_id: string
+  signal_type: L5LearningSignalType
+  source_run_id: string | null
+  subject_type: GovernanceSubjectType | null
+  subject_id: string | null
+  scenario_id: string | null
+  step_id: string | null
+  agent_id: string | null
+  version: string
+  confidence: number
+  status: L5LearningSignalStatus
+  summary: string
+  evidence: string | null
   metadata: string | null
   created_at: string
 }
@@ -1522,7 +1577,9 @@ export class SessionService {
         createdAt,
       )
 
-    return { ...input, id, createdAt }
+    const event = { ...input, id, createdAt }
+    this.recordLearningSignalForKnowledgePromotion(event)
+    return event
   }
 
   listKnowledgePromotionEvents(filter: {
@@ -1560,6 +1617,119 @@ export class SessionService {
       .all(...params, limit) as KnowledgePromotionEventRow[]
 
     return rows.map((row) => this.mapKnowledgePromotionEvent(row))
+  }
+
+  recordL5LearningSignal(input: L5LearningSignalInput): L5LearningSignal {
+    const id = randomUUID()
+    const createdAt = new Date().toISOString()
+    const confidence = clampNumber(input.confidence, 0, 1)
+
+    this.supersedeRetainedLearningSignals(input)
+    this.sqlite
+      .prepare(
+        `INSERT INTO p2_l5_learning_signals (
+           signal_id, source_type, source_id, signal_type, source_run_id,
+           subject_type, subject_id, scenario_id, step_id, agent_id, version,
+           confidence, status, summary, evidence, metadata, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'retained', ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.sourceType,
+        input.sourceId,
+        input.signalType,
+        input.sourceRunId ?? null,
+        input.subjectType ?? null,
+        input.subjectId ?? null,
+        input.scenarioId ?? null,
+        input.stepId ?? null,
+        input.agentId ?? null,
+        input.version,
+        confidence,
+        input.summary,
+        input.evidence ? JSON.stringify(input.evidence) : null,
+        input.metadata ? JSON.stringify(input.metadata) : null,
+        createdAt,
+      )
+
+    return {
+      ...input,
+      confidence,
+      id,
+      status: 'retained',
+      createdAt,
+    }
+  }
+
+  listL5LearningSignals(filter: {
+    sourceRunId?: string
+    subjectType?: GovernanceSubjectType
+    subjectId?: string
+    scenarioId?: string
+    signalType?: L5LearningSignalType
+    status?: L5LearningSignalStatus
+    limit?: number
+  } = {}): L5LearningSignal[] {
+    const where: string[] = []
+    const params: unknown[] = []
+    if (filter.sourceRunId) {
+      where.push('source_run_id = ?')
+      params.push(filter.sourceRunId)
+    }
+    if (filter.subjectType) {
+      where.push('subject_type = ?')
+      params.push(filter.subjectType)
+    }
+    if (filter.subjectId) {
+      where.push('subject_id = ?')
+      params.push(filter.subjectId)
+    }
+    if (filter.scenarioId) {
+      where.push('scenario_id = ?')
+      params.push(filter.scenarioId)
+    }
+    if (filter.signalType) {
+      where.push('signal_type = ?')
+      params.push(filter.signalType)
+    }
+    if (filter.status) {
+      where.push('status = ?')
+      params.push(filter.status)
+    }
+
+    const limit = Math.max(1, Math.min(filter.limit ?? 100, 500))
+    const rows = this.sqlite
+      .prepare(
+        `SELECT signal_id, source_type, source_id, signal_type, source_run_id,
+                subject_type, subject_id, scenario_id, step_id, agent_id, version,
+                confidence, status, summary, evidence, metadata, created_at
+         FROM p2_l5_learning_signals
+         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(...params, limit) as L5LearningSignalRow[]
+
+    return rows.map((row) => this.mapL5LearningSignal(row))
+  }
+
+  summarizeL5LearningSignals(filter: {
+    scenarioId?: string
+    limit?: number
+  } = {}): L5LearningSignalSummary {
+    const signals = this.listL5LearningSignals({
+      scenarioId: filter.scenarioId,
+      limit: filter.limit ?? 500,
+    })
+
+    return {
+      total: signals.length,
+      retained: signals.filter((signal) => signal.status === 'retained').length,
+      superseded: signals.filter((signal) => signal.status === 'superseded').length,
+      bySignalType: countBy(signals, (signal) => signal.signalType),
+      bySourceType: countBy(signals, (signal) => signal.sourceType),
+      latestSignals: signals.slice(0, 8),
+    }
   }
 
   recordL5Materialization(input: L5MaterializationInput): L5Materialization {
@@ -1747,7 +1917,9 @@ export class SessionService {
         createdAt,
       )
 
-    return { ...input, id, createdAt }
+    const review = { ...input, id, createdAt }
+    this.recordLearningSignalForIndependentAuditReview(review)
+    return review
   }
 
   listL5IndependentAuditReviews(filter: {
@@ -1809,6 +1981,135 @@ export class SessionService {
       })
       .filter((item): item is L5IndependentAuditReviewQueueItem => item !== null)
       .slice(0, limit)
+  }
+
+  private supersedeRetainedLearningSignals(input: L5LearningSignalInput): void {
+    this.sqlite
+      .prepare(
+        `UPDATE p2_l5_learning_signals
+         SET status = 'superseded'
+         WHERE status = 'retained'
+           AND signal_type = ?
+           AND COALESCE(source_run_id, '') = ?
+           AND COALESCE(subject_type, '') = ?
+           AND COALESCE(subject_id, '') = ?
+           AND COALESCE(scenario_id, '') = ?
+           AND COALESCE(step_id, '') = ?
+           AND COALESCE(agent_id, '') = ?`,
+      )
+      .run(
+        input.signalType,
+        input.sourceRunId ?? '',
+        input.subjectType ?? '',
+        input.subjectId ?? '',
+        input.scenarioId ?? '',
+        input.stepId ?? '',
+        input.agentId ?? '',
+      )
+  }
+
+  private recordLearningSignalForIndependentAuditReview(review: L5IndependentAuditReview): void {
+    const run = this.getL5ClosedLoopRun(review.runId)
+    const audit = recordValue(run?.verification['independentAudit'])
+    const auditSummary = recordValue(audit['summary'])
+    const metadata = review.metadata ?? {}
+    const auditVerdict = stringValue(metadata['auditVerdict'] ?? audit['verdict'], 'unknown')
+    const findingCount = numberValue(metadata['findingCount'])
+      || (Array.isArray(audit['findings']) ? audit['findings'].length : numberValue(auditSummary['findings']))
+
+    this.recordL5LearningSignal({
+      sourceType: 'independent_audit_review',
+      sourceId: review.id,
+      signalType: 'audit_reviewed',
+      sourceRunId: review.runId,
+      scenarioId: run?.scenarioId,
+      version: `review:${review.id}`,
+      confidence: auditVerdict === 'failed' ? 0.65 : auditVerdict === 'warning' ? 0.8 : 0.7,
+      summary: review.reason ?? `Independent audit ${auditVerdict} reviewed.`,
+      evidence: {
+        auditVerdict,
+        auditCheckedAt: metadata['auditCheckedAt'] ?? audit['checkedAt'],
+        findingCount,
+        reviewActor: review.actor,
+        runStatus: run?.status,
+      },
+      metadata: {
+        reviewStatus: review.status,
+        runStatus: run?.status,
+      },
+    })
+  }
+
+  private recordLearningSignalForKnowledgePromotion(event: KnowledgePromotionEvent): void {
+    const verification = recordValue(recordValue(event.result)['postPromotionVerification'])
+    const verificationStatus = stringValue(verification['status'], 'unknown')
+    if (event.status !== 'completed' || verificationStatus === 'failed' || verificationStatus === 'unknown') {
+      return
+    }
+
+    const scope = this.resolveLearningSignalScope(event.subjectType, event.subjectId, event.target)
+    this.recordL5LearningSignal({
+      sourceType: 'knowledge_promotion',
+      sourceId: event.id,
+      signalType: 'promotion_verified',
+      sourceRunId: event.sourceRunId,
+      subjectType: event.subjectType,
+      subjectId: event.subjectId,
+      scenarioId: scope.scenarioId,
+      stepId: scope.stepId,
+      agentId: scope.agentId,
+      version: event.candidateVersion,
+      confidence: verificationStatus === 'passed' ? 1 : 0.75,
+      summary: `${event.action} ${event.promotionType} completed with ${verificationStatus} verification.`,
+      evidence: {
+        action: event.action,
+        promotionType: event.promotionType,
+        candidateId: event.candidateId,
+        verificationStatus,
+        target: event.target,
+        checkCount: Array.isArray(verification['checks']) ? verification['checks'].length : 0,
+      },
+      metadata: {
+        promotionEventId: event.id,
+        candidateStatus: event.metadata?.['candidateStatus'],
+        approvalRequired: event.metadata?.['approvalRequired'],
+        materializationReady: event.metadata?.['materializationReady'],
+      },
+    })
+  }
+
+  private resolveLearningSignalScope(
+    subjectType: GovernanceSubjectType,
+    subjectId: string,
+    target?: string,
+  ): {
+    scenarioId?: string
+    stepId?: string
+    agentId?: string
+  } {
+    if (subjectType === 'learning_proposal') {
+      const proposal = this.getLearningProposal(subjectId)
+      return {
+        scenarioId: proposal?.scenarioId,
+        stepId: proposal?.stepId,
+        agentId: proposal?.agentId ?? agentIdFromTarget(target ?? proposal?.target),
+      }
+    }
+
+    if (subjectType === 'scenario_draft') {
+      const draft = this.getScenarioDraft(subjectId)
+      return {
+        scenarioId: draft?.scenarioId,
+      }
+    }
+
+    const action = this.getHealingAction(subjectId)
+    const parsedTarget = parseHealingTarget(action?.target)
+    return {
+      scenarioId: parsedTarget.scenarioId,
+      stepId: parsedTarget.stepId,
+      agentId: agentIdFromTarget(target),
+    }
   }
 
   private mapLearningProposal(row: LearningProposalRow): LearningProposal {
@@ -1951,6 +2252,28 @@ export class SessionService {
       reason: row.reason ?? undefined,
       target: row.target ?? undefined,
       result: row.result_json ? JSON.parse(row.result_json) : undefined,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      createdAt: row.created_at,
+    }
+  }
+
+  private mapL5LearningSignal(row: L5LearningSignalRow): L5LearningSignal {
+    return {
+      id: row.signal_id,
+      sourceType: row.source_type,
+      sourceId: row.source_id,
+      signalType: row.signal_type,
+      sourceRunId: row.source_run_id ?? undefined,
+      subjectType: row.subject_type ?? undefined,
+      subjectId: row.subject_id ?? undefined,
+      scenarioId: row.scenario_id ?? undefined,
+      stepId: row.step_id ?? undefined,
+      agentId: row.agent_id ?? undefined,
+      version: row.version,
+      confidence: row.confidence,
+      status: row.status,
+      summary: row.summary,
+      evidence: row.evidence ? JSON.parse(row.evidence) : undefined,
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       createdAt: row.created_at,
     }
@@ -2237,6 +2560,26 @@ export class SessionService {
         created_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS p2_l5_learning_signals (
+        signal_id TEXT PRIMARY KEY,
+        source_type TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        signal_type TEXT NOT NULL,
+        source_run_id TEXT,
+        subject_type TEXT,
+        subject_id TEXT,
+        scenario_id TEXT,
+        step_id TEXT,
+        agent_id TEXT,
+        version TEXT NOT NULL,
+        confidence REAL NOT NULL,
+        status TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        evidence TEXT,
+        metadata TEXT,
+        created_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS p2_tool_ledger_closures (
         session_id TEXT NOT NULL REFERENCES p2_sessions(session_id),
         tool_call_id TEXT NOT NULL,
@@ -2261,6 +2604,9 @@ export class SessionService {
       CREATE INDEX IF NOT EXISTS idx_p2_l5_independent_audit_reviews_run ON p2_l5_independent_audit_reviews(run_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_knowledge_promotion_events_run ON p2_knowledge_promotion_events(source_run_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_knowledge_promotion_events_subject ON p2_knowledge_promotion_events(subject_type, subject_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_p2_l5_learning_signals_scope ON p2_l5_learning_signals(status, signal_type, scenario_id, step_id, agent_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_p2_l5_learning_signals_source ON p2_l5_learning_signals(source_type, source_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_p2_l5_learning_signals_subject ON p2_l5_learning_signals(subject_type, subject_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_p2_tool_ledger_closures_session ON p2_tool_ledger_closures(session_id, closed_at);
     `)
   }
@@ -2299,4 +2645,37 @@ function recordValue(value: unknown): Record<string, unknown> {
 
 function numberValue(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value : fallback
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min
+  return Math.max(min, Math.min(value, max))
+}
+
+function countBy<T>(items: T[], keyOf: (item: T) => string): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const item of items) {
+    const key = keyOf(item)
+    counts[key] = (counts[key] ?? 0) + 1
+  }
+  return counts
+}
+
+function agentIdFromTarget(target: string | undefined): string | undefined {
+  if (!target?.startsWith('agent:')) return undefined
+  const agentId = target.slice('agent:'.length).trim()
+  return agentId && agentId !== '*' ? agentId : undefined
+}
+
+function parseHealingTarget(target: string | undefined): { scenarioId?: string; stepId?: string } {
+  if (!target) return {}
+  const [scenarioId, stepId] = target.split(':')
+  return {
+    scenarioId: scenarioId || undefined,
+    stepId: stepId || undefined,
+  }
 }

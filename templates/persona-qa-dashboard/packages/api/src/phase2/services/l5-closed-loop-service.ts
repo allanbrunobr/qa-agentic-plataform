@@ -9,6 +9,7 @@ import { buildScenarioQualityGateForSessions } from './scenario-quality-gates.js
 import { SelfHealingService } from './self-healing-service.js'
 import type {
   L5ClosedLoopRun,
+  L5LearningSignalSummary,
   LearningProposal,
   SessionService,
   StepPerformanceRecord,
@@ -28,6 +29,7 @@ export interface L5ClosedLoopStatus {
   generatedAt: string
   guards: L5LoopGuard[]
   queue: MetaOrchestrationQueueItem[]
+  learningSignals: L5LearningSignalSummary
   latestRun: L5ClosedLoopRun | null
   recentRuns: L5ClosedLoopRun[]
 }
@@ -40,6 +42,7 @@ interface ScenarioSnapshot {
   stepExecutions: number
   failedStepExecutions: number
   activeMaterializations: number
+  retainedLearningSignals: number
   pendingLearningProposals: number
   approvedLearningProposals: number
   qualityGateStatus: string
@@ -106,6 +109,7 @@ export class L5ClosedLoopService {
       generatedAt: new Date().toISOString(),
       guards: new L5LoopGuardService(this.sessionService).summarize(),
       queue: new MetaOrchestrator(this.sessionService).buildGovernedRunQueue(10),
+      learningSignals: this.sessionService.summarizeL5LearningSignals({ limit: 500 }),
       latestRun: recentRuns[0] ?? null,
       recentRuns,
     }
@@ -114,6 +118,10 @@ export class L5ClosedLoopService {
   async runOnce(options: L5ClosedLoopRunOptions = {}): Promise<L5ClosedLoopRun> {
     const startedAt = new Date().toISOString()
     const actor = options.actor ?? 'l5_closed_loop'
+    const learningSignals = this.sessionService.summarizeL5LearningSignals({
+      scenarioId: options.scenarioId,
+      limit: 500,
+    })
     const lifecycle: L5LifecycleEvent[] = []
     appendLifecycle(lifecycle, 'closed_loop_started', {
       details: {
@@ -121,6 +129,7 @@ export class L5ClosedLoopService {
         scenarioId: options.scenarioId,
         applyApprovedChanges: options.applyApprovedChanges === true,
         generateScenarioDrafts: options.generateScenarioDrafts === true,
+        retainedLearningSignals: learningSignals.retained,
       },
     })
     const maxScenarios = clamp(options.maxScenarios ?? 3, 1, 10)
@@ -163,8 +172,9 @@ export class L5ClosedLoopService {
           generatedProposals: 0,
           appliedMaterializations: 0,
           pendingReviews: 0,
+          retainedLearningSignals: learningSignals.retained,
         },
-        metadata: { guards, lifecycle },
+        metadata: { guards, lifecycle, learningSignals },
         startedAt,
       })
     }
@@ -388,6 +398,7 @@ export class L5ClosedLoopService {
         automaticHealingActions,
         scenarioDrafts,
         pendingReviews,
+        retainedLearningSignals: learningSignals.retained,
         independentAuditVerdict: independentAudit.verdict,
         independentAuditFindings: independentAudit.summary.findings,
         independentAuditedSessions: independentAudit.summary.auditedSessions,
@@ -398,6 +409,7 @@ export class L5ClosedLoopService {
         actor,
         guards,
         queue,
+        learningSignals,
         before,
         after,
         lifecycle,
@@ -491,6 +503,11 @@ export class L5ClosedLoopService {
       activeMaterializations: this.sessionService.listL5Materializations({ status: 'active', limit: 500 })
         .filter((materialization) => materialization.metadata?.['scenarioId'] === scenarioId)
         .length,
+      retainedLearningSignals: this.sessionService.listL5LearningSignals({
+        scenarioId,
+        status: 'retained',
+        limit: 500,
+      }).length,
       pendingLearningProposals: this.sessionService.listLearningProposals({ scenarioId, status: 'proposed', limit: 500 }).length,
       approvedLearningProposals: this.sessionService.listLearningProposals({ scenarioId, status: 'approved', limit: 500 }).length,
       qualityGateStatus: qualityGate.status,

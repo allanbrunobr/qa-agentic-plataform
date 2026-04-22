@@ -160,6 +160,19 @@ describe('L5RunAuditPanel', () => {
           statusReason: 'Pending independent audit review.',
           completedAt: now,
         }]}
+        learningSignals={[{
+          id: 'signal-1',
+          sourceType: 'independent_audit_review',
+          sourceId: 'review-1',
+          signalType: 'audit_reviewed',
+          sourceRunId: run.id,
+          scenarioId: 'first_order',
+          version: 'review:review-1',
+          confidence: 0.8,
+          status: 'retained',
+          summary: 'Warning reviewed.',
+          createdAt: now,
+        }]}
         onSelectRun={onSelectRun}
       />,
     )
@@ -167,6 +180,9 @@ describe('L5RunAuditPanel', () => {
     expect(screen.getByText('Fila de revisão L5')).toBeInTheDocument()
     expect(screen.getByText('quarterly reorder')).toBeInTheDocument()
     expect(screen.getByText('Auditoria revisada por qa_lead: Warning reviewed.')).toBeInTheDocument()
+    expect(screen.getByText('Memória L5')).toBeInTheDocument()
+    expect(screen.getByText('audit reviewed')).toBeInTheDocument()
+    expect(screen.getByText('Warning reviewed.')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('quarterly reorder').closest('button')!)
     expect(onSelectRun).toHaveBeenCalledWith('run-pending')

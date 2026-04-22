@@ -69,8 +69,16 @@ describe('Phase 2 Session Routes', () => {
         id: 'runtime_learning',
         state: 'beta',
       }));
+      expect(body.levels.l5.capabilities).toContainEqual(expect.objectContaining({
+        id: 'learning_memory',
+        state: 'beta',
+      }));
       expect(body.levels.l5.signals).toContainEqual(expect.objectContaining({
         label: 'Runtime learning loads',
+        value: 0,
+      }));
+      expect(body.levels.l5.signals).toContainEqual(expect.objectContaining({
+        label: 'Sinais L5 retidos',
         value: 0,
       }));
     });
@@ -244,6 +252,7 @@ describe('Phase 2 Session Routes', () => {
       const run = sessionService.recordL5ClosedLoopRun({
         status: 'needs_review',
         mode: 'observe',
+        scenarioId: 'first_order',
         queuedScenarios: ['first_order'],
         actions: [],
         verification: {
@@ -322,6 +331,36 @@ describe('Phase 2 Session Routes', () => {
       expect(reviews.json()).toContainEqual(expect.objectContaining({
         runId: run.id,
         status: 'reviewed',
+      }));
+
+      const signals = await app.inject({
+        method: 'GET',
+        url: `/api/p2/learning/signals?sourceRunId=${run.id}`,
+      });
+      expect(signals.statusCode).toBe(200);
+      expect(signals.json()).toContainEqual(expect.objectContaining({
+        sourceType: 'independent_audit_review',
+        signalType: 'audit_reviewed',
+        sourceRunId: run.id,
+        scenarioId: 'first_order',
+        status: 'retained',
+        summary: 'Reviewed during route test.',
+        evidence: expect.objectContaining({
+          auditVerdict: 'failed',
+          findingCount: 1,
+        }),
+      }));
+
+      const signalSummary = await app.inject({
+        method: 'GET',
+        url: '/api/p2/learning/signals/summary',
+      });
+      expect(signalSummary.statusCode).toBe(200);
+      expect(signalSummary.json()).toEqual(expect.objectContaining({
+        retained: 1,
+        bySignalType: expect.objectContaining({
+          audit_reviewed: 1,
+        }),
       }));
 
       const releasedQueue = await app.inject({ method: 'GET', url: '/api/p2/closed-loop/audit-review-queue' });
@@ -595,6 +634,32 @@ describe('Phase 2 Session Routes', () => {
             status: 'passed',
           }),
         }),
+      }));
+
+      const signals = await app.inject({
+        method: 'GET',
+        url: `/api/p2/learning/signals?subjectType=learning_proposal&subjectId=${proposal.id}`,
+      });
+      expect(signals.statusCode).toBe(200);
+      expect(signals.json()).toContainEqual(expect.objectContaining({
+        sourceType: 'knowledge_promotion',
+        signalType: 'promotion_verified',
+        subjectType: 'learning_proposal',
+        subjectId: proposal.id,
+        sourceRunId: run.id,
+        scenarioId: 'test_scenario',
+        stepId: 'step_1',
+        agentId: 'sales-associate',
+        version: candidateVersion,
+        status: 'retained',
+        summary: 'apply learning_overlay completed with passed verification.',
+      }));
+      expect(signals.json()).toContainEqual(expect.objectContaining({
+        sourceType: 'knowledge_promotion',
+        signalType: 'promotion_verified',
+        subjectId: proposal.id,
+        status: 'superseded',
+        summary: 'approve learning_overlay completed with passed verification.',
       }));
     });
 

@@ -104,6 +104,7 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
   const closedLoopIndependentAudits = summarizeClosedLoopIndependentAudits(closedLoopRuns)
   const runtimeLearningUsage = summarizeRuntimeLearningUsage(sessions)
   const terminalSessionAudits = summarizeTerminalSessionAudits(sessions)
+  const learningSignals = sessionService.summarizeL5LearningSignals({ limit: 500 })
 
   const l4Status: L4MaturityStatus = restrictedGates > 0 || contractViolations > 0
     ? 'attention'
@@ -223,6 +224,14 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
                 : 'Runtime aceita somente overlays L5 aplicados, materializados e verificados.',
           },
           {
+            id: 'learning_memory',
+            label: 'Learning memory',
+            state: learningSignals.retained > 0 ? 'complete' : 'beta',
+            evidence: learningSignals.retained > 0
+              ? `${learningSignals.retained} sinal(is) L5 retido(s) com versão e fonte auditável.`
+              : 'Revisões e promoções governadas serão retidas como sinais versionados para próximas execuções.',
+          },
+          {
             id: 'meta_orchestration',
             label: 'Meta-orchestration',
             state: queuedMetaRuns > 0 ? 'guarded' : 'beta',
@@ -272,6 +281,11 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
             label: 'Runtime overlays usados',
             value: runtimeLearningUsage.overlayLoads,
             tone: runtimeLearningUsage.overlayLoads > 0 ? 'success' : 'neutral',
+          },
+          {
+            label: 'Sinais L5 retidos',
+            value: learningSignals.retained,
+            tone: learningSignals.retained > 0 ? 'success' : 'neutral',
           },
           { label: 'Fila meta-orquestrada', value: queuedMetaRuns, tone: queuedMetaRuns > 0 ? 'success' : 'neutral' },
           { label: 'Closed loops completos', value: completedClosedLoops, tone: completedClosedLoops > 0 ? 'success' : 'neutral' },
