@@ -7,7 +7,7 @@ export async function runDiscoverLocalCommand(args: string[]) {
     throw new Error('discover-local requires <repoPath>')
   }
 
-  const bootstrap = await runBootstrap({ repoPath, adapterHint: 'reference-store' })
+  const bootstrap = await runBootstrap({ repoPath, adapterHint: 'auto' })
   const local = await materializeLocalDiscovery({
     repoPath,
     report: bootstrap.report,
