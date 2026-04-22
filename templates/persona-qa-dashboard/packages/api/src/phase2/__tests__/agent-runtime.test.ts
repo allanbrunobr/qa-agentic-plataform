@@ -135,6 +135,149 @@ describe('AgentRuntime', () => {
   })
 
   describe('executeStep — L5 runtime learning overlays', () => {
+    it('consults retained L5 learning signals scoped to scenario, step, and agent', async () => {
+      const session = sessionService.createSession('first_order')
+      const signal = sessionService.recordL5LearningSignal({
+        sourceType: 'independent_audit_review',
+        sourceId: 'review-create-customer',
+        signalType: 'audit_reviewed',
+        sourceRunId: 'loop-create-customer',
+        scenarioId: 'first_order',
+        stepId: 'create_customer',
+        agentId: 'sales-associate',
+        version: 'audit_reviewed:loop-create-customer:review-create-customer',
+        confidence: 0.86,
+        summary: 'Prior audit accepted the customer id extraction risk and requires URL confirmation.',
+        evidence: { auditVerdict: 'warning' },
+      })
+
+      const provider = mockProvider([{
+        text: 'Customer created successfully.',
+        toolCalls: [],
+        stopReason: 'end_turn',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }])
+      const runtime = new AgentRuntime(provider, registry, sessionService)
+      runtime.registerAgent(makeProfile({
+        id: 'sales-associate',
+        evidencePolicy: { requireScreenshotForFinding: false, requireDomSnippetForFinding: false },
+      }))
+
+      await runtime.executeStep('sales-associate', {
+        id: 'create_customer',
+        name: 'Create customer',
+        agentId: 'sales-associate',
+        capabilityId: 'createCustomer',
+        order: 1,
+        requiredArtifacts: [],
+        producedArtifacts: ['customerId'],
+      }, { sessionId: session.id })
+
+      const messages = vi.mocked(provider.chat).mock.calls[0]![0]
+      const systemMessage = messages.find((message) => message.role === 'system')?.content ?? ''
+      expect(systemMessage).toContain('[L5 LEARNING MEMORY]')
+      expect(systemMessage).toContain('advisory only')
+      expect(systemMessage).toContain('Prior audit accepted the customer id extraction risk')
+      expect(systemMessage).toContain(`Version: ${signal.version}`)
+      expect(systemMessage).toContain('Confidence: 0.86')
+      expect(systemMessage).toContain('Scope: scenario=first_order, step=create_customer, agent=sales-associate')
+
+      const events = sessionService.getSession(session.id)?.events ?? []
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'info',
+          payload: expect.objectContaining({
+            event: 'l5_learning_signals_loaded',
+            scenarioId: 'first_order',
+            stepId: 'create_customer',
+            signalCount: 1,
+            signals: [expect.objectContaining({ id: signal.id, signalType: 'audit_reviewed' })],
+          }),
+        }),
+      ]))
+    })
+
+    it('ignores superseded or out-of-scope L5 learning signals', async () => {
+      const session = sessionService.createSession('first_order')
+      sessionService.recordL5LearningSignal({
+        sourceType: 'independent_audit_review',
+        sourceId: 'review-stale',
+        signalType: 'audit_reviewed',
+        sourceRunId: 'loop-runtime-filter',
+        scenarioId: 'first_order',
+        stepId: 'create_customer',
+        agentId: 'sales-associate',
+        version: 'audit_reviewed:loop-runtime-filter:review-stale',
+        confidence: 0.2,
+        summary: 'Stale signal must not reach the model.',
+      })
+      sessionService.recordL5LearningSignal({
+        sourceType: 'independent_audit_review',
+        sourceId: 'review-current',
+        signalType: 'audit_reviewed',
+        sourceRunId: 'loop-runtime-filter',
+        scenarioId: 'first_order',
+        stepId: 'create_customer',
+        agentId: 'sales-associate',
+        version: 'audit_reviewed:loop-runtime-filter:review-current',
+        confidence: 0.9,
+        summary: 'Current retained signal should reach the model.',
+      })
+      sessionService.recordL5LearningSignal({
+        sourceType: 'independent_audit_review',
+        sourceId: 'review-other-step',
+        signalType: 'audit_reviewed',
+        sourceRunId: 'loop-other-step',
+        scenarioId: 'first_order',
+        stepId: 'complete_fulfillment',
+        agentId: 'sales-associate',
+        version: 'audit_reviewed:loop-other-step:review-other-step',
+        confidence: 0.9,
+        summary: 'Other step signal must not reach the model.',
+      })
+      sessionService.recordL5LearningSignal({
+        sourceType: 'knowledge_promotion',
+        sourceId: 'promotion-other-agent',
+        signalType: 'promotion_verified',
+        sourceRunId: 'loop-other-agent',
+        scenarioId: 'first_order',
+        stepId: 'create_customer',
+        agentId: 'fulfillment-agent',
+        version: 'promotion_verified:loop-other-agent:promotion-other-agent',
+        confidence: 0.9,
+        summary: 'Other agent signal must not reach the model.',
+      })
+
+      const provider = mockProvider([{
+        text: 'Customer created successfully.',
+        toolCalls: [],
+        stopReason: 'end_turn',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }])
+      const runtime = new AgentRuntime(provider, registry, sessionService)
+      runtime.registerAgent(makeProfile({
+        id: 'sales-associate',
+        evidencePolicy: { requireScreenshotForFinding: false, requireDomSnippetForFinding: false },
+      }))
+
+      await runtime.executeStep('sales-associate', {
+        id: 'create_customer',
+        name: 'Create customer',
+        agentId: 'sales-associate',
+        capabilityId: 'createCustomer',
+        order: 1,
+        requiredArtifacts: [],
+        producedArtifacts: ['customerId'],
+      }, { sessionId: session.id })
+
+      const messages = vi.mocked(provider.chat).mock.calls[0]![0]
+      const systemMessage = messages.find((message) => message.role === 'system')?.content ?? ''
+      expect(systemMessage).toContain('Current retained signal should reach the model.')
+      expect(systemMessage).not.toContain('Stale signal must not reach the model.')
+      expect(systemMessage).not.toContain('Other step signal must not reach the model.')
+      expect(systemMessage).not.toContain('Other agent signal must not reach the model.')
+    })
+
     it('injects active verified L5 overlays scoped to scenario, step, and agent', async () => {
       const session = sessionService.createSession('first_order')
       const proposal = sessionService.createLearningProposal({

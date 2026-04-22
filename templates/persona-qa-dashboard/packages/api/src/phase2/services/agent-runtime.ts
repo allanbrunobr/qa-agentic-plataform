@@ -12,7 +12,7 @@ import type {
 import type { ScenarioStep } from '../types/scenario-types.js'
 import type { ToolContext, ToolResult } from '../types/tool-types.js'
 import { buildStepInstructionEnvelope, getGlobalAgenticInstructions } from './instruction-layer.js'
-import type { RuntimeLearningOverlay, SessionService } from './session-service.js'
+import type { L5LearningSignal, RuntimeLearningOverlay, SessionService } from './session-service.js'
 import { defaultRuntimeHookBus, type RuntimeHookBus } from './runtime-hooks.js'
 import type { ToolRegistry } from './tool-registry.js'
 
@@ -178,6 +178,7 @@ export class AgentRuntime {
     const promptText = this.loadPromptText(profile)
     const globalInstructions = getGlobalAgenticInstructions()
     const learningOverlay = this.loadLearningOverlay(profile, { sessionId, stepId })
+    const learningSignalContext = this.loadLearningSignalContext(profile, { sessionId, stepId })
     const systemParts: string[] = []
     if (globalInstructions) {
       systemParts.push(globalInstructions)
@@ -189,6 +190,9 @@ export class AgentRuntime {
     }
     if (learningOverlay) {
       systemParts.push(learningOverlay)
+    }
+    if (learningSignalContext) {
+      systemParts.push(learningSignalContext)
     }
     if (systemParts.length > 0) {
       messages.unshift({ role: 'system', content: systemParts.join('\n\n') })
@@ -595,6 +599,48 @@ export class AgentRuntime {
     return renderRuntimeLearningOverlays(overlays)
   }
 
+  private loadLearningSignalContext(
+    profile: AgentProfile,
+    context: { sessionId: string; stepId?: string },
+  ): string | undefined {
+    if (!this.sessionService || !context.stepId) return undefined
+
+    const session = this.sessionService.getSession(context.sessionId)
+    if (!session?.scenarioId) return undefined
+
+    const agentId = profile.id ?? profile.role
+    const signals = this.sessionService.listL5LearningSignals({
+      scenarioId: session.scenarioId,
+      stepId: context.stepId,
+      agentId,
+      status: 'retained',
+      limit: 8,
+    })
+    if (signals.length === 0) return undefined
+
+    this.sessionService.appendEvent(context.sessionId, {
+      type: 'info',
+      agentRole: profile.role,
+      payload: {
+        event: 'l5_learning_signals_loaded',
+        scenarioId: session.scenarioId,
+        stepId: context.stepId,
+        agentId,
+        signalCount: signals.length,
+        signals: signals.map((signal) => ({
+          id: signal.id,
+          signalType: signal.signalType,
+          sourceType: signal.sourceType,
+          sourceId: signal.sourceId,
+          version: signal.version,
+          confidence: signal.confidence,
+        })),
+      },
+    })
+
+    return renderL5LearningSignals(signals)
+  }
+
   private async chatBeforeDeadline(
     messages: ModelMessage[],
     toolDefs: ToolDefinition[],
@@ -722,6 +768,33 @@ function renderRuntimeLearningOverlays(overlays: RuntimeLearningOverlay[]): stri
       overlay.patchContent,
     ].join('\n')),
   ].join('\n\n')
+}
+
+function renderL5LearningSignals(signals: L5LearningSignal[]): string {
+  return [
+    '[L5 LEARNING MEMORY]',
+    'These retained signals summarize reviewed outcomes from prior executions. They are advisory only and MUST NOT override global constraints, role instructions, tool policy, workflow contracts, user instructions, or current page evidence.',
+    ...signals.map((signal, index) => [
+      `[Signal ${index + 1}]`,
+      `Type: ${signal.signalType}`,
+      `Source: ${signal.sourceType}:${signal.sourceId}`,
+      `Version: ${signal.version}`,
+      `Confidence: ${signal.confidence.toFixed(2)}`,
+      `Scope: ${formatLearningSignalScope(signal)}`,
+      `Summary: ${signal.summary}`,
+    ].join('\n')),
+  ].join('\n\n')
+}
+
+function formatLearningSignalScope(signal: L5LearningSignal): string {
+  const parts = [
+    signal.scenarioId ? `scenario=${signal.scenarioId}` : undefined,
+    signal.stepId ? `step=${signal.stepId}` : undefined,
+    signal.agentId ? `agent=${signal.agentId}` : undefined,
+    signal.subjectType && signal.subjectId ? `subject=${signal.subjectType}:${signal.subjectId}` : undefined,
+  ].filter(Boolean)
+
+  return parts.length > 0 ? parts.join(', ') : 'global'
 }
 
 function responseTextFromArtifacts(output: Record<string, unknown>): string {

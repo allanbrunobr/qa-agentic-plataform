@@ -615,6 +615,8 @@ export const api = {
     subjectType?: Phase2GovernanceSubjectType
     subjectId?: string
     scenarioId?: string
+    stepId?: string
+    agentId?: string
     signalType?: Phase2L5LearningSignalType
     status?: Phase2L5LearningSignalStatus
     limit?: number
@@ -624,6 +626,8 @@ export const api = {
       subjectType: params?.subjectType,
       subjectId: params?.subjectId,
       scenarioId: params?.scenarioId,
+      stepId: params?.stepId,
+      agentId: params?.agentId,
       signalType: params?.signalType,
       status: params?.status,
       limit: params?.limit ? String(params.limit) : undefined,

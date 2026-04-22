@@ -1666,6 +1666,8 @@ export class SessionService {
     subjectType?: GovernanceSubjectType
     subjectId?: string
     scenarioId?: string
+    stepId?: string
+    agentId?: string
     signalType?: L5LearningSignalType
     status?: L5LearningSignalStatus
     limit?: number
@@ -1687,6 +1689,14 @@ export class SessionService {
     if (filter.scenarioId) {
       where.push('scenario_id = ?')
       params.push(filter.scenarioId)
+    }
+    if (filter.stepId) {
+      where.push('(step_id = ? OR step_id IS NULL)')
+      params.push(filter.stepId)
+    }
+    if (filter.agentId) {
+      where.push('(agent_id = ? OR agent_id IS NULL)')
+      params.push(filter.agentId)
     }
     if (filter.signalType) {
       where.push('signal_type = ?')

@@ -182,6 +182,8 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
       subjectType?: string
       subjectId?: string
       scenarioId?: string
+      stepId?: string
+      agentId?: string
       signalType?: string
       status?: string
       limit?: string
@@ -195,6 +197,8 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
         subjectType: isGovernanceSubjectType(request.query.subjectType) ? request.query.subjectType : undefined,
         subjectId: request.query.subjectId,
         scenarioId: request.query.scenarioId,
+        stepId: request.query.stepId,
+        agentId: request.query.agentId,
         signalType: isL5LearningSignalType(request.query.signalType) ? request.query.signalType : undefined,
         status: isL5LearningSignalStatus(request.query.status) ? request.query.status : undefined,
         limit: request.query.limit ? Number(request.query.limit) : 100,

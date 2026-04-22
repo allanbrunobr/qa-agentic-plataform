@@ -661,6 +661,27 @@ describe('Phase 2 Session Routes', () => {
         status: 'superseded',
         summary: 'approve learning_overlay completed with passed verification.',
       }));
+
+      const scopedSignals = await app.inject({
+        method: 'GET',
+        url: `/api/p2/learning/signals?subjectType=learning_proposal&subjectId=${proposal.id}&stepId=step_1&agentId=sales-associate&status=retained`,
+      });
+      expect(scopedSignals.statusCode).toBe(200);
+      expect(scopedSignals.json()).toEqual([
+        expect.objectContaining({
+          subjectId: proposal.id,
+          stepId: 'step_1',
+          agentId: 'sales-associate',
+          status: 'retained',
+        }),
+      ]);
+
+      const outOfScopeSignals = await app.inject({
+        method: 'GET',
+        url: `/api/p2/learning/signals?subjectType=learning_proposal&subjectId=${proposal.id}&stepId=other_step&agentId=sales-associate&status=retained`,
+      });
+      expect(outOfScopeSignals.statusCode).toBe(200);
+      expect(outOfScopeSignals.json()).toEqual([]);
     });
 
     it('should expose and control closed-loop scheduler automation', async () => {
