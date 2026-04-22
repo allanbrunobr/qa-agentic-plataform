@@ -7,14 +7,7 @@ import type {
   GeneratedScenarioDraft,
 } from '../../../host-sdk/src/contracts.ts'
 
-type NormalizedStep =
-  | 'create_customer'
-  | 'schedule_order'
-  | 'complete_fulfillment'
-  | 'schedule_return'
-  | 'complete_return_fulfillment'
-  | 'review_billing_guide'
-  | 'validate_closure'
+type NormalizedStep = string
 
 interface MaterializedPersona {
   id: string
@@ -92,6 +85,10 @@ function normalizeId(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 }
 
+function toCamelCase(value: string) {
+  return value.replace(/_+([a-z0-9])/g, (_, char: string) => char.toUpperCase())
+}
+
 function toLowerEvidence(value: string) {
   return value.normalize('NFKD').toLowerCase()
 }
@@ -118,6 +115,12 @@ function inferProducedArtifacts(stepId: NormalizedStep) {
   if (stepId === 'complete_fulfillment' || stepId === 'complete_return_fulfillment') return ['fulfillmentCompleted']
   if (stepId === 'review_billing_guide') return ['billingGuideValidated']
   if (stepId === 'validate_closure') return ['financeValidated', 'reportsValidated']
+  if (stepId === 'fill_customer_email') return ['customerEmail']
+  if (stepId === 'add_cart_item') return ['cartItemId']
+  if (stepId === 'submit_order') return ['orderSubmitted']
+  if (stepId === 'open_primary_route') return ['routeLoaded']
+  if (stepId === 'interact_with_primary_action') return ['primaryActionCompleted']
+  if (stepId === 'verify_primary_feedback') return ['primaryFeedbackVisible']
   return []
 }
 
@@ -127,7 +130,13 @@ function inferCapabilityId(stepId: NormalizedStep) {
   if (stepId === 'complete_fulfillment' || stepId === 'complete_return_fulfillment') return 'completeFulfillment'
   if (stepId === 'review_billing_guide') return 'findBillingGuideByEventId'
   if (stepId === 'validate_closure') return 'validateManagementClosure'
-  return 'TODO'
+  if (stepId === 'fill_customer_email') return 'fillCustomerEmail'
+  if (stepId === 'add_cart_item') return 'addCartItem'
+  if (stepId === 'submit_order') return 'submitOrder'
+  if (stepId === 'open_primary_route') return 'openPrimaryRoute'
+  if (stepId === 'interact_with_primary_action') return 'interactWithPrimaryAction'
+  if (stepId === 'verify_primary_feedback') return 'verifyPrimaryFeedback'
+  return toCamelCase(normalizeId(stepId))
 }
 
 function inferStepRole(stepId: NormalizedStep, fallbackRoles: string[]) {
@@ -135,6 +144,14 @@ function inferStepRole(stepId: NormalizedStep, fallbackRoles: string[]) {
   if (stepId === 'complete_fulfillment' || stepId === 'complete_return_fulfillment') return 'fulfillment-agent'
   if (stepId === 'review_billing_guide') return 'billing_clerk'
   if (stepId === 'validate_closure') return 'store_manager'
+  if (
+    stepId === 'fill_customer_email' ||
+    stepId === 'add_cart_item' ||
+    stepId === 'submit_order' ||
+    stepId === 'open_primary_route' ||
+    stepId === 'interact_with_primary_action' ||
+    stepId === 'verify_primary_feedback'
+  ) return 'primary_user'
   return fallbackRoles[0] ?? 'unknown'
 }
 
@@ -301,6 +318,12 @@ function inferCapabilityRouteHint(capabilityId: string, routes: MaterializedRout
     verifyFinanceDashboard: ['/financas', '/painel-financeiro'],
     verifyReportsPage: ['/relatorios/atendimento/dia', '/relatorios'],
     validateManagementClosure: ['/financas', '/relatorios', '/painel-financeiro'],
+    fillCustomerEmail: ['/'],
+    addCartItem: ['/'],
+    submitOrder: ['/'],
+    openPrimaryRoute: ['/'],
+    interactWithPrimaryAction: ['/'],
+    verifyPrimaryFeedback: ['/'],
   }
   const candidates = routeMap[capabilityId] ?? []
   return routes.find((route) => candidates.some((candidate) => route.path.startsWith(candidate)))?.path
@@ -316,6 +339,13 @@ function buildMaterializedCapabilities(capabilityIds: string[], routes: Material
     verifyFinanceDashboard: 'Verify finance dashboard and closure data.',
     verifyReportsPage: 'Verify reporting outputs for the expected period.',
     validateManagementClosure: 'Validate management closure across finance and reporting surfaces.',
+    fillCustomerEmail: 'Fill the primary customer email or identity field.',
+    addCartItem: 'Add an item through the primary frontend interaction.',
+    submitOrder: 'Submit the primary order or checkout form.',
+    openPrimaryRoute: 'Open the primary frontend route.',
+    interactWithPrimaryAction: 'Execute the main visible user action.',
+    verifyPrimaryFeedback: 'Verify the primary success, feedback, or confirmation state.',
+    captureScreenshot: 'Capture visual evidence from the active frontend page.',
   }
 
   return capabilityIds.map((capabilityId) => ({
@@ -585,6 +615,12 @@ function normalizeFallbackSteps(steps: string[]): string[] {
 
 function classifyFallbackStep(step: string): NormalizedStep | null {
   const text = toLowerEvidence(step)
+  if (text.includes('email')) return 'fill_customer_email'
+  if (text.includes('cart') || text.includes('item')) return 'add_cart_item'
+  if (text.includes('order') || text.includes('submit') || text.includes('checkout')) return 'submit_order'
+  if (text.includes('open') && (text.includes('route') || text.includes('page'))) return 'open_primary_route'
+  if (text.includes('action') || text.includes('button') || text.includes('interact')) return 'interact_with_primary_action'
+  if (text.includes('feedback') || text.includes('confirmation') || text.includes('success')) return 'verify_primary_feedback'
   if (text.includes('customer') && (text.includes('create') || text.includes('register') || text.includes('cadast'))) return 'create_customer'
   if ((text.includes('schedule') || text.includes('book') || text.includes('agenda')) && text.includes('return')) return 'schedule_return'
   if (text.includes('schedule') || text.includes('book') || text.includes('agenda')) return 'schedule_order'
@@ -607,15 +643,7 @@ function buildNormalizedDraft(report: DiscoveryReport, draft: BootstrapDraft): B
   for (const scenario of scenarios) {
     for (const step of scenario.candidateSteps) {
       const normalizedStep = step as NormalizedStep
-      if (
-        normalizedStep === 'create_customer' ||
-        normalizedStep === 'schedule_order' ||
-        normalizedStep === 'schedule_return' ||
-        normalizedStep === 'complete_fulfillment' ||
-        normalizedStep === 'complete_return_fulfillment' ||
-        normalizedStep === 'review_billing_guide' ||
-        normalizedStep === 'validate_closure'
-      ) {
+      if (normalizedStep) {
         capabilities.add(inferCapabilityId(normalizedStep))
       }
     }

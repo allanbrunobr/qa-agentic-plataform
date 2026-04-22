@@ -14,6 +14,7 @@
     "discover-local:reference-store": "tsx packages/dashboard-api/src/cli.ts discover-local /path/to/projects/reference-store/reference-store-frontend",
     "verify:install-local:reference-store": "node scripts/verify-install-local-reference-store.mjs",
     "verify:real-reference-store": "node scripts/verify-real-reference-store.mjs",
+    "verify:generic-frontend": "node scripts/verify-generic-frontend.mjs",
     "verify:l5": "node scripts/verify-l5.mjs",
     "verify:l5:soak": "node scripts/verify-l5-soak.mjs",
     "verify:release": "node scripts/verify-release.mjs",

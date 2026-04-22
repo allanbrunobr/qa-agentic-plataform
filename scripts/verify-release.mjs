@@ -76,6 +76,19 @@ const steps = [
     cwd: repoRoot,
   },
   {
+    name: 'syntax: generic frontend verifier',
+    command: releaseNodePath,
+    args: ['--check', 'scripts/verify-generic-frontend.mjs'],
+    cwd: repoRoot,
+  },
+  {
+    name: 'generic frontend install/discovery smoke',
+    command: 'npm',
+    args: ['run', 'verify:generic-frontend'],
+    cwd: repoRoot,
+    env: releaseEnv,
+  },
+  {
     name: 'api: adapter personas route node test',
     command: releaseNodePath,
     args: ['--import', tsxLoader, '--test', 'src/routes/__tests__/personas.test.ts'],
