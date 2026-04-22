@@ -138,8 +138,8 @@ export type L5ClosedLoopStatus = 'completed' | 'needs_review' | 'blocked' | 'fai
 export type L5ClosedLoopMode = 'observe' | 'apply_approved'
 export type KnowledgePromotionEventAction = 'approve' | 'apply' | 'promote'
 export type KnowledgePromotionEventStatus = 'completed' | 'blocked' | 'failed'
-export type L5LearningSignalSourceType = 'independent_audit_review' | 'knowledge_promotion'
-export type L5LearningSignalType = 'audit_reviewed' | 'promotion_verified'
+export type L5LearningSignalSourceType = 'independent_audit_review' | 'knowledge_promotion' | 'closed_loop_replay'
+export type L5LearningSignalType = 'audit_reviewed' | 'promotion_verified' | 'replay_verified'
 export type L5LearningSignalStatus = 'retained' | 'superseded'
 
 export interface LearningProposalInput {
@@ -1623,6 +1623,19 @@ export class SessionService {
     const id = randomUUID()
     const createdAt = new Date().toISOString()
     const confidence = clampNumber(input.confidence, 0, 1)
+    const supersededByConflict = this.resolveConflictingLearningSignals({
+      ...input,
+      confidence,
+    })
+    const metadata = supersededByConflict.length > 0
+      ? {
+        ...(input.metadata ?? {}),
+        conflictResolution: {
+          policy: 'opposite_polarity_same_scope',
+          supersededSignalIds: supersededByConflict,
+        },
+      }
+      : input.metadata
 
     this.supersedeRetainedLearningSignals(input)
     this.sqlite
@@ -1648,13 +1661,14 @@ export class SessionService {
         confidence,
         input.summary,
         input.evidence ? JSON.stringify(input.evidence) : null,
-        input.metadata ? JSON.stringify(input.metadata) : null,
+        metadata ? JSON.stringify(metadata) : null,
         createdAt,
       )
 
     return {
       ...input,
       confidence,
+      metadata,
       id,
       status: 'retained',
       createdAt,
@@ -2016,6 +2030,36 @@ export class SessionService {
         input.stepId ?? '',
         input.agentId ?? '',
       )
+  }
+
+  private resolveConflictingLearningSignals(input: L5LearningSignalInput): string[] {
+    if (!input.scenarioId) return []
+    const incomingPolarity = signalPolarity(input)
+    if (incomingPolarity === 'neutral') return []
+    if (incomingPolarity === 'stability' && input.signalType !== 'replay_verified') return []
+    if (incomingPolarity === 'stability' && input.confidence < 0.7) return []
+    if (incomingPolarity === 'risk' && input.confidence < 0.6) return []
+
+    const conflicting = this.listL5LearningSignals({
+      scenarioId: input.scenarioId,
+      status: 'retained',
+      limit: 500,
+    }).filter((signal) => (
+      sameLearningScope(input, signal)
+      && signalPolarity(signal) === oppositeSignalPolarity(incomingPolarity)
+    ))
+
+    for (const signal of conflicting) {
+      this.sqlite
+        .prepare(
+          `UPDATE p2_l5_learning_signals
+           SET status = 'superseded'
+           WHERE signal_id = ?`,
+        )
+        .run(signal.id)
+    }
+
+    return conflicting.map((signal) => signal.id)
   }
 
   private recordLearningSignalForIndependentAuditReview(review: L5IndependentAuditReview): void {
@@ -2664,6 +2708,47 @@ function stringValue(value: unknown, fallback: string): string {
 function clampNumber(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min
   return Math.max(min, Math.min(value, max))
+}
+
+type L5SignalPolarity = 'risk' | 'stability' | 'neutral'
+
+function signalPolarity(signal: Pick<L5LearningSignalInput, 'signalType' | 'evidence'>): L5SignalPolarity {
+  if (signal.signalType === 'audit_reviewed') {
+    const verdict = stringValue(signal.evidence?.['auditVerdict'], 'unknown')
+    if (verdict === 'failed' || verdict === 'warning') return 'risk'
+    if (verdict === 'passed') return 'stability'
+    return 'neutral'
+  }
+
+  if (signal.signalType === 'promotion_verified') {
+    const status = stringValue(signal.evidence?.['verificationStatus'], 'unknown')
+    if (status === 'warning' || status === 'failed') return 'risk'
+    if (status === 'passed') return 'stability'
+    return 'neutral'
+  }
+
+  if (signal.signalType === 'replay_verified') {
+    const status = stringValue(
+      signal.evidence?.['replayStatus'] ?? signal.evidence?.['verificationStatus'],
+      'unknown',
+    )
+    if (status === 'failed' || status === 'warning') return 'risk'
+    if (status === 'passed') return 'stability'
+  }
+
+  return 'neutral'
+}
+
+function oppositeSignalPolarity(polarity: L5SignalPolarity): L5SignalPolarity {
+  if (polarity === 'risk') return 'stability'
+  if (polarity === 'stability') return 'risk'
+  return 'neutral'
+}
+
+function sameLearningScope(input: L5LearningSignalInput, existing: L5LearningSignal): boolean {
+  return (input.scenarioId ?? '') === (existing.scenarioId ?? '')
+    && (input.stepId ?? '') === (existing.stepId ?? '')
+    && (input.agentId ?? '') === (existing.agentId ?? '')
 }
 
 function countBy<T>(items: T[], keyOf: (item: T) => string): Record<string, number> {

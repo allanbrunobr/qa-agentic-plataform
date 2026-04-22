@@ -59,6 +59,21 @@ interface SessionComparison {
   reason: string
 }
 
+type L5PolicyReplayStatus = 'passed' | 'warning' | 'failed' | 'skipped'
+
+interface L5PolicyReplayVerification {
+  scenarioId: string
+  status: L5PolicyReplayStatus
+  reason: string
+  sourceSessionId?: string
+  signalId?: string
+  checkedAt: string
+  policySignalIds: string[]
+  auditVerdict?: AuditorVerdict
+  hardViolations?: number
+  driftSignals?: number
+}
+
 interface L5IndependentLoopVerification {
   agentRole: 'auditor'
   verdict: AuditorVerdict
@@ -77,7 +92,7 @@ interface L5IndependentLoopVerification {
   }
 }
 
-type L5LifecycleLoopId = L5LoopId | 'verification'
+type L5LifecycleLoopId = L5LoopId | 'verification' | 'replay'
 
 type L5LifecycleEventType =
   | 'closed_loop_started'
@@ -209,6 +224,34 @@ export class L5ClosedLoopService {
     let appliedMaterializations = 0
     let automaticHealingActions = 0
     let scenarioDrafts = 0
+    let replayVerifications: L5PolicyReplayVerification[] = []
+
+    const replayQueue = queue.filter((item) => item.l5SignalPolicy.requiresReplay)
+    if (replayQueue.length > 0) {
+      appendLifecycle(lifecycle, 'loop_started', { loop: 'replay' })
+      replayVerifications = replayQueue.map((item) => this.verifyL5PolicyReplay(item, actor))
+      const replayReviews = replayVerifications.filter((verification) => verification.status !== 'passed').length
+      pendingReviews += replayReviews
+      actions.push(...replayVerifications.map((verification) => ({
+        type: 'l5_policy_replay_verified',
+        scenarioId: verification.scenarioId,
+        status: verification.status,
+        sourceSessionId: verification.sourceSessionId,
+        signalId: verification.signalId,
+        reason: verification.reason,
+      })))
+      appendLifecycle(lifecycle, 'loop_completed', {
+        loop: 'replay',
+        status: replayReviews > 0 ? 'needs_review' : 'completed',
+        details: {
+          requiredReplays: replayQueue.length,
+          passed: replayVerifications.filter((verification) => verification.status === 'passed').length,
+          warning: replayVerifications.filter((verification) => verification.status === 'warning').length,
+          failed: replayVerifications.filter((verification) => verification.status === 'failed').length,
+          skipped: replayVerifications.filter((verification) => verification.status === 'skipped').length,
+        },
+      })
+    }
 
     for (const scenarioId of scenarios) {
       appendLifecycle(lifecycle, 'scenario_started', { scenarioId })
@@ -339,7 +382,8 @@ export class L5ClosedLoopService {
       scenarios.map((scenarioId) => [scenarioId, this.buildScenarioSnapshot(scenarioId)]),
     )
     const comparisons = scenarios.map((scenarioId) => this.compareLatestSessions(scenarioId))
-    const rerunRequired = appliedMaterializations > 0 || automaticHealingActions > 0
+    const replayNeedsAttention = replayVerifications.some((verification) => verification.status !== 'passed')
+    const rerunRequired = appliedMaterializations > 0 || automaticHealingActions > 0 || replayNeedsAttention
     appendLifecycle(lifecycle, 'independent_audit_started', {
       loop: 'verification',
       details: {
@@ -394,6 +438,7 @@ export class L5ClosedLoopService {
       actions,
       verification: {
         comparisons,
+        replayVerifications,
         rerunRequired,
         independentAudit,
         recommendation: buildClosedLoopRecommendation({ rerunRequired, independentAudit }),
@@ -407,7 +452,13 @@ export class L5ClosedLoopService {
         automaticHealingActions,
         scenarioDrafts,
         pendingReviews,
-        retainedLearningSignals: learningSignals.retained,
+        retainedLearningSignals: this.sessionService.summarizeL5LearningSignals({
+          scenarioId: options.scenarioId,
+          limit: 500,
+        }).retained,
+        l5PolicyReplayVerifications: replayVerifications.length,
+        l5PolicyReplayPassed: replayVerifications.filter((verification) => verification.status === 'passed').length,
+        l5PolicyReplayNeedsReview: replayVerifications.filter((verification) => verification.status !== 'passed').length,
         l5PolicyReplayRequired: queue.some((item) => item.l5SignalPolicy.requiresReplay),
         l5PolicyIndependentAuditRequired: queue.some((item) => item.l5SignalPolicy.requiresIndependentAudit),
         l5PolicyMaxRiskModifier: Math.max(0, ...queue.map((item) => item.l5SignalPolicy.riskModifier)),
@@ -564,6 +615,68 @@ export class L5ClosedLoopService {
       completedAt: new Date().toISOString(),
     })
   }
+
+  private verifyL5PolicyReplay(item: MetaOrchestrationQueueItem, actor: string): L5PolicyReplayVerification {
+    const checkedAt = new Date().toISOString()
+    const latest = this.findLatestFinalSession(item.scenarioId)
+    if (!latest) {
+      return {
+        scenarioId: item.scenarioId,
+        status: 'skipped',
+        checkedAt,
+        policySignalIds: item.l5SignalPolicy.signalIds,
+        reason: 'Replay required by L5 signal policy, but no terminal session is available to verify.',
+      }
+    }
+
+    const audit = new IndependentAuditorService().evaluateSession(latest)
+    const contractEvaluation = safeContractEvaluation(latest)
+    const hardViolations = numberValue(contractEvaluation?.hardViolations)
+    const driftSignals = numberValue(contractEvaluation?.driftSignals)
+    const status: L5PolicyReplayStatus = latest.status !== 'complete' || audit.verdict === 'failed' || hardViolations > 0
+      ? 'failed'
+      : audit.verdict === 'warning' || driftSignals > 0
+        ? 'warning'
+        : 'passed'
+    const signal = this.sessionService.recordL5LearningSignal({
+      sourceType: 'closed_loop_replay',
+      sourceId: `replay:${item.queueId}:${latest.id}`,
+      signalType: 'replay_verified',
+      scenarioId: item.scenarioId,
+      version: `replay:${latest.id}:${latest.completedAt ?? latest.startedAt}:${status}`,
+      confidence: status === 'passed' ? 0.9 : status === 'warning' ? 0.75 : 0.85,
+      summary: buildReplaySignalSummary(status, latest.id),
+      evidence: {
+        replayStatus: status,
+        sourceSessionId: latest.id,
+        sessionStatus: latest.status,
+        auditVerdict: audit.verdict,
+        hardViolations,
+        driftSignals,
+        policySignalIds: item.l5SignalPolicy.signalIds,
+        policyRiskModifier: item.l5SignalPolicy.riskModifier,
+        checkedAt: audit.checkedAt,
+      },
+      metadata: {
+        actor,
+        queueId: item.queueId,
+        policyRequiresReplay: item.l5SignalPolicy.requiresReplay,
+      },
+    })
+
+    return {
+      scenarioId: item.scenarioId,
+      status,
+      checkedAt,
+      sourceSessionId: latest.id,
+      signalId: signal.id,
+      policySignalIds: item.l5SignalPolicy.signalIds,
+      auditVerdict: audit.verdict,
+      hardViolations,
+      driftSignals,
+      reason: buildReplayVerificationReason(status, latest.id, audit.verdict, hardViolations, driftSignals),
+    }
+  }
 }
 
 function isAutoMaterializableProposal(proposal: LearningProposal): boolean {
@@ -610,6 +723,31 @@ function buildClosedLoopRecommendation(input: {
   }
 
   return 'No materialized change requires rerun in this iteration.'
+}
+
+function buildReplaySignalSummary(status: L5PolicyReplayStatus, sessionId: string): string {
+  if (status === 'passed') return `Autonomous L5 replay verified session ${sessionId} as stable.`
+  if (status === 'warning') return `Autonomous L5 replay found warnings in session ${sessionId}.`
+  if (status === 'failed') return `Autonomous L5 replay found blocking evidence in session ${sessionId}.`
+  return `Autonomous L5 replay skipped because no terminal session was available for ${sessionId}.`
+}
+
+function buildReplayVerificationReason(
+  status: L5PolicyReplayStatus,
+  sessionId: string,
+  auditVerdict: AuditorVerdict,
+  hardViolations: number,
+  driftSignals: number,
+): string {
+  if (status === 'passed') {
+    return `Latest terminal session ${sessionId} passed independent audit and contract replay checks.`
+  }
+  return [
+    `Latest terminal session ${sessionId} replay status is ${status}.`,
+    `audit=${auditVerdict}`,
+    `hardViolations=${hardViolations}`,
+    `driftSignals=${driftSignals}`,
+  ].join(' ')
 }
 
 function auditClosedLoopLifecycle(lifecycle: L5LifecycleEvent[], scenarios: string[]): AuditorFinding[] {
@@ -678,6 +816,10 @@ function errorFinding(code: string, message: string, evidence: Record<string, un
 
 function warningFinding(code: string, message: string, evidence: Record<string, unknown>): AuditorFinding {
   return { severity: 'warning', code, message, evidence }
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
 function appendLifecycle(

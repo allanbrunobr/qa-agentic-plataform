@@ -501,6 +501,95 @@ describe('L5 controlled feedback services', () => {
     }))
   })
 
+  it('records autonomous replay evidence and supersedes conflicting retained risk signals', async () => {
+    const service = new SessionService(':memory:')
+    const terminalSession = recordCompliantFirstOrderSession(service)
+    const riskSignal = service.recordL5LearningSignal({
+      sourceType: 'independent_audit_review',
+      sourceId: 'review-replay-risk',
+      signalType: 'audit_reviewed',
+      sourceRunId: 'loop-replay-risk',
+      scenarioId: 'first_order',
+      version: 'review:replay-risk',
+      confidence: 0.8,
+      summary: 'Reviewed warning requires replay before relying on this scenario.',
+      evidence: {
+        auditVerdict: 'warning',
+        findingCount: 1,
+      },
+    })
+
+    const before = new MetaOrchestrator(service).recommendSchedule()
+      .find((item) => item.scenarioId === 'first_order')
+    expect(before?.l5SignalPolicy).toEqual(expect.objectContaining({
+      requiresReplay: true,
+      signalIds: [riskSignal.id],
+    }))
+
+    const loop = await new L5ClosedLoopService(service).runOnce({
+      scenarioId: 'first_order',
+      maxScenarios: 1,
+    })
+
+    expect(loop).toEqual(expect.objectContaining({
+      status: 'completed',
+      summary: expect.objectContaining({
+        l5PolicyReplayRequired: true,
+        l5PolicyReplayVerifications: 1,
+        l5PolicyReplayPassed: 1,
+        l5PolicyReplayNeedsReview: 0,
+      }),
+      verification: expect.objectContaining({
+        replayVerifications: [
+          expect.objectContaining({
+            scenarioId: 'first_order',
+            status: 'passed',
+            sourceSessionId: terminalSession.id,
+            policySignalIds: [riskSignal.id],
+            signalId: expect.any(String),
+          }),
+        ],
+      }),
+    }))
+
+    const retainedSignals = service.listL5LearningSignals({
+      scenarioId: 'first_order',
+      status: 'retained',
+      limit: 10,
+    })
+    const replaySignal = retainedSignals.find((signal) => signal.signalType === 'replay_verified')
+    expect(replaySignal).toEqual(expect.objectContaining({
+      sourceType: 'closed_loop_replay',
+      evidence: expect.objectContaining({
+        replayStatus: 'passed',
+        sourceSessionId: terminalSession.id,
+      }),
+      metadata: expect.objectContaining({
+        conflictResolution: expect.objectContaining({
+          supersededSignalIds: [riskSignal.id],
+        }),
+      }),
+    }))
+    expect(service.listL5LearningSignals({
+      scenarioId: 'first_order',
+      status: 'superseded',
+      limit: 10,
+    })).toContainEqual(expect.objectContaining({
+      id: riskSignal.id,
+      signalType: 'audit_reviewed',
+    }))
+
+    const after = new MetaOrchestrator(service).recommendSchedule()
+      .find((item) => item.scenarioId === 'first_order')
+    expect(after?.l5SignalPolicy).toEqual(expect.objectContaining({
+      retainedSignals: 1,
+      riskModifier: 0,
+      requiresReplay: false,
+      requiresIndependentAudit: false,
+      reasons: ['verified replay passed'],
+    }))
+  })
+
   it('materializes pre-approved learning changes during the closed-loop apply phase', async () => {
     const previousArtifactDir = process.env.PHASE2_ARTIFACT_DIR
     process.env.PHASE2_ARTIFACT_DIR = await mkdtemp(path.join(tmpdir(), 'l5-closed-loop-artifacts-'))
@@ -960,4 +1049,41 @@ function makeLearningSignal(overrides: Partial<L5LearningSignal> = {}): L5Learni
     createdAt: '2026-04-22T00:00:00.000Z',
     ...overrides,
   }
+}
+
+function recordCompliantFirstOrderSession(service: SessionService) {
+  const session = service.createSession('first_order')
+  const steps = [
+    { stepId: 'create_customer', artifact: 'customerId', value: 'customer-123' },
+    { stepId: 'schedule_order', artifact: 'eventId', value: 'event-456' },
+  ]
+
+  for (const step of steps) {
+    service.appendEvent(session.id, {
+      type: 'step_started',
+      payload: { stepId: step.stepId, agentId: 'sales-associate', attempt: 1 },
+    })
+    service.appendEvent(session.id, {
+      type: 'agent_started',
+      agentRole: 'sales-associate',
+      payload: { agentId: 'sales-associate', stepId: step.stepId, attempt: 1 },
+    })
+    service.appendEvent(session.id, {
+      type: 'agent_stopped',
+      agentRole: 'sales-associate',
+      payload: { agentId: 'sales-associate', stepId: step.stepId, attempt: 1 },
+    })
+    service.setArtifact(session.id, step.artifact, step.value)
+    service.appendEvent(session.id, {
+      type: 'step_completed',
+      payload: { stepId: step.stepId, agentId: 'sales-associate', durationMs: 1000 },
+    })
+  }
+
+  service.appendEvent(session.id, {
+    type: 'session_completed',
+    payload: { scenarioId: 'first_order', stepsCompleted: steps.length },
+  })
+  service.updateStatus(session.id, 'complete')
+  return service.getSession(session.id)!
 }

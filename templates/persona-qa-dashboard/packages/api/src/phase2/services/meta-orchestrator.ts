@@ -177,6 +177,17 @@ export function evaluateL5SignalPolicy(
       requiresReplay ||= actionable && verificationStatus === 'warning'
       requiresIndependentAudit ||= actionable && verificationStatus === 'warning'
       reason = `verified promotion ${verificationStatus}`
+    } else if (signal.signalType === 'replay_verified') {
+      const replayStatus = stringValue(
+        signal.evidence?.['replayStatus'] ?? signal.evidence?.['verificationStatus'],
+        'unknown',
+      )
+      const modifier = replayStatus === 'failed' ? 0.18 : replayStatus === 'warning' ? 0.08 : 0
+      rawContribution = modifier
+      const actionable = effectiveConfidence >= 0.35
+      requiresReplay ||= actionable && (replayStatus === 'failed' || replayStatus === 'warning')
+      requiresIndependentAudit ||= actionable && (replayStatus === 'failed' || replayStatus === 'warning')
+      reason = `verified replay ${replayStatus}`
     }
 
     const riskContribution = round2(rawContribution * effectiveConfidence)

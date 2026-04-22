@@ -203,8 +203,8 @@ export type Phase2KnowledgePromotionEventAction = 'approve' | 'apply' | 'promote
 export type Phase2KnowledgePromotionEventStatus = 'completed' | 'blocked' | 'failed'
 export type Phase2KnowledgePromotionPostVerificationStatus = 'passed' | 'warning' | 'failed'
 export type Phase2IndependentAuditReviewStatus = 'reviewed'
-export type Phase2L5LearningSignalSourceType = 'independent_audit_review' | 'knowledge_promotion'
-export type Phase2L5LearningSignalType = 'audit_reviewed' | 'promotion_verified'
+export type Phase2L5LearningSignalSourceType = 'independent_audit_review' | 'knowledge_promotion' | 'closed_loop_replay'
+export type Phase2L5LearningSignalType = 'audit_reviewed' | 'promotion_verified' | 'replay_verified'
 export type Phase2L5LearningSignalStatus = 'retained' | 'superseded'
 
 export interface Phase2ClosedLoopLifecycleEvent {

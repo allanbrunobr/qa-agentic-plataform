@@ -877,7 +877,7 @@ function isKnowledgePromotionNextAction(value: unknown): value is L5KnowledgePro
 }
 
 function isL5LearningSignalType(value: unknown): value is L5LearningSignalType {
-  return value === 'audit_reviewed' || value === 'promotion_verified';
+  return value === 'audit_reviewed' || value === 'promotion_verified' || value === 'replay_verified';
 }
 
 function isL5LearningSignalStatus(value: unknown): value is L5LearningSignalStatus {
