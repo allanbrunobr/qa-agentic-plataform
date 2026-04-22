@@ -121,6 +121,15 @@ function inferProducedArtifacts(stepId: NormalizedStep) {
   if (stepId === 'open_primary_route') return ['routeLoaded']
   if (stepId === 'interact_with_primary_action') return ['primaryActionCompleted']
   if (stepId === 'verify_primary_feedback') return ['primaryFeedbackVisible']
+  if (stepId === 'start_api_service') return ['serviceStarted']
+  if (stepId === 'call_health_endpoint' || stepId === 'call_primary_endpoint') return ['apiResponse']
+  if (stepId === 'verify_api_response') return ['apiContractVerified']
+  if (stepId === 'run_cli_help') return ['cliHelpOutput']
+  if (stepId === 'verify_cli_output') return ['cliOutputVerified']
+  if (stepId === 'inspect_package_exports') return ['packageExports']
+  if (stepId === 'verify_public_api_docs') return ['publicApiDocsVerified']
+  if (stepId === 'inspect_repository_structure') return ['repositoryStructure']
+  if (stepId === 'identify_test_entrypoints') return ['testEntrypoints']
   return []
 }
 
@@ -136,6 +145,16 @@ function inferCapabilityId(stepId: NormalizedStep) {
   if (stepId === 'open_primary_route') return 'openPrimaryRoute'
   if (stepId === 'interact_with_primary_action') return 'interactWithPrimaryAction'
   if (stepId === 'verify_primary_feedback') return 'verifyPrimaryFeedback'
+  if (stepId === 'start_api_service') return 'startApiService'
+  if (stepId === 'call_health_endpoint') return 'callHealthEndpoint'
+  if (stepId === 'call_primary_endpoint') return 'callPrimaryEndpoint'
+  if (stepId === 'verify_api_response') return 'verifyApiResponse'
+  if (stepId === 'run_cli_help') return 'runCliHelp'
+  if (stepId === 'verify_cli_output') return 'verifyCliOutput'
+  if (stepId === 'inspect_package_exports') return 'inspectPackageExports'
+  if (stepId === 'verify_public_api_docs') return 'verifyPublicApiDocs'
+  if (stepId === 'inspect_repository_structure') return 'inspectRepositoryStructure'
+  if (stepId === 'identify_test_entrypoints') return 'identifyTestEntrypoints'
   return toCamelCase(normalizeId(stepId))
 }
 
@@ -152,6 +171,15 @@ function inferStepRole(stepId: NormalizedStep, fallbackRoles: string[]) {
     stepId === 'interact_with_primary_action' ||
     stepId === 'verify_primary_feedback'
   ) return 'primary_user'
+  if (
+    stepId === 'start_api_service' ||
+    stepId === 'call_health_endpoint' ||
+    stepId === 'call_primary_endpoint' ||
+    stepId === 'verify_api_response'
+  ) return 'api_consumer'
+  if (stepId === 'run_cli_help' || stepId === 'verify_cli_output') return 'cli_user'
+  if (stepId === 'inspect_package_exports' || stepId === 'verify_public_api_docs') return 'integration_developer'
+  if (stepId === 'inspect_repository_structure' || stepId === 'identify_test_entrypoints') return 'repository_reviewer'
   return fallbackRoles[0] ?? 'unknown'
 }
 
@@ -192,6 +220,7 @@ function toYaml(value: unknown, indent = 0): string {
 function normalizeReport(report: DiscoveryReport): DiscoveryReport {
   return {
     framework: report.framework,
+    repository: report.repository,
     surfaces: report.surfaces.map((surface) => ({
       ...surface,
       id: normalizeId(surface.id || surface.label),
@@ -220,6 +249,14 @@ function hasRole(report: DiscoveryReport, tokens: string[]) {
 }
 
 function inferRouteForSurface(surface: DiscoveryReport['surfaces'][number]) {
+  if (surface.id === 'health_endpoint') return '/health'
+  if (surface.id === 'api_service') return '/'
+  if (
+    surface.id === 'cli_entrypoint' ||
+    surface.id === 'package_api' ||
+    surface.id === 'repository_structure'
+  ) return 'not_applicable'
+
   for (const evidence of surface.evidence) {
     const route = extractRoutePathFromEvidence(evidence)
     if (route && route !== '/') return route
@@ -266,7 +303,19 @@ async function copyDirRecursiveIfExists(sourceDir: string, targetDir: string): P
   return copied
 }
 
-async function detectAuth(repoPath: string) {
+async function detectAuth(repoPath: string, report: DiscoveryReport) {
+  if (report.repository && report.repository.kind !== 'frontend') {
+    return {
+      loginEntryPoint: 'not_applicable',
+      supportsRoleSwitch: false,
+      detectedProviders: [],
+      sessionHints: [
+        `no browser login inferred for ${report.repository.kind} repository`,
+        'map runtime credentials or environment manually before promoting executable scenarios',
+      ],
+    }
+  }
+
   const loginPage = path.join(repoPath, 'apps/webapp/src/app/(auth)/login/page.tsx')
   const autoLoginPage = path.join(repoPath, 'apps/webapp/src/app/(auth)/(layout-redirect)/auto-login/page.tsx')
   const loginHook = path.join(repoPath, 'apps/webapp/src/modules/auth/login/hooks/use-login-email-password.ts')
@@ -324,6 +373,10 @@ function inferCapabilityRouteHint(capabilityId: string, routes: MaterializedRout
     openPrimaryRoute: ['/'],
     interactWithPrimaryAction: ['/'],
     verifyPrimaryFeedback: ['/'],
+    startApiService: ['/'],
+    callHealthEndpoint: ['/health', '/ready', '/live'],
+    callPrimaryEndpoint: ['/'],
+    verifyApiResponse: ['/'],
   }
   const candidates = routeMap[capabilityId] ?? []
   return routes.find((route) => candidates.some((candidate) => route.path.startsWith(candidate)))?.path
@@ -346,6 +399,16 @@ function buildMaterializedCapabilities(capabilityIds: string[], routes: Material
     interactWithPrimaryAction: 'Execute the main visible user action.',
     verifyPrimaryFeedback: 'Verify the primary success, feedback, or confirmation state.',
     captureScreenshot: 'Capture visual evidence from the active frontend page.',
+    startApiService: 'Start or connect to the target API service.',
+    callHealthEndpoint: 'Call the detected API health/readiness endpoint.',
+    callPrimaryEndpoint: 'Call a primary API endpoint selected during review.',
+    verifyApiResponse: 'Verify response status, schema, and core API contract expectations.',
+    runCliHelp: 'Execute the CLI help command for the detected command-line entrypoint.',
+    verifyCliOutput: 'Verify CLI output, exit code, and expected command contract.',
+    inspectPackageExports: 'Inspect package export metadata and import surface.',
+    verifyPublicApiDocs: 'Verify public API documentation or entrypoint evidence.',
+    inspectRepositoryStructure: 'Inspect repository structure and classify available runtime surfaces.',
+    identifyTestEntrypoints: 'Identify test commands, smoke commands, or runtime entrypoints.',
   }
 
   return capabilityIds.map((capabilityId) => ({
@@ -383,6 +446,24 @@ function buildRuntimePlan(input: {
 }
 
 function buildAuthRuntimeStub(auth: Awaited<ReturnType<typeof detectAuth>>) {
+  if (auth.loginEntryPoint === 'not_applicable') {
+    return `export const generatedAuthRuntime = {
+  loginEntryPoint: ${JSON.stringify(auth.loginEntryPoint)},
+  supportsRoleSwitch: false,
+  detectedProviders: [],
+  sessionHints: ${JSON.stringify(auth.sessionHints, null, 2)},
+} as const
+
+export async function performHostLogin() {
+  throw new Error('Browser login is not applicable for this generated adapter type.')
+}
+
+export async function switchHostRole() {
+  throw new Error('Role switching is not applicable for this generated adapter type.')
+}
+`
+  }
+
   const providerComment = auth.detectedProviders.length > 0
     ? auth.detectedProviders.join(', ')
     : 'none detected'
@@ -490,6 +571,15 @@ function appendUnique<T extends string>(items: T[], value: T | null | undefined)
 function buildNormalizedPersonas(report: DiscoveryReport, draft: BootstrapDraft): GeneratedPersonaDraft[] {
   const personas: GeneratedPersonaDraft[] = []
 
+  if (report.repository) {
+    return draft.personas.map((persona) => ({
+      id: normalizeId(persona.id),
+      title: persona.title,
+      rationale: persona.rationale,
+      allowedTools: persona.allowedTools,
+    }))
+  }
+
   if (hasRole(report, ['sales-associate', 'receptionist']) || hasSurface(report, ['agenda', 'customers', 'customer'])) {
     personas.push({
       id: 'sales-associate',
@@ -560,6 +650,16 @@ function buildNormalizedScenarios(report: DiscoveryReport, draft: BootstrapDraft
   const hasScheduleModule = hasSurface(report, ['agenda', 'schedule'])
   const hasFinanceModule = hasSurface(report, ['financas', 'finance', 'antecipacao'])
 
+  if (report.repository) {
+    return draft.scenarios.map((scenario) => ({
+      id: normalizeId(scenario.id),
+      title: scenario.title,
+      participatingRoles: scenario.participatingRoles.map(normalizeId),
+      rationale: scenario.rationale,
+      candidateSteps: normalizeFallbackSteps(scenario.candidateSteps),
+    }))
+  }
+
   if (hasReception && hasAgent && (hasCustomerModule || hasScheduleModule)) {
     scenarios.push(buildScenario(
       'first_order',
@@ -621,6 +721,15 @@ function classifyFallbackStep(step: string): NormalizedStep | null {
   if (text.includes('open') && (text.includes('route') || text.includes('page'))) return 'open_primary_route'
   if (text.includes('action') || text.includes('button') || text.includes('interact')) return 'interact_with_primary_action'
   if (text.includes('feedback') || text.includes('confirmation') || text.includes('success')) return 'verify_primary_feedback'
+  if (text.includes('health') || text.includes('readiness') || text.includes('liveness')) return 'call_health_endpoint'
+  if (text.includes('api') && (text.includes('call') || text.includes('request') || text.includes('endpoint'))) return 'call_primary_endpoint'
+  if (text.includes('response') || text.includes('schema') || text.includes('contract')) return 'verify_api_response'
+  if (text.includes('cli') && text.includes('help')) return 'run_cli_help'
+  if (text.includes('cli') || text.includes('output') || text.includes('exit code')) return 'verify_cli_output'
+  if (text.includes('export') || text.includes('import') || text.includes('package')) return 'inspect_package_exports'
+  if (text.includes('docs') || text.includes('public api')) return 'verify_public_api_docs'
+  if (text.includes('repository') || text.includes('structure')) return 'inspect_repository_structure'
+  if (text.includes('test') || text.includes('entrypoint')) return 'identify_test_entrypoints'
   if (text.includes('customer') && (text.includes('create') || text.includes('register') || text.includes('cadast'))) return 'create_customer'
   if ((text.includes('schedule') || text.includes('book') || text.includes('agenda')) && text.includes('return')) return 'schedule_return'
   if (text.includes('schedule') || text.includes('book') || text.includes('agenda')) return 'schedule_order'
@@ -690,7 +799,7 @@ export async function materializeLocalDiscovery(input: {
   const normalizedReport = normalizeReport(input.report)
   const normalizedDraft = buildNormalizedDraft(normalizedReport, input.draft)
   const routes = buildMaterializedRoutes(normalizedReport)
-  const auth = await detectAuth(input.repoPath)
+  const auth = await detectAuth(input.repoPath, normalizedReport)
 
   const manifest = {
     id: hostId,

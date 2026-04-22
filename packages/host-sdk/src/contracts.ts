@@ -4,6 +4,19 @@ export interface HostProjectPointer {
   baseUrl?: string
 }
 
+export type RepositoryKind = 'frontend' | 'backend_api' | 'cli' | 'library' | 'monorepo' | 'unknown'
+
+export interface RepositoryClassification {
+  kind: RepositoryKind
+  secondaryKinds: RepositoryKind[]
+  language: string | null
+  frameworks: string[]
+  packageManager: string | null
+  confidence: number
+  evidence: string[]
+  runtimeHints: string[]
+}
+
 export interface DiscoveredRole {
   id: string
   confidence: number
@@ -19,6 +32,7 @@ export interface DiscoveredSurface {
 
 export interface DiscoveryReport {
   framework: string | null
+  repository?: RepositoryClassification
   surfaces: DiscoveredSurface[]
   roles: DiscoveredRole[]
   risks: string[]
