@@ -2,7 +2,7 @@
 
 `agentic-platform` installs a host-local `.agentic-qa` runtime inside a target repository, discovers the host surfaces, and runs agentic QA flows against the target application without modifying the host application code.
 
-This repository is the reproducible baseline for installing and running agentic QA against a real host frontend. The validated dashboard/runtime template now lives inside this repository at `templates/persona-qa-dashboard`.
+This repository is the reproducible baseline for installing and running agentic QA against host repositories. The validated dashboard/runtime template lives inside this repository at `templates/persona-qa-dashboard`.
 
 ## Baseline Status
 
@@ -21,19 +21,23 @@ Validated target shapes:
 
 - clean temporary host copy under `/tmp`
 - real frontend repository, with the generated `.agentic-qa` kept isolated from the working application
+- deterministic generic fixtures for frontend, backend API, CLI, library, and unknown repository shapes
 
 ## What The Platform Does
 
-The platform currently supports a web-frontend-oriented runtime:
+The platform currently supports two layers:
 
 1. install a host-local `.agentic-qa`
-2. discover host surfaces, roles, routes, and scenarios
-3. materialize generated files under `adapter/`
-4. copy host operational knowledge into `adapter/runtime/host-source-snapshot/`
-5. start a local dashboard runtime
-6. execute browser-driven flows with Playwright against the configured target frontend
+2. classify the target repository shape
+3. discover host surfaces, roles, routes, and scenarios
+4. materialize generated files under `adapter/`
+5. copy host operational knowledge into `adapter/runtime/host-source-snapshot/`
+6. start a local dashboard runtime
+7. execute browser-driven flows with Playwright against the configured target frontend
 
-The generated `.agentic-qa` is isolated from the host runtime itself. It orchestrates runs and observations, while the actual product under test remains the host frontend pointed to by `PLAYWRIGHT_BASE_URL`.
+Frontend adapters can be promoted to runnable Playwright flows after host credentials, routes, and capabilities are mapped. Backend API, CLI, library, and unknown repository adapters are generated as draft adapters first: AP classifies the repository, creates initial personas/scenarios/capability stubs, and marks browser login as not applicable until runtime-specific execution is mapped.
+
+The generated `.agentic-qa` is isolated from the host runtime itself. It orchestrates runs and observations, while the actual product under test remains the target pointed to by runtime configuration such as `PLAYWRIGHT_BASE_URL` for web flows.
 
 The installer uses `templates/persona-qa-dashboard` by default. For local experiments, override the template with:
 
@@ -62,16 +66,16 @@ Use `.env.example` as the local shape. `.env.local` is intentionally ignored by 
 
 ## Current Scope
 
-The validated baseline is for repositories that expose a testable web frontend.
+The validated runnable baseline is still strongest for repositories that expose a testable web frontend.
 
-That means:
+For frontend repositories, that means:
 
 - Playwright-based execution
 - browser navigation and selectors
 - UI-driven capabilities
 - route and screen discovery
 
-Generalization to backend-only, API-only, CLI-only, or other runtime types is a later step and is not part of this baseline.
+For backend API, CLI, library, monorepo, and unknown repositories, AP now performs deterministic classification and draft adapter generation. Those drafts intentionally do not claim runnable execution until the repository-specific runtime, commands, auth, seed data, and assertions are mapped.
 
 ## Repository Layout
 
@@ -156,6 +160,7 @@ A passing run prints:
 [verify-release] PASS api: L4/L5 release vitest
 [verify-release] PASS web: release vitest
 [verify-release] PASS web: build
+[verify-generic-repository-types] PASS generic repository type install/discovery verification
 [verify-install-local] PASS tmp=...
 [verify-install-local] PASS dashboard=http://localhost:<port>
 [verify-install-local] PASS session=...
@@ -166,6 +171,6 @@ Run real target integration only when the selected local or remote environment i
 
 ## Guardrail
 
-This baseline must continue to work for a real frontend host flow before broader generalization is attempted.
+This baseline must continue to work for a real frontend host flow while broader repository generalization evolves.
 
-Do not generalize the platform to backend/API/CLI targets until this regression remains green after changes to installer, template, runtime, or dashboard behavior.
+Do not mark backend/API/CLI/library adapters as runnable until their generated draft capabilities are mapped to real execution commands and assertions. The generic repository verification only proves classification and draft materialization.

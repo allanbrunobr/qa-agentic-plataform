@@ -82,9 +82,22 @@ const steps = [
     cwd: repoRoot,
   },
   {
+    name: 'syntax: generic repository type verifier',
+    command: releaseNodePath,
+    args: ['--check', 'scripts/verify-generic-repository-types.mjs'],
+    cwd: repoRoot,
+  },
+  {
     name: 'generic frontend install/discovery smoke',
     command: 'npm',
     args: ['run', 'verify:generic-frontend'],
+    cwd: repoRoot,
+    env: releaseEnv,
+  },
+  {
+    name: 'generic repository type install/discovery smoke',
+    command: 'npm',
+    args: ['run', 'verify:generic-repository-types'],
     cwd: repoRoot,
     env: releaseEnv,
   },

@@ -2,6 +2,7 @@ import type {
   BootstrapDraft,
   DiscoveryHintsProvider,
   DiscoveryReport,
+  RepositoryClassification,
   DiscoveredRole,
   DiscoveredSurface,
   HostProjectPointer,
@@ -15,6 +16,7 @@ export interface FileSignal {
 export interface DiscoverySnapshot {
   pointer: HostProjectPointer
   framework: string | null
+  repository?: RepositoryClassification
   signals: FileSignal[]
   roles: DiscoveredRole[]
   surfaces: DiscoveredSurface[]
@@ -24,6 +26,7 @@ export interface DiscoverySnapshot {
 export function createDiscoverySnapshot(input: {
   pointer: HostProjectPointer
   framework?: string | null
+  repository?: RepositoryClassification
   signals?: FileSignal[]
   roles?: DiscoveredRole[]
   surfaces?: DiscoveredSurface[]
@@ -32,6 +35,7 @@ export function createDiscoverySnapshot(input: {
   return {
     pointer: input.pointer,
     framework: input.framework ?? null,
+    repository: input.repository,
     signals: input.signals ?? [],
     roles: input.roles ?? [],
     surfaces: input.surfaces ?? [],
@@ -42,6 +46,7 @@ export function createDiscoverySnapshot(input: {
 export function snapshotToReport(snapshot: DiscoverySnapshot): DiscoveryReport {
   return {
     framework: snapshot.framework,
+    repository: snapshot.repository,
     roles: snapshot.roles,
     surfaces: snapshot.surfaces,
     risks: snapshot.risks,
