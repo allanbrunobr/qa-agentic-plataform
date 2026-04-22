@@ -590,6 +590,194 @@ describe('L5 controlled feedback services', () => {
     }))
   })
 
+  it('keeps a failed autonomous replay under L5 review', async () => {
+    const service = new SessionService(':memory:')
+    const terminalSession = recordFailedReplaySession(service)
+    const riskSignal = service.recordL5LearningSignal({
+      sourceType: 'independent_audit_review',
+      sourceId: 'review-failed-replay-risk',
+      signalType: 'audit_reviewed',
+      sourceRunId: 'loop-failed-replay-risk',
+      scenarioId: 'first_order',
+      version: 'review:failed-replay-risk',
+      confidence: 0.8,
+      summary: 'Reviewed warning requires replay before relying on this scenario.',
+      evidence: {
+        auditVerdict: 'warning',
+        findingCount: 1,
+      },
+    })
+
+    const loop = await new L5ClosedLoopService(service).runOnce({
+      scenarioId: 'first_order',
+      maxScenarios: 1,
+    })
+
+    expect(loop).toEqual(expect.objectContaining({
+      status: 'needs_review',
+      summary: expect.objectContaining({
+        l5PolicyReplayRequired: true,
+        l5PolicyReplayVerifications: 1,
+        l5PolicyReplayPassed: 0,
+        l5PolicyReplayNeedsReview: 1,
+        independentAuditVerdict: 'failed',
+      }),
+      verification: expect.objectContaining({
+        replayVerifications: [
+          expect.objectContaining({
+            scenarioId: 'first_order',
+            status: 'failed',
+            sourceSessionId: terminalSession.id,
+            policySignalIds: [riskSignal.id],
+            auditVerdict: 'failed',
+            signalId: expect.any(String),
+          }),
+        ],
+      }),
+    }))
+
+    const retainedSignals = service.listL5LearningSignals({
+      scenarioId: 'first_order',
+      status: 'retained',
+      limit: 10,
+    })
+    expect(retainedSignals).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: riskSignal.id, signalType: 'audit_reviewed' }),
+      expect.objectContaining({
+        sourceType: 'closed_loop_replay',
+        signalType: 'replay_verified',
+        evidence: expect.objectContaining({
+          replayStatus: 'failed',
+          sourceSessionId: terminalSession.id,
+        }),
+      }),
+    ]))
+
+    const after = new MetaOrchestrator(service).recommendSchedule()
+      .find((item) => item.scenarioId === 'first_order')
+    expect(after?.l5SignalPolicy).toEqual(expect.objectContaining({
+      retainedSignals: 2,
+      requiresReplay: true,
+      requiresIndependentAudit: true,
+    }))
+    expect(after?.l5SignalPolicy.reasons).toEqual(expect.arrayContaining([
+      'verified replay failed',
+    ]))
+  })
+
+  it('keeps a warning autonomous replay under independent audit', async () => {
+    const service = new SessionService(':memory:')
+    const terminalSession = recordWarningReplaySession(service)
+    const riskSignal = service.recordL5LearningSignal({
+      sourceType: 'independent_audit_review',
+      sourceId: 'review-warning-replay-risk',
+      signalType: 'audit_reviewed',
+      sourceRunId: 'loop-warning-replay-risk',
+      scenarioId: 'first_order',
+      version: 'review:warning-replay-risk',
+      confidence: 0.8,
+      summary: 'Reviewed warning requires replay before relying on this scenario.',
+      evidence: {
+        auditVerdict: 'warning',
+        findingCount: 1,
+      },
+    })
+
+    const loop = await new L5ClosedLoopService(service).runOnce({
+      scenarioId: 'first_order',
+      maxScenarios: 1,
+    })
+
+    expect(loop).toEqual(expect.objectContaining({
+      status: 'needs_review',
+      summary: expect.objectContaining({
+        l5PolicyReplayRequired: true,
+        l5PolicyReplayVerifications: 1,
+        l5PolicyReplayPassed: 0,
+        l5PolicyReplayNeedsReview: 1,
+        independentAuditVerdict: 'warning',
+      }),
+      verification: expect.objectContaining({
+        replayVerifications: [
+          expect.objectContaining({
+            scenarioId: 'first_order',
+            status: 'warning',
+            sourceSessionId: terminalSession.id,
+            policySignalIds: [riskSignal.id],
+            auditVerdict: 'warning',
+            hardViolations: 0,
+            driftSignals: 0,
+            signalId: expect.any(String),
+          }),
+        ],
+      }),
+    }))
+
+    const after = new MetaOrchestrator(service).recommendSchedule()
+      .find((item) => item.scenarioId === 'first_order')
+    expect(after?.l5SignalPolicy).toEqual(expect.objectContaining({
+      retainedSignals: 2,
+      requiresReplay: true,
+      requiresIndependentAudit: true,
+    }))
+    expect(after?.l5SignalPolicy.reasons).toEqual(expect.arrayContaining([
+      'verified replay warning',
+    ]))
+  })
+
+  it('does not let low-confidence stability signals override retained L5 risk', () => {
+    const service = new SessionService(':memory:')
+    const riskSignal = service.recordL5LearningSignal({
+      sourceType: 'independent_audit_review',
+      sourceId: 'review-low-confidence-risk',
+      signalType: 'audit_reviewed',
+      sourceRunId: 'loop-low-confidence-risk',
+      scenarioId: 'first_order',
+      version: 'review:low-confidence-risk',
+      confidence: 0.8,
+      summary: 'Reviewed warning still needs replay.',
+      evidence: {
+        auditVerdict: 'warning',
+        findingCount: 1,
+      },
+    })
+    const replaySignal = service.recordL5LearningSignal({
+      sourceType: 'closed_loop_replay',
+      sourceId: 'replay-low-confidence',
+      signalType: 'replay_verified',
+      scenarioId: 'first_order',
+      version: 'replay:low-confidence:passed',
+      confidence: 0.65,
+      summary: 'Low-confidence replay should not erase retained risk.',
+      evidence: {
+        replayStatus: 'passed',
+        sourceSessionId: 'session-low-confidence',
+      },
+    })
+
+    expect(service.listL5LearningSignals({
+      scenarioId: 'first_order',
+      status: 'retained',
+      limit: 10,
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: riskSignal.id }),
+      expect.objectContaining({ id: replaySignal.id }),
+    ]))
+    expect(service.listL5LearningSignals({
+      scenarioId: 'first_order',
+      status: 'superseded',
+      limit: 10,
+    })).toEqual([])
+
+    const policy = new MetaOrchestrator(service).recommendSchedule()
+      .find((item) => item.scenarioId === 'first_order')?.l5SignalPolicy
+    expect(policy).toEqual(expect.objectContaining({
+      retainedSignals: 2,
+      requiresReplay: true,
+      requiresIndependentAudit: true,
+    }))
+  })
+
   it('materializes pre-approved learning changes during the closed-loop apply phase', async () => {
     const previousArtifactDir = process.env.PHASE2_ARTIFACT_DIR
     process.env.PHASE2_ARTIFACT_DIR = await mkdtemp(path.join(tmpdir(), 'l5-closed-loop-artifacts-'))
@@ -1083,6 +1271,58 @@ function recordCompliantFirstOrderSession(service: SessionService) {
   service.appendEvent(session.id, {
     type: 'session_completed',
     payload: { scenarioId: 'first_order', stepsCompleted: steps.length },
+  })
+  service.updateStatus(session.id, 'complete')
+  return service.getSession(session.id)!
+}
+
+function recordWarningReplaySession(service: SessionService) {
+  const session = service.createSession('first_order')
+  const steps = [
+    { stepId: 'create_customer', artifact: 'customerId', value: 'customer-warning' },
+    { stepId: 'schedule_order', artifact: 'eventId', value: 'event-warning' },
+  ]
+
+  for (const step of steps) {
+    service.appendEvent(session.id, {
+      type: 'step_started',
+      payload: { stepId: step.stepId, agentId: 'sales-associate', attempt: 1 },
+    })
+    service.appendEvent(session.id, {
+      type: 'agent_started',
+      agentRole: 'sales-associate',
+      payload: { agentId: 'sales-associate', stepId: step.stepId, attempt: 1 },
+    })
+    service.appendEvent(session.id, {
+      type: 'agent_stopped',
+      agentRole: 'sales-associate',
+      payload: { agentId: 'sales-associate', stepId: step.stepId, attempt: 1 },
+    })
+    service.setArtifact(session.id, step.artifact, step.value)
+    service.appendEvent(session.id, {
+      type: 'step_completed',
+      payload: { stepId: step.stepId, agentId: 'sales-associate', durationMs: 1000 },
+    })
+  }
+
+  service.updateStatus(session.id, 'complete')
+  return service.getSession(session.id)!
+}
+
+function recordFailedReplaySession(service: SessionService) {
+  const session = service.createSession('first_order')
+  service.appendEvent(session.id, {
+    type: 'step_started',
+    payload: { stepId: 'create_customer', agentId: 'sales-associate', attempt: 1 },
+  })
+  service.appendEvent(session.id, {
+    type: 'agent_started',
+    agentRole: 'sales-associate',
+    payload: { agentId: 'sales-associate', stepId: 'create_customer', attempt: 1 },
+  })
+  service.appendEvent(session.id, {
+    type: 'session_completed',
+    payload: { scenarioId: 'first_order', stepsCompleted: 0 },
   })
   service.updateStatus(session.id, 'complete')
   return service.getSession(session.id)!

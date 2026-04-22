@@ -28,6 +28,7 @@ const apiReleaseTests = [
   'src/phase2/__tests__/workflow-tools.test.ts',
   'src/phase2/__tests__/evidence-tools.test.ts',
   'src/phase2/__tests__/l5-services.test.ts',
+  'src/phase2/__tests__/l5-soak.test.ts',
   'src/phase2/__tests__/governance-policy-service.test.ts',
   'src/phase2/__tests__/independent-auditor-service.test.ts',
   'src/phase2/__tests__/sessions-routes.test.ts',

@@ -172,6 +172,26 @@ describe('L5RunAuditPanel', () => {
           status: 'retained',
           summary: 'Warning reviewed.',
           createdAt: now,
+        }, {
+          id: 'signal-2',
+          sourceType: 'closed_loop_replay',
+          sourceId: 'replay:queue:session-stable-1',
+          signalType: 'replay_verified',
+          scenarioId: 'first_order',
+          version: 'replay:session-stable-1:passed',
+          confidence: 0.9,
+          status: 'retained',
+          summary: 'Autonomous replay stable.',
+          evidence: {
+            replayStatus: 'passed',
+            sourceSessionId: 'session-stable-1',
+          },
+          metadata: {
+            conflictResolution: {
+              supersededSignalIds: ['signal-1'],
+            },
+          },
+          createdAt: now,
         }]}
         onSelectRun={onSelectRun}
       />,
@@ -183,6 +203,11 @@ describe('L5RunAuditPanel', () => {
     expect(screen.getByText('Memória L5')).toBeInTheDocument()
     expect(screen.getByText('audit reviewed')).toBeInTheDocument()
     expect(screen.getByText('Warning reviewed.')).toBeInTheDocument()
+    expect(screen.getByText('replay verified')).toBeInTheDocument()
+    expect(screen.getByText('Autonomous replay stable.')).toBeInTheDocument()
+    expect(screen.getByText('replay passed')).toBeInTheDocument()
+    expect(screen.getByText('sess session-')).toBeInTheDocument()
+    expect(screen.getByText('superseded 1')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('quarterly reorder').closest('button')!)
     expect(onSelectRun).toHaveBeenCalledWith('run-pending')

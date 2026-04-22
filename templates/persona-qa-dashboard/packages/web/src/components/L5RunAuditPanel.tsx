@@ -376,6 +376,7 @@ function LearningSignalLedger({
               </span>
             </div>
             <p className="mt-2 line-clamp-2 text-[11px] text-emerald-100/80">{signal.summary}</p>
+            <SignalEvidenceChips signal={signal} />
             <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] uppercase text-emerald-100/60">
               <span>{signal.sourceType.replace(/_/g, ' ')}</span>
               <span>conf {Math.round(signal.confidence * 100)}%</span>
@@ -385,6 +386,24 @@ function LearningSignalLedger({
         ))}
       </div>
     </section>
+  )
+}
+
+function SignalEvidenceChips({ signal }: { signal: Phase2L5LearningSignal }) {
+  const chips = signalEvidenceChips(signal)
+  if (chips.length === 0) return null
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {chips.map((chip) => (
+        <span
+          key={chip}
+          className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase text-emerald-100/70"
+        >
+          {chip}
+        </span>
+      ))}
+    </div>
   )
 }
 
@@ -850,6 +869,26 @@ function signalStatusClass(status: string) {
   if (status === 'retained') return 'bg-emerald-500/10 text-emerald-200'
   if (status === 'superseded') return 'bg-[var(--bg-secondary)] text-[var(--text-muted)]'
   return 'bg-[var(--bg-secondary)] text-[var(--text-muted)]'
+}
+
+function signalEvidenceChips(signal: Phase2L5LearningSignal): string[] {
+  const chips: string[] = []
+  const evidence = recordValue(signal.evidence)
+  const metadata = recordValue(signal.metadata)
+  const replayStatus = stringValue(evidence['replayStatus'], '')
+  const auditVerdict = stringValue(evidence['auditVerdict'], '')
+  const sourceSessionId = stringValue(evidence['sourceSessionId'], '')
+  const conflictResolution = recordValue(metadata['conflictResolution'])
+  const supersededSignalIds = Array.isArray(conflictResolution['supersededSignalIds'])
+    ? conflictResolution['supersededSignalIds']
+    : []
+
+  if (replayStatus) chips.push(`replay ${replayStatus}`)
+  if (!replayStatus && auditVerdict) chips.push(`audit ${auditVerdict}`)
+  if (sourceSessionId) chips.push(`sess ${sourceSessionId.slice(0, 8)}`)
+  if (supersededSignalIds.length > 0) chips.push(`superseded ${supersededSignalIds.length}`)
+
+  return chips
 }
 
 function historyStatusClass(tone: 'success' | 'warning' | 'danger' | 'neutral') {
