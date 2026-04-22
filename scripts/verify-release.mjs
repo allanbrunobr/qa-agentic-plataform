@@ -95,6 +95,19 @@ const steps = [
     cwd: repoRoot,
   },
   {
+    name: 'syntax: domain discovery contract verifier',
+    command: releaseNodePath,
+    args: ['--check', 'scripts/verify-domain-discovery-contracts.mjs'],
+    cwd: repoRoot,
+  },
+  {
+    name: 'domain discovery contract verification',
+    command: 'npm',
+    args: ['run', 'verify:domain-discovery-contracts'],
+    cwd: repoRoot,
+    env: releaseEnv,
+  },
+  {
     name: 'generic frontend install/discovery smoke',
     command: 'npm',
     args: ['run', 'verify:generic-frontend'],

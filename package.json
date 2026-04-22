@@ -17,6 +17,7 @@
     "verify:generic-frontend": "node scripts/verify-generic-frontend.mjs",
     "verify:generic-repository-types": "node scripts/verify-generic-repository-types.mjs",
     "verify:generic-runtime-execution": "node scripts/verify-generic-runtime-execution.mjs",
+    "verify:domain-discovery-contracts": "node scripts/verify-domain-discovery-contracts.mjs",
     "verify:l5": "node scripts/verify-l5.mjs",
     "verify:l5:soak": "node scripts/verify-l5-soak.mjs",
     "verify:release": "node scripts/verify-release.mjs",

@@ -1,4 +1,5 @@
 export * from './contracts.ts'
+export * from './domain-discovery-contracts.ts'
 export * from './discovery.ts'
 export * from './adapter-model.ts'
 export * from './runtime-hooks.ts'
