@@ -101,9 +101,22 @@ const steps = [
     cwd: repoRoot,
   },
   {
+    name: 'syntax: static frontend scanner verifier',
+    command: releaseNodePath,
+    args: ['--check', 'scripts/verify-static-frontend-scanner.mjs'],
+    cwd: repoRoot,
+  },
+  {
     name: 'domain discovery contract verification',
     command: 'npm',
     args: ['run', 'verify:domain-discovery-contracts'],
+    cwd: repoRoot,
+    env: releaseEnv,
+  },
+  {
+    name: 'static frontend scanner verification',
+    command: 'npm',
+    args: ['run', 'verify:static-frontend-scanner'],
     cwd: repoRoot,
     env: releaseEnv,
   },
