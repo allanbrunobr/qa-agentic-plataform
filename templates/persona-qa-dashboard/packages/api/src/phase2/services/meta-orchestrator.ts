@@ -1,6 +1,15 @@
 import { listScenarios, loadScenario } from '../scenarios/index.js'
-import type { SessionService } from './session-service.js'
+import type { L5LearningSignal, SessionService } from './session-service.js'
 import { L5LoopGuardService, type L5LoopGuard } from './l5-loop-guard-service.js'
+
+export interface L5SignalPolicyImpact {
+  retainedSignals: number
+  riskModifier: number
+  requiresReplay: boolean
+  requiresIndependentAudit: boolean
+  signalIds: string[]
+  reasons: string[]
+}
 
 export interface ScheduleRecommendation {
   scenarioId: string
@@ -9,6 +18,8 @@ export interface ScheduleRecommendation {
   suggestedFrequency: 'every_commit' | 'daily' | 'weekly' | 'on_demand'
   lastRunAt: string | null
   riskScore: number
+  baseRiskScore: number
+  l5SignalPolicy: L5SignalPolicyImpact
 }
 
 export interface MetaOrchestrationQueueItem extends ScheduleRecommendation {
@@ -69,21 +80,35 @@ export class MetaOrchestrator {
     const scenario = loadScenario(scenarioId)
     const criticalStepRatio = scenario.steps.filter((step) => step.handoff || step.requiredArtifacts.length > 0).length
       / Math.max(1, scenario.steps.length)
-    const riskScore = calculateRiskScore({
+    const l5SignalPolicy = evaluateL5SignalPolicy(this.sessionService.listL5LearningSignals({
+      scenarioId,
+      status: 'retained',
+      limit: 100,
+    }))
+    const baseRiskScore = calculateRiskScore({
       daysSinceLastRun,
       failureRate,
       timeoutRate,
       criticalStepRatio,
       hasNeverRun: sessions.length === 0,
     })
+    const riskScore = applyRiskModifier(baseRiskScore, l5SignalPolicy.riskModifier)
 
     return {
       scenarioId,
       priority: riskScore >= 0.75 ? 'critical' : riskScore >= 0.5 ? 'high' : riskScore >= 0.2 ? 'normal' : 'low',
-      reason: buildReason({ daysSinceLastRun, failureRate, timeoutRate, hasNeverRun: sessions.length === 0 }),
+      reason: buildReason({
+        daysSinceLastRun,
+        failureRate,
+        timeoutRate,
+        hasNeverRun: sessions.length === 0,
+        l5SignalPolicy,
+      }),
       suggestedFrequency: riskScore >= 0.75 ? 'every_commit' : riskScore >= 0.5 ? 'daily' : riskScore >= 0.2 ? 'weekly' : 'on_demand',
       lastRunAt,
       riskScore,
+      baseRiskScore,
+      l5SignalPolicy,
     }
   }
 }
@@ -104,15 +129,73 @@ export function calculateRiskScore(input: {
   return Math.min(1, Number(score.toFixed(2)))
 }
 
+export function evaluateL5SignalPolicy(signals: L5LearningSignal[]): L5SignalPolicyImpact {
+  let riskModifier = 0
+  let requiresReplay = false
+  let requiresIndependentAudit = false
+  const reasons: string[] = []
+
+  for (const signal of signals) {
+    if (signal.signalType === 'audit_reviewed') {
+      const verdict = stringValue(signal.evidence?.['auditVerdict'], 'unknown')
+      const findingCount = numberValue(signal.evidence?.['findingCount'])
+      const modifier = verdict === 'failed' ? 0.18 : verdict === 'warning' ? 0.12 : 0.06
+      riskModifier += modifier
+      requiresReplay ||= verdict === 'failed' || verdict === 'warning'
+      requiresIndependentAudit ||= verdict === 'failed' || verdict === 'warning' || findingCount > 0
+      reasons.push(`reviewed audit ${verdict}${findingCount > 0 ? ` with ${findingCount} finding(s)` : ''}`)
+      continue
+    }
+
+    if (signal.signalType === 'promotion_verified') {
+      const verificationStatus = stringValue(signal.evidence?.['verificationStatus'], 'unknown')
+      const modifier = verificationStatus === 'warning' ? 0.06 : 0.03
+      riskModifier += modifier
+      requiresReplay ||= verificationStatus === 'warning'
+      requiresIndependentAudit ||= verificationStatus === 'warning'
+      reasons.push(`verified promotion ${verificationStatus}`)
+    }
+  }
+
+  const cappedModifier = Math.min(0.3, Number(riskModifier.toFixed(2)))
+  return {
+    retainedSignals: signals.length,
+    riskModifier: cappedModifier,
+    requiresReplay,
+    requiresIndependentAudit,
+    signalIds: signals.map((signal) => signal.id),
+    reasons: reasons.slice(0, 5),
+  }
+}
+
+function applyRiskModifier(baseRiskScore: number, modifier: number): number {
+  return Math.min(1, Number((baseRiskScore + Math.max(0, modifier)).toFixed(2)))
+}
+
 function buildReason(input: {
   daysSinceLastRun: number
   failureRate: number
   timeoutRate: number
   hasNeverRun: boolean
+  l5SignalPolicy?: L5SignalPolicyImpact
 }): string {
-  if (input.hasNeverRun) return 'Scenario has no completed execution history.'
-  const parts = [`last run ${input.daysSinceLastRun} day(s) ago`]
+  const parts = input.hasNeverRun
+    ? ['Scenario has no completed execution history']
+    : [`last run ${input.daysSinceLastRun} day(s) ago`]
   if (input.failureRate > 0) parts.push(`failure rate ${(input.failureRate * 100).toFixed(0)}%`)
   if (input.timeoutRate > 0) parts.push(`timeout rate ${(input.timeoutRate * 100).toFixed(0)}%`)
+  if (input.l5SignalPolicy && input.l5SignalPolicy.retainedSignals > 0) {
+    parts.push(
+      `L5 retained signals ${input.l5SignalPolicy.retainedSignals} (+${input.l5SignalPolicy.riskModifier.toFixed(2)})`,
+    )
+  }
   return parts.join('; ')
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.length > 0 ? value : fallback
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }

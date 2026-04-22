@@ -188,6 +188,13 @@ export class L5ClosedLoopService {
       details: {
         queuedScenarios: scenarios.length,
         consideredScenarios: queue.length,
+        l5SignalPolicies: queue.map((item) => ({
+          scenarioId: item.scenarioId,
+          retainedSignals: item.l5SignalPolicy.retainedSignals,
+          riskModifier: item.l5SignalPolicy.riskModifier,
+          requiresReplay: item.l5SignalPolicy.requiresReplay,
+          requiresIndependentAudit: item.l5SignalPolicy.requiresIndependentAudit,
+        })),
       },
     })
 
@@ -399,6 +406,9 @@ export class L5ClosedLoopService {
         scenarioDrafts,
         pendingReviews,
         retainedLearningSignals: learningSignals.retained,
+        l5PolicyReplayRequired: queue.some((item) => item.l5SignalPolicy.requiresReplay),
+        l5PolicyIndependentAuditRequired: queue.some((item) => item.l5SignalPolicy.requiresIndependentAudit),
+        l5PolicyMaxRiskModifier: Math.max(0, ...queue.map((item) => item.l5SignalPolicy.riskModifier)),
         independentAuditVerdict: independentAudit.verdict,
         independentAuditFindings: independentAudit.summary.findings,
         independentAuditedSessions: independentAudit.summary.auditedSessions,

@@ -472,6 +472,15 @@ export interface Phase2ClosedLoopStatusResponse {
     suggestedFrequency: 'every_commit' | 'daily' | 'weekly' | 'on_demand'
     lastRunAt: string | null
     riskScore: number
+    baseRiskScore: number
+    l5SignalPolicy: {
+      retainedSignals: number
+      riskModifier: number
+      requiresReplay: boolean
+      requiresIndependentAudit: boolean
+      signalIds: string[]
+      reasons: string[]
+    }
     queueId: string
     position: number
     status: 'queued' | 'blocked'

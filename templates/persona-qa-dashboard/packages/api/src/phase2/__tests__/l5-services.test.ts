@@ -9,7 +9,7 @@ import { L5ClosedLoopService } from '../services/l5-closed-loop-service.js'
 import { L5LoopGuardService } from '../services/l5-loop-guard-service.js'
 import { L5MaterializationService } from '../services/l5-materialization-service.js'
 import { LearningControlService } from '../services/learning-control-service.js'
-import { calculateRiskScore, MetaOrchestrator } from '../services/meta-orchestrator.js'
+import { calculateRiskScore, evaluateL5SignalPolicy, MetaOrchestrator } from '../services/meta-orchestrator.js'
 import { ProfileTuningService } from '../services/profile-tuning-service.js'
 import { SelfHealingService } from '../services/self-healing-service.js'
 import { SessionService } from '../services/session-service.js'
@@ -206,12 +206,39 @@ describe('L5 controlled feedback services', () => {
       durationMs: 1_000,
       errorMessage: 'timeout',
     })
+    const signal = service.recordL5LearningSignal({
+      sourceType: 'independent_audit_review',
+      sourceId: 'review-schedule-risk',
+      signalType: 'audit_reviewed',
+      sourceRunId: 'loop-schedule-risk',
+      scenarioId: 'first_order',
+      version: 'review:review-schedule-risk',
+      confidence: 0.8,
+      summary: 'Reviewed warning should increase schedule priority.',
+      evidence: {
+        auditVerdict: 'warning',
+        findingCount: 1,
+      },
+    })
 
     const recommendations = new MetaOrchestrator(service).recommendSchedule()
     expect(recommendations[0]?.scenarioId).toBeTruthy()
     expect(recommendations[0]?.riskScore).toBeGreaterThan(0)
+    const scenarioRecommendation = recommendations.find((item) => item.scenarioId === 'first_order')
+    expect(scenarioRecommendation).toEqual(expect.objectContaining({
+      baseRiskScore: expect.any(Number),
+      l5SignalPolicy: expect.objectContaining({
+        retainedSignals: 1,
+        riskModifier: 0.12,
+        requiresReplay: true,
+        requiresIndependentAudit: true,
+        signalIds: [signal.id],
+      }),
+    }))
+    expect(scenarioRecommendation!.riskScore).toBeGreaterThan(scenarioRecommendation!.baseRiskScore)
+    expect(scenarioRecommendation!.reason).toContain('L5 retained signals 1')
 
-    const queue = new MetaOrchestrator(service).buildGovernedRunQueue(3)
+    const queue = new MetaOrchestrator(service).buildGovernedRunQueue(50)
     expect(queue[0]).toEqual(expect.objectContaining({
       position: 1,
       status: 'queued',
@@ -220,6 +247,82 @@ describe('L5 controlled feedback services', () => {
         status: 'open',
       }),
     }))
+    expect(queue.find((item) => item.scenarioId === 'first_order')?.l5SignalPolicy).toEqual(expect.objectContaining({
+      requiresReplay: true,
+      riskModifier: 0.12,
+    }))
+  })
+
+  it('caps retained L5 learning signal risk policy and ignores superseded signals', () => {
+    const service = new SessionService(':memory:')
+    service.recordL5LearningSignal({
+      sourceType: 'independent_audit_review',
+      sourceId: 'review-old',
+      signalType: 'audit_reviewed',
+      sourceRunId: 'loop-policy-cap',
+      scenarioId: 'first_order',
+      version: 'review:old',
+      confidence: 0.5,
+      summary: 'Old superseded signal.',
+      evidence: { auditVerdict: 'failed', findingCount: 10 },
+    })
+    service.recordL5LearningSignal({
+      sourceType: 'independent_audit_review',
+      sourceId: 'review-new',
+      signalType: 'audit_reviewed',
+      sourceRunId: 'loop-policy-cap',
+      scenarioId: 'first_order',
+      version: 'review:new',
+      confidence: 0.9,
+      summary: 'New retained signal.',
+      evidence: { auditVerdict: 'failed', findingCount: 3 },
+    })
+    service.recordL5LearningSignal({
+      sourceType: 'knowledge_promotion',
+      sourceId: 'promotion-warning',
+      signalType: 'promotion_verified',
+      sourceRunId: 'loop-policy-promotion',
+      scenarioId: 'first_order',
+      stepId: 'create_customer',
+      agentId: 'sales-associate',
+      version: 'promotion:warning',
+      confidence: 0.75,
+      summary: 'Verified with warning.',
+      evidence: { verificationStatus: 'warning' },
+    })
+    service.recordL5LearningSignal({
+      sourceType: 'knowledge_promotion',
+      sourceId: 'promotion-passed',
+      signalType: 'promotion_verified',
+      sourceRunId: 'loop-policy-passed',
+      scenarioId: 'first_order',
+      stepId: 'schedule_order',
+      agentId: 'sales-associate',
+      version: 'promotion:passed',
+      confidence: 1,
+      summary: 'Verified as passed.',
+      evidence: { verificationStatus: 'passed' },
+    })
+
+    const retained = service.listL5LearningSignals({
+      scenarioId: 'first_order',
+      status: 'retained',
+      limit: 10,
+    })
+    const policy = evaluateL5SignalPolicy(retained)
+
+    expect(retained).toHaveLength(3)
+    expect(policy).toEqual(expect.objectContaining({
+      retainedSignals: 3,
+      riskModifier: 0.27,
+      requiresReplay: true,
+      requiresIndependentAudit: true,
+    }))
+    expect(policy.reasons).toEqual(expect.arrayContaining([
+      'reviewed audit failed with 3 finding(s)',
+      'verified promotion warning',
+      'verified promotion passed',
+    ]))
   })
 
   it('reports formal circuit breaker status for every L5 loop', () => {
@@ -253,6 +356,20 @@ describe('L5 controlled feedback services', () => {
         errorMessage: 'form validation failed',
       })
     }
+    service.recordL5LearningSignal({
+      sourceType: 'independent_audit_review',
+      sourceId: 'review-loop-policy',
+      signalType: 'audit_reviewed',
+      sourceRunId: 'loop-loop-policy',
+      scenarioId: 'first_order',
+      version: 'review:loop-policy',
+      confidence: 0.8,
+      summary: 'Reviewed warning should require replay in closed-loop policy.',
+      evidence: {
+        auditVerdict: 'warning',
+        findingCount: 1,
+      },
+    })
 
     const loop = await new L5ClosedLoopService(service).runOnce({
       scenarioId: 'first_order',
@@ -272,7 +389,33 @@ describe('L5 controlled feedback services', () => {
       summary: expect.objectContaining({
         generatedProposals: expect.any(Number),
         pendingReviews: expect.any(Number),
+        retainedLearningSignals: 1,
+        l5PolicyReplayRequired: true,
+        l5PolicyIndependentAuditRequired: true,
+        l5PolicyMaxRiskModifier: 0.12,
         independentAuditVerdict: 'warning',
+      }),
+    }))
+    expect(loop.metadata?.queue).toEqual([
+      expect.objectContaining({
+        scenarioId: 'first_order',
+        l5SignalPolicy: expect.objectContaining({
+          retainedSignals: 1,
+          requiresReplay: true,
+        }),
+      }),
+    ])
+    expect(loop.metadata?.lifecycle).toContainEqual(expect.objectContaining({
+      type: 'loop_completed',
+      loop: 'meta_orchestration',
+      details: expect.objectContaining({
+        l5SignalPolicies: [
+          expect.objectContaining({
+            scenarioId: 'first_order',
+            retainedSignals: 1,
+            requiresReplay: true,
+          }),
+        ],
       }),
     }))
     expect(Number(loop.summary.generatedProposals)).toBeGreaterThan(0)

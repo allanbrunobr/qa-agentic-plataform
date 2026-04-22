@@ -661,6 +661,9 @@ export function Overview() {
               <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
                 {closedLoop?.queue.filter((item) => item.status === 'queued').length ?? 0}
               </p>
+              <p className="mt-1 truncate text-xs text-[var(--text-muted)]">
+                L5 replay {closedLoop?.queue.filter((item) => item.l5SignalPolicy.requiresReplay).length ?? 0}
+              </p>
             </div>
             <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
               <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Ações</p>
