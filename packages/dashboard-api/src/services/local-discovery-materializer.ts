@@ -47,6 +47,10 @@ interface MaterializedCapability {
 interface RuntimePlan {
   loginEntryPoint: string
   providers: string[]
+  repositoryKind?: string
+  runtimeMode: 'browser_model' | 'deterministic_non_browser'
+  requiresBrowser: boolean
+  requiresAnthropicModel: boolean
   routeCoverage: Array<{
     routeId: string
     path: string
@@ -424,10 +428,17 @@ function buildRuntimePlan(input: {
   routes: MaterializedRoute[]
   capabilities: MaterializedCapability[]
   scenarios: MaterializedScenario[]
+  repositoryKind?: string
 }): RuntimePlan {
+  const requiresBrowser = !input.repositoryKind || input.repositoryKind === 'frontend'
+
   return {
     loginEntryPoint: input.auth.loginEntryPoint,
     providers: input.auth.detectedProviders,
+    repositoryKind: input.repositoryKind,
+    runtimeMode: requiresBrowser ? 'browser_model' : 'deterministic_non_browser',
+    requiresBrowser,
+    requiresAnthropicModel: requiresBrowser,
     routeCoverage: input.routes.map((route) => ({
       routeId: route.id,
       path: route.path,
@@ -818,7 +829,13 @@ export async function materializeLocalDiscovery(input: {
   }))
 
   const scenarios = buildMaterializedScenarios(normalizedDraft.scenarios)
-  const runtimePlan = buildRuntimePlan({ auth, routes, capabilities, scenarios })
+  const runtimePlan = buildRuntimePlan({
+    auth,
+    routes,
+    capabilities,
+    scenarios,
+    repositoryKind: normalizedReport.repository?.kind,
+  })
   const authRuntimeStub = buildAuthRuntimeStub(auth)
   const capabilityRuntimeStub = buildCapabilityRuntimeStub(capabilities)
   const assertionsRuntimeStub = buildAssertionsStub(scenarios)
