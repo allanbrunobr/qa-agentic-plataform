@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createAnthropicProvider } from '../providers/anthropic-provider.js'
+import { createDeterministicProvider } from '../providers/deterministic-provider.js'
 import { listProfiles } from '../profiles/agent-profiles.js'
 import { artifactSensor } from '../sensors/artifact-sensor.js'
 import { outputSensor } from '../sensors/output-sensor.js'
@@ -14,7 +15,9 @@ import { SessionService } from './session-service.js'
 import { getSessionService, setSessionService } from '../routes/sessions.js'
 import { ToolRegistry } from './tool-registry.js'
 import { registerEvidenceTools } from '../tools/evidence-tools.js'
+import { registerGeneratedAdapterTools } from '../tools/generated-adapter-tools.js'
 import { registerWorkflowTools } from '../tools/workflow-tools.js'
+import type { ModelProvider } from '../types/agent-types.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -23,6 +26,8 @@ const API_PACKAGE_ROOT = path.resolve(__dirname, '../../..')
 export interface Phase2RuntimeOptions {
   dbPath?: string
   model?: string
+  provider?: ModelProvider
+  deterministic?: boolean
 }
 
 export function createPhase2Runtime(options: Phase2RuntimeOptions = {}) {
@@ -37,11 +42,15 @@ export function createPhase2Runtime(options: Phase2RuntimeOptions = {}) {
   const toolRegistry = new ToolRegistry()
 
   registerWorkflowTools(toolRegistry)
+  registerGeneratedAdapterTools(toolRegistry)
   registerEvidenceTools(toolRegistry, sessionService)
 
   const profiles = listProfiles()
   const primaryPersona = profiles.find((profile) => profile.role !== 'orchestrator')
-  const provider = createAnthropicProvider(options.model ?? primaryPersona?.model ?? 'claude-sonnet-4-6')
+  const provider = options.provider
+    ?? (options.deterministic
+      ? createDeterministicProvider()
+      : createAnthropicProvider(options.model ?? primaryPersona?.model ?? 'claude-sonnet-4-6'))
   const agentRuntime = new AgentRuntime(provider, toolRegistry, sessionService)
   const sensorRunner = new SensorRunner()
 

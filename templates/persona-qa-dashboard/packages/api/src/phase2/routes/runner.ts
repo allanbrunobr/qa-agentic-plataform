@@ -5,6 +5,10 @@ import { dump } from 'js-yaml'
 import { listScenarios, loadScenario } from '../scenarios/index.js'
 import { buildScenarioQualityGateForSessions } from '../services/scenario-quality-gates.js'
 import { createPhase2Runtime } from '../services/runtime-bootstrap.js'
+import {
+  isGeneratedNonFrontendRuntime,
+  resolveGeneratedTargetRepoPath,
+} from '../services/generated-adapter-runtime.js'
 import { getSessionService } from './sessions.js'
 import { validateAnthropicApiKey } from '../providers/anthropic-provider.js'
 
@@ -74,14 +78,16 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
       })
     }
 
-    if (!process.env.ANTHROPIC_API_KEY) {
+    const useDeterministicRuntime = isGeneratedNonFrontendRuntime()
+
+    if (!useDeterministicRuntime && !process.env.ANTHROPIC_API_KEY) {
       return reply.status(503).send({
         error: 'missing_anthropic_api_key',
         message: 'ANTHROPIC_API_KEY is required to start an agentic run from the dashboard.',
       })
     }
 
-    if (process.env.STRICT_ANTHROPIC_VALIDATION === '1') {
+    if (!useDeterministicRuntime && process.env.STRICT_ANTHROPIC_VALIDATION === '1') {
       const anthropicValidation = await validateAnthropicApiKey(process.env.ANTHROPIC_API_KEY ?? '')
       if (!anthropicValidation.ok) {
         return reply.status(503).send({
@@ -107,7 +113,7 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
     const uniqueSuffix = Date.now().toString().slice(-6)
     const customerName = parsed.data.customer_name ?? `Maria Agentic ${uniqueSuffix}`
 
-    const runtime = createPhase2Runtime()
+    const runtime = createPhase2Runtime({ deterministic: useDeterministicRuntime })
     const session = runtime.sessionService.createSession(scenario.id)
 
     void (async () => {
@@ -115,6 +121,14 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
       let page: { close(): Promise<void> } | null = null
 
       try {
+        if (useDeterministicRuntime) {
+          await runtime.orchestrator.executeRunInSession(session.id, scenario, {
+            targetRepoPath: resolveGeneratedTargetRepoPath(),
+            runtimeMode: 'generated_non_browser',
+          })
+          return
+        }
+
         const { chromium } = await import('@playwright/test')
         browser = await chromium.launch({ headless: process.env.HEADLESS !== 'false' })
         page = await browser.newPage({ baseURL: baseUrl })

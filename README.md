@@ -34,8 +34,11 @@ The platform currently supports two layers:
 5. copy host operational knowledge into `adapter/runtime/host-source-snapshot/`
 6. start a local dashboard runtime
 7. execute browser-driven flows with Playwright against the configured target frontend
+8. execute deterministic non-browser smoke flows for backend API, CLI, library, monorepo, and unknown repository shapes
 
 Frontend adapters can be promoted to runnable Playwright flows after host credentials, routes, and capabilities are mapped. Backend API, CLI, library, and unknown repository adapters are generated as draft adapters first: AP classifies the repository, creates initial personas/scenarios/capability stubs, and marks browser login as not applicable until runtime-specific execution is mapped.
+
+For non-frontend repositories, the generated dashboard can start without Chromium or Anthropic. Runs use deterministic tools that inspect the repository, execute safe CLI/API probes when explicit runtime configuration exists, and otherwise produce dry-run artifacts that make the missing mapping visible.
 
 The generated `.agentic-qa` is isolated from the host runtime itself. It orchestrates runs and observations, while the actual product under test remains the target pointed to by runtime configuration such as `PLAYWRIGHT_BASE_URL` for web flows.
 
@@ -50,8 +53,10 @@ AGENTIC_QA_TEMPLATE_ROOT=/absolute/path/to/persona-qa-dashboard
 At the moment, the platform expects these inputs from the operator:
 
 - target repository path
-- Anthropic API key from one of the supported sources
+- Anthropic API key from one of the supported sources when running browser/model-backed frontend flows
 - target frontend base URL through `PLAYWRIGHT_BASE_URL` when running web flows
+- API base URL through `GENERIC_API_BASE_URL`, `TARGET_API_BASE_URL`, or `API_BASE_URL` when running real backend API probes
+- CLI command through `GENERIC_CLI_COMMAND` or `TARGET_CLI_COMMAND` when the package `bin` entry is not enough
 - application credentials for the host under test when the adapter cannot infer them from existing host runtime knowledge
 
 Anthropic key resolution order:
@@ -75,7 +80,7 @@ For frontend repositories, that means:
 - UI-driven capabilities
 - route and screen discovery
 
-For backend API, CLI, library, monorepo, and unknown repositories, AP now performs deterministic classification and draft adapter generation. Those drafts intentionally do not claim runnable execution until the repository-specific runtime, commands, auth, seed data, and assertions are mapped.
+For backend API, CLI, library, monorepo, and unknown repositories, AP now performs deterministic classification, draft adapter generation, and non-browser smoke execution. These runs prove that the generated personas/scenarios/contracts can execute, but they remain smoke/inspection runs until repository-specific runtime URLs, commands, auth, seed data, and assertions are mapped.
 
 ## Repository Layout
 
@@ -97,7 +102,8 @@ For backend API, CLI, library, monorepo, and unknown repositories, AP now perfor
 ## Key Behaviors In This Baseline
 
 - generated package patches native SQLite usage for local installation stability
-- generated package installs Playwright and required browser support automatically
+- generated package installs Playwright and required browser support automatically for frontend/browser runtimes
+- generated package skips Playwright and required Anthropic validation for non-frontend deterministic runtimes
 - generated package writes `.env.example`
 - generated package writes `.env.local` when a key source is available, and can validate it when network access is available
 - strict model credential validation is opt-in through `STRICT_ANTHROPIC_VALIDATION=1`
@@ -161,6 +167,7 @@ A passing run prints:
 [verify-release] PASS web: release vitest
 [verify-release] PASS web: build
 [verify-generic-repository-types] PASS generic repository type install/discovery verification
+[verify-generic-runtime-execution] PASS generic repository deterministic runtime verification
 [verify-install-local] PASS tmp=...
 [verify-install-local] PASS dashboard=http://localhost:<port>
 [verify-install-local] PASS session=...
@@ -173,4 +180,4 @@ Run real target integration only when the selected local or remote environment i
 
 This baseline must continue to work for a real frontend host flow while broader repository generalization evolves.
 
-Do not mark backend/API/CLI/library adapters as runnable until their generated draft capabilities are mapped to real execution commands and assertions. The generic repository verification only proves classification and draft materialization.
+Do not mark backend/API/CLI/library adapters as product-validating until their generated draft capabilities are mapped to real execution commands, environment, credentials, seed data, and assertions. The generic repository runtime verification proves classification, materialization, and deterministic adapter execution; it does not prove business correctness of an unmapped target.

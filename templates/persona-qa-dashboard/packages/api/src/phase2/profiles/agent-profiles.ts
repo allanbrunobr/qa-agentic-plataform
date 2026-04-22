@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AgentProfile, AgentRole } from '../types/agent-types.js'
+import { isGeneratedNonFrontendRuntime } from '../services/generated-adapter-runtime.js'
 
 interface AdapterPersonaModel {
   id: string
@@ -145,6 +146,8 @@ function readGeneratedPersonas(): AdapterPersonaModel[] {
 }
 
 function profileFromGeneratedPersona(persona: AdapterPersonaModel): AgentProfile {
+  const nonFrontendRuntime = isGeneratedNonFrontendRuntime()
+
   return {
     role: persona.id,
     name: persona.title,
@@ -152,11 +155,13 @@ function profileFromGeneratedPersona(persona: AdapterPersonaModel): AgentProfile
     timeoutMs: 120_000,
     retryPolicy: { maxAttempts: 2, backoffMs: 1000 },
     toolPolicy: {
-      browserAccess: true,
+      browserAccess: !nonFrontendRuntime,
+      api: nonFrontendRuntime || undefined,
+      file: nonFrontendRuntime || undefined,
       allowedTools: persona.allowedCapabilities?.length ? persona.allowedCapabilities : undefined,
     },
     evidencePolicy: {
-      requireScreenshotForFinding: true,
+      requireScreenshotForFinding: !nonFrontendRuntime,
       requireDomSnippetForFinding: false,
     },
     canBlockRun: false,
