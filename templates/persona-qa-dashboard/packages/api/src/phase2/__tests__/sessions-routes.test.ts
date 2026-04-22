@@ -268,6 +268,26 @@ describe('Phase 2 Session Routes', () => {
         current: 1,
       }));
 
+      const queue = await app.inject({ method: 'GET', url: '/api/p2/closed-loop/audit-review-queue' });
+      expect(queue.statusCode).toBe(200);
+      expect(queue.json()).toContainEqual(expect.objectContaining({
+        runId: run.id,
+        verdict: 'failed',
+        findingCount: 1,
+      }));
+
+      const missingReason = await app.inject({
+        method: 'POST',
+        url: `/api/p2/closed-loop/runs/${run.id}/independent-audit/review`,
+        payload: {
+          actor: 'qa_lead',
+        },
+      });
+      expect(missingReason.statusCode).toBe(400);
+      expect(missingReason.json()).toEqual(expect.objectContaining({
+        error: 'Independent audit review reason is required',
+      }));
+
       const review = await app.inject({
         method: 'POST',
         url: `/api/p2/closed-loop/runs/${run.id}/independent-audit/review`,
@@ -302,6 +322,119 @@ describe('Phase 2 Session Routes', () => {
       expect(reviews.json()).toContainEqual(expect.objectContaining({
         runId: run.id,
         status: 'reviewed',
+      }));
+
+      const releasedQueue = await app.inject({ method: 'GET', url: '/api/p2/closed-loop/audit-review-queue' });
+      expect(releasedQueue.statusCode).toBe(200);
+      expect(releasedQueue.json()).not.toContainEqual(expect.objectContaining({
+        runId: run.id,
+      }));
+    });
+
+    it('should block knowledge promotion until source independent audit is reviewed', async () => {
+      const proposal = sessionService.createLearningProposal({
+        recommendationId: 'promotion-audit-gate',
+        scenarioId: 'test_scenario',
+        stepId: 'step_1',
+        agentId: 'sales-associate',
+        type: 'prompt_patch',
+        severity: 'medium',
+        recommendation: { reason: 'audit gate test' },
+        patchKind: 'prompt_overlay',
+        target: 'agent:sales-associate',
+        patchContent: '[LEARNING OVERLAY]',
+      });
+      const run = sessionService.recordL5ClosedLoopRun({
+        status: 'needs_review',
+        mode: 'observe',
+        scenarioId: 'test_scenario',
+        queuedScenarios: ['test_scenario'],
+        actions: [{ type: 'learning_proposal_generated', proposalId: proposal.id }],
+        verification: {
+          independentAudit: {
+            agentRole: 'auditor',
+            verdict: 'warning',
+            checkedAt: '2026-04-20T18:00:00.000Z',
+            sessionAudits: [],
+            findings: [{ severity: 'warning', code: 'manual_review_required' }],
+            summary: { findings: 1, auditedSessions: 0 },
+          },
+        },
+        summary: {
+          pendingReviews: 1,
+          independentAuditVerdict: 'warning',
+        },
+      });
+      const candidate = {
+        id: `learning_proposal:${proposal.id}:abc123def456`,
+        sourceRunId: run.id,
+        subjectType: 'learning_proposal',
+        subjectId: proposal.id,
+        promotionType: 'learning_overlay',
+        status: 'requires_review',
+        version: 'abc123def4567890abc123def4567890abc123def4567890abc123def4567890',
+        title: 'Prompt patch for step_1',
+        target: 'agent:sales-associate',
+        reason: 'Promotion audit gate test.',
+        approvalRequired: true,
+        materializationReady: false,
+        nextAction: 'approve',
+        evidence: {
+          scenarioId: 'test_scenario',
+          stepId: 'step_1',
+        },
+      };
+
+      const blocked = await app.inject({
+        method: 'POST',
+        url: '/api/p2/knowledge/promotions/actions',
+        payload: {
+          candidate,
+          actor: 'qa_lead',
+        },
+      });
+      expect(blocked.statusCode).toBe(409);
+      expect(blocked.json()).toEqual(expect.objectContaining({
+        error: expect.stringContaining('must be reviewed before promotion'),
+        promotionEvent: expect.objectContaining({
+          status: 'blocked',
+          result: expect.objectContaining({
+            gate: expect.objectContaining({
+              allowed: false,
+              verdict: 'warning',
+            }),
+          }),
+        }),
+      }));
+
+      sessionService.recordL5IndependentAuditReview({
+        runId: run.id,
+        status: 'reviewed',
+        actor: 'qa_lead',
+        reason: 'Warning accepted for promotion gate route test.',
+      });
+
+      const allowed = await app.inject({
+        method: 'POST',
+        url: '/api/p2/knowledge/promotions/actions',
+        payload: {
+          candidate,
+          actor: 'qa_lead',
+        },
+      });
+      expect(allowed.statusCode).toBe(201);
+      expect(allowed.json()).toEqual(expect.objectContaining({
+        event: expect.objectContaining({
+          status: 'completed',
+          action: 'approve',
+        }),
+        result: expect.objectContaining({
+          postPromotionVerification: expect.objectContaining({
+            checks: expect.arrayContaining([
+              expect.objectContaining({ id: 'source_run_audit_review_gate', status: 'passed' }),
+            ]),
+          }),
+        }),
       }));
     });
 
@@ -375,6 +508,7 @@ describe('Phase 2 Session Routes', () => {
           postPromotionVerification: expect.objectContaining({
             status: 'passed',
             checks: expect.arrayContaining([
+              expect.objectContaining({ id: 'source_run_audit_review_gate', status: 'passed' }),
               expect.objectContaining({ id: 'allowed_governance_decision', status: 'passed' }),
               expect.objectContaining({ id: 'learning_proposal_approved', status: 'passed' }),
             ]),

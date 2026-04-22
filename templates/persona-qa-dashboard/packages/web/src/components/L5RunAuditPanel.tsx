@@ -1,9 +1,12 @@
+import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/Card'
 import type {
   Phase2ClosedLoopAuditBundle,
   Phase2ClosedLoopLifecycleEvent,
   Phase2ClosedLoopRun,
   Phase2GovernanceDecision,
+  Phase2IndependentAuditReview,
+  Phase2IndependentAuditReviewQueueItem,
   Phase2KnowledgePromotionEvent,
 } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
@@ -19,6 +22,8 @@ interface L5RunAuditPanelProps {
   promotionEvents?: Phase2KnowledgePromotionEvent[]
   promotionActionPendingId?: string | null
   promotionActionError?: string | null
+  auditReviews?: Phase2IndependentAuditReview[]
+  auditReviewQueue?: Phase2IndependentAuditReviewQueueItem[]
   auditReviewPendingRunId?: string | null
   auditReviewError?: string | null
   replayLoading?: boolean
@@ -26,7 +31,7 @@ interface L5RunAuditPanelProps {
   onLoadReplayPreview?: () => void
   onRunSafeReplay?: () => void
   onRunPromotionAction?: (candidate: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number]) => void
-  onReviewIndependentAudit?: (run: Phase2ClosedLoopRun) => void
+  onReviewIndependentAudit?: (run: Phase2ClosedLoopRun, reason: string) => void
   guards?: Array<{
     loop: string
     status: 'open' | 'blocked'
@@ -48,6 +53,8 @@ export function L5RunAuditPanel({
   promotionEvents = [],
   promotionActionPendingId,
   promotionActionError,
+  auditReviews = [],
+  auditReviewQueue = [],
   auditReviewPendingRunId,
   auditReviewError,
   replayLoading = false,
@@ -86,6 +93,11 @@ export function L5RunAuditPanel({
   const independentAuditFindings = numberValue(independentAuditSummary['findings'])
   const independentAuditedSessions = numberValue(independentAuditSummary['auditedSessions'])
   const independentAuditReviewable = independentAuditVerdict === 'failed' || independentAuditVerdict === 'warning'
+  const selectedRunReviews = auditReviews.filter((review) => review.runId === selectedRun.id)
+  const selectedRunReviewed = selectedRunReviews.some((review) => review.status === 'reviewed')
+  const promotionBlockedReason = independentAuditReviewable && !selectedRunReviewed
+    ? 'Revise a auditoria independente desta run antes de promover conhecimento.'
+    : null
   const blockedGuards = guards.filter((guard) => guard.status === 'blocked').length
   const pendingReviews = numberValue(selectedRun.summary['pendingReviews'])
   const rerunRequired = selectedRun.verification['rerunRequired'] === true
@@ -96,6 +108,12 @@ export function L5RunAuditPanel({
 
       <RunHistory
         runs={auditRuns}
+        selectedRunId={selectedRun.id}
+        onSelectRun={onSelectRun}
+      />
+
+      <IndependentAuditReviewQueue
+        queue={auditReviewQueue}
         selectedRunId={selectedRun.id}
         onSelectRun={onSelectRun}
       />
@@ -113,6 +131,7 @@ export function L5RunAuditPanel({
         events={promotionEvents}
         actionPendingId={promotionActionPendingId}
         actionError={promotionActionError}
+        blockedReason={promotionBlockedReason}
         onRunPromotionAction={onRunPromotionAction}
       />
 
@@ -154,6 +173,7 @@ export function L5RunAuditPanel({
             <IndependentAuditReviewAction
               run={selectedRun}
               verdict={independentAuditVerdict}
+              reviews={selectedRunReviews}
               pending={auditReviewPendingRunId === selectedRun.id}
               error={auditReviewError}
               onReviewIndependentAudit={onReviewIndependentAudit}
@@ -200,33 +220,117 @@ export function L5RunAuditPanel({
 function IndependentAuditReviewAction({
   run,
   verdict,
+  reviews,
   pending,
   error,
   onReviewIndependentAudit,
 }: {
   run: Phase2ClosedLoopRun
   verdict: string
+  reviews: Phase2IndependentAuditReview[]
   pending: boolean
   error?: string | null
-  onReviewIndependentAudit?: (run: Phase2ClosedLoopRun) => void
+  onReviewIndependentAudit?: (run: Phase2ClosedLoopRun, reason: string) => void
 }) {
+  const [reason, setReason] = useState('')
+  const latestReview = reviews[0]
+
+  useEffect(() => {
+    setReason('')
+  }, [run.id])
+
+  if (latestReview) {
+    return (
+      <div className="mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-emerald-100">
+            Auditoria revisada por {latestReview.actor ?? 'operador'}: {latestReview.reason ?? 'sem motivo registrado'}
+          </p>
+          <time className="text-[11px] text-emerald-200">{formatRelativeTime(latestReview.createdAt)}</time>
+        </div>
+      </div>
+    )
+  }
+
+  const reasonReady = reason.trim().length > 0
+
   return (
     <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="grid gap-3">
         <p className="text-xs text-amber-100">
           Auditoria independente {verdict}; registre a revisão para liberar o circuit breaker L5.
         </p>
-        <button
-          type="button"
-          disabled={!onReviewIndependentAudit || pending}
-          onClick={() => onReviewIndependentAudit?.(run)}
-          className="shrink-0 rounded-md border border-amber-400/60 bg-amber-400/10 px-3 py-2 text-xs font-medium text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {pending ? 'Registrando...' : 'Marcar auditoria revisada'}
-        </button>
+        <textarea
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Motivo da revisão"
+          rows={2}
+          className="w-full rounded-md border border-amber-400/30 bg-[var(--bg-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-amber-300"
+        />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[11px] text-amber-100/80">Motivo obrigatório para manter rastreabilidade operacional.</p>
+          <button
+            type="button"
+            disabled={!onReviewIndependentAudit || pending || !reasonReady}
+            onClick={() => onReviewIndependentAudit?.(run, reason.trim())}
+            className="shrink-0 rounded-md border border-amber-400/60 bg-amber-400/10 px-3 py-2 text-xs font-medium text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {pending ? 'Registrando...' : 'Marcar auditoria revisada'}
+          </button>
+        </div>
       </div>
       {error ? <p className="mt-2 text-xs text-red-300">{error}</p> : null}
     </div>
+  )
+}
+
+function IndependentAuditReviewQueue({
+  queue,
+  selectedRunId,
+  onSelectRun,
+}: {
+  queue: Phase2IndependentAuditReviewQueueItem[]
+  selectedRunId: string
+  onSelectRun?: (runId: string) => void
+}) {
+  if (queue.length === 0) return null
+
+  return (
+    <section className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+      <SectionHeader title="Fila de revisão L5" detail={`${queue.length} auditoria(s)`} />
+      <div className="grid gap-2 lg:grid-cols-2">
+        {queue.slice(0, 6).map((item) => (
+          <button
+            key={item.runId}
+            type="button"
+            onClick={() => onSelectRun?.(item.runId)}
+            disabled={!onSelectRun || item.runId === selectedRunId}
+            className={`rounded-md border px-3 py-2 text-left transition disabled:cursor-default ${
+              item.runId === selectedRunId
+                ? 'border-amber-300 bg-amber-400/20'
+                : 'border-amber-500/30 bg-[var(--bg-primary)] hover:border-amber-300'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-xs font-medium text-amber-100">
+                  {item.scenarioId?.replace(/_/g, ' ') ?? item.runId.slice(0, 8)}
+                </p>
+                <p className="mt-1 truncate text-[11px] text-amber-100/70">
+                  {item.findingCount} finding(s) / {item.auditedSessions} sessão(ões)
+                </p>
+              </div>
+              <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] uppercase ${auditVerdictClass(item.verdict)}`}>
+                {item.verdict}
+              </span>
+            </div>
+            <p className="mt-2 line-clamp-2 text-[11px] text-amber-100/70">
+              {item.statusReason ?? `Run ${item.status.replace('_', ' ')}`}
+            </p>
+          </button>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -235,12 +339,14 @@ function KnowledgePromotionPanel({
   events,
   actionPendingId,
   actionError,
+  blockedReason,
   onRunPromotionAction,
 }: {
   preview?: Phase2ClosedLoopAuditBundle['promotion'] | null
   events: Phase2KnowledgePromotionEvent[]
   actionPendingId?: string | null
   actionError?: string | null
+  blockedReason?: string | null
   onRunPromotionAction?: (candidate: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number]) => void
 }) {
   const candidates = preview?.candidates ?? []
@@ -258,7 +364,7 @@ function KnowledgePromotionPanel({
                 key={candidate.id}
                 candidate={candidate}
                 pending={actionPendingId === candidate.id}
-                disabled={Boolean(actionPendingId)}
+                disabled={Boolean(actionPendingId) || Boolean(blockedReason)}
                 onRunPromotionAction={onRunPromotionAction}
               />
             ))}
@@ -272,6 +378,7 @@ function KnowledgePromotionPanel({
       {preview?.notes[0] ? (
         <p className="mt-2 text-xs text-[var(--text-muted)]">{preview.notes[0]}</p>
       ) : null}
+      {blockedReason ? <p className="mt-2 text-xs text-amber-200">{blockedReason}</p> : null}
       {actionError ? <p className="mt-2 text-xs text-red-300">{actionError}</p> : null}
       <PromotionEventHistory events={events} />
     </section>
@@ -676,6 +783,13 @@ function auditVerdictTone(verdict: string): 'success' | 'warning' | 'danger' | '
   if (verdict === 'warning') return 'warning'
   if (verdict === 'failed') return 'danger'
   return 'neutral'
+}
+
+function auditVerdictClass(verdict: string) {
+  if (verdict === 'failed') return 'bg-red-500/10 text-red-200'
+  if (verdict === 'warning') return 'bg-amber-500/10 text-amber-200'
+  if (verdict === 'passed') return 'bg-emerald-500/10 text-emerald-200'
+  return 'bg-[var(--bg-secondary)] text-[var(--text-muted)]'
 }
 
 function historyStatusClass(tone: 'success' | 'warning' | 'danger' | 'neutral') {

@@ -333,6 +333,18 @@ export interface Phase2IndependentAuditReview {
   createdAt: string
 }
 
+export interface Phase2IndependentAuditReviewQueueItem {
+  runId: string
+  status: Phase2ClosedLoopRunStatus
+  scenarioId?: string
+  verdict: 'failed' | 'warning'
+  checkedAt?: string
+  findingCount: number
+  auditedSessions: number
+  statusReason?: string
+  completedAt: string
+}
+
 export interface Phase2IndependentAuditReviewResult {
   review: Phase2IndependentAuditReview
   run: Phase2ClosedLoopRun
@@ -559,6 +571,10 @@ export const api = {
   }) =>
     fetchJSON<Phase2IndependentAuditReview[]>(`${API_BASE}/api/p2/closed-loop/audit-reviews?${new URLSearchParams(compactParams({
       runId: params?.runId,
+      limit: params?.limit ? String(params.limit) : undefined,
+    }))}`),
+  getPhase2IndependentAuditReviewQueue: (params?: { limit?: number }) =>
+    fetchJSON<Phase2IndependentAuditReviewQueueItem[]>(`${API_BASE}/api/p2/closed-loop/audit-review-queue?${new URLSearchParams(compactParams({
       limit: params?.limit ? String(params.limit) : undefined,
     }))}`),
   reviewPhase2IndependentAudit: (runId: string, payload?: { actor?: string; reason?: string }) =>

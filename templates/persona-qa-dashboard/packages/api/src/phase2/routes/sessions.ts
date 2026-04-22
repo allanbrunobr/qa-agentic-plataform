@@ -164,6 +164,16 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  app.get<{ Querystring: { limit?: string } }>(
+    '/api/p2/closed-loop/audit-review-queue',
+    async (request, reply) => {
+      const service = getSessionService();
+      return reply.send(service.listL5IndependentAuditReviewQueue({
+        limit: request.query.limit ? Number(request.query.limit) : 25,
+      }));
+    },
+  );
+
   app.get<{ Params: { id: string } }>(
     '/api/p2/closed-loop/runs/:id/audit-bundle',
     async (request, reply) => {
@@ -194,12 +204,18 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
       if (!independentAudit || (verdict !== 'failed' && verdict !== 'warning')) {
         return reply.status(409).send({ error: 'Closed-loop run has no failed or warning independent audit to review' });
       }
+      const reason = typeof request.body?.reason === 'string' ? request.body.reason.trim() : '';
+      if (!reason) {
+        return reply.status(400).send({ error: 'Independent audit review reason is required' });
+      }
 
       const review = service.recordL5IndependentAuditReview({
         runId: run.id,
         status: 'reviewed',
-        actor: request.body?.actor ?? 'dashboard',
-        reason: request.body?.reason ?? `Independent audit ${String(verdict)} reviewed.`,
+        actor: typeof request.body?.actor === 'string' && request.body.actor.trim()
+          ? request.body.actor.trim()
+          : 'dashboard',
+        reason,
         metadata: {
           auditVerdict: verdict,
           auditCheckedAt: typeof independentAudit['checkedAt'] === 'string' ? independentAudit['checkedAt'] : undefined,

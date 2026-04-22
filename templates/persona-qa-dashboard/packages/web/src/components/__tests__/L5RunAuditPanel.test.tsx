@@ -126,9 +126,50 @@ describe('L5RunAuditPanel', () => {
     )
 
     expect(screen.getByText('Auditoria independente failed; registre a revisão para liberar o circuit breaker L5.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Marcar auditoria revisada' })).toBeDisabled()
+    fireEvent.change(screen.getByPlaceholderText('Motivo da revisão'), {
+      target: { value: 'Finding accepted after manual triage.' },
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Marcar auditoria revisada' }))
 
-    expect(onReviewIndependentAudit).toHaveBeenCalledWith(run)
+    expect(onReviewIndependentAudit).toHaveBeenCalledWith(run, 'Finding accepted after manual triage.')
+  })
+
+  it('renders audit review queue and reviewed history', () => {
+    const onSelectRun = vi.fn()
+    const run = closedLoopRun()
+
+    render(
+      <L5RunAuditPanel
+        run={run}
+        auditReviews={[{
+          id: 'review-1',
+          runId: run.id,
+          status: 'reviewed',
+          actor: 'qa_lead',
+          reason: 'Warning reviewed.',
+          createdAt: now,
+        }]}
+        auditReviewQueue={[{
+          runId: 'run-pending',
+          status: 'needs_review',
+          scenarioId: 'quarterly_reorder',
+          verdict: 'warning',
+          findingCount: 2,
+          auditedSessions: 1,
+          statusReason: 'Pending independent audit review.',
+          completedAt: now,
+        }]}
+        onSelectRun={onSelectRun}
+      />,
+    )
+
+    expect(screen.getByText('Fila de revisão L5')).toBeInTheDocument()
+    expect(screen.getByText('quarterly reorder')).toBeInTheDocument()
+    expect(screen.getByText('Auditoria revisada por qa_lead: Warning reviewed.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('quarterly reorder').closest('button')!)
+    expect(onSelectRun).toHaveBeenCalledWith('run-pending')
   })
 
   it('renders safe replay controls from a loaded bundle preview', () => {
@@ -160,6 +201,7 @@ describe('L5RunAuditPanel', () => {
         }}
         promotionPreview={promotion}
         promotionEvents={[promotionEvent()]}
+        auditReviews={[auditReview('run-1')]}
         onLoadReplayPreview={onLoadReplayPreview}
         onRunSafeReplay={onRunSafeReplay}
         onRunPromotionAction={onRunPromotionAction}
@@ -284,6 +326,17 @@ function governanceDecision(): Phase2GovernanceDecision {
     reason: 'Self-healing action permitted by bounded policy.',
     requirements: ['independent_audit', 'bounded_policy'],
     actor: 'self_healing',
+    createdAt: now,
+  }
+}
+
+function auditReview(runId: string) {
+  return {
+    id: `review-${runId}`,
+    runId,
+    status: 'reviewed' as const,
+    actor: 'qa_lead',
+    reason: 'Reviewed for test.',
     createdAt: now,
   }
 }

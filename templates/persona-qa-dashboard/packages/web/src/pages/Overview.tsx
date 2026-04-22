@@ -12,6 +12,8 @@ import {
   type Phase2ClosedLoopSchedulerStatus,
   type Phase2ClosedLoopStatusResponse,
   type Phase2GovernanceDecision,
+  type Phase2IndependentAuditReview,
+  type Phase2IndependentAuditReviewQueueItem,
   type Phase2KnowledgePromotionCandidate,
   type Phase2KnowledgePromotionEvent,
   type Phase2MaturityStatus,
@@ -124,6 +126,8 @@ export function Overview() {
   const [closedLoopReplay, setClosedLoopReplay] = useState<Phase2ClosedLoopAuditBundle['replay'] | null>(null)
   const [closedLoopPromotion, setClosedLoopPromotion] = useState<Phase2ClosedLoopAuditBundle['promotion'] | null>(null)
   const [closedLoopPromotionEvents, setClosedLoopPromotionEvents] = useState<Phase2KnowledgePromotionEvent[]>([])
+  const [closedLoopAuditReviews, setClosedLoopAuditReviews] = useState<Phase2IndependentAuditReview[]>([])
+  const [closedLoopAuditReviewQueue, setClosedLoopAuditReviewQueue] = useState<Phase2IndependentAuditReviewQueueItem[]>([])
   const [closedLoopPromotionActionPendingId, setClosedLoopPromotionActionPendingId] = useState<string | null>(null)
   const [closedLoopPromotionActionError, setClosedLoopPromotionActionError] = useState<string | null>(null)
   const [closedLoopAuditReviewPendingRunId, setClosedLoopAuditReviewPendingRunId] = useState<string | null>(null)
@@ -148,7 +152,17 @@ export function Overview() {
 
     const load = async () => {
       try {
-        const [sessionData, scenarioData, statsData, maturityData, closedLoopData, schedulerData, governanceData] = await Promise.all([
+        const [
+          sessionData,
+          scenarioData,
+          statsData,
+          maturityData,
+          closedLoopData,
+          schedulerData,
+          governanceData,
+          auditReviewData,
+          auditReviewQueueData,
+        ] = await Promise.all([
           api.getPhase2Sessions(),
           api.getPhase2Scenarios(),
           api.getStats(),
@@ -156,6 +170,8 @@ export function Overview() {
           api.getPhase2ClosedLoopStatus().catch(() => null),
           api.getPhase2ClosedLoopSchedulerStatus().catch(() => null),
           api.getPhase2GovernanceDecisions({ limit: 12 }).catch(() => []),
+          api.getPhase2IndependentAuditReviews({ limit: 30 }).catch(() => []),
+          api.getPhase2IndependentAuditReviewQueue({ limit: 12 }).catch(() => []),
         ])
         if (!mounted) return
         setSessions(sessionData)
@@ -165,6 +181,8 @@ export function Overview() {
         setClosedLoop(closedLoopData)
         setClosedLoopScheduler(schedulerData)
         setGovernanceDecisions(governanceData)
+        setClosedLoopAuditReviews(auditReviewData)
+        setClosedLoopAuditReviewQueue(auditReviewQueueData)
         setSelectedClosedLoopRunId((current) => {
           const recentRuns = closedLoopData?.recentRuns ?? []
           if (current && recentRuns.some((candidate) => candidate.id === current)) return current
@@ -459,21 +477,25 @@ export function Overview() {
     }
   }
 
-  const handleReviewIndependentAudit = async (run: Phase2ClosedLoopRun) => {
+  const handleReviewIndependentAudit = async (run: Phase2ClosedLoopRun, reason: string) => {
     if (closedLoopAuditReviewPendingRunId) return
     setClosedLoopAuditReviewPendingRunId(run.id)
     setClosedLoopAuditReviewError(null)
     try {
       await api.reviewPhase2IndependentAudit(run.id, {
         actor: 'dashboard',
-        reason: 'Independent audit reviewed from the L5 dashboard.',
+        reason,
       })
-      const [nextStatus, nextMaturity] = await Promise.all([
+      const [nextStatus, nextMaturity, nextReviews, nextReviewQueue] = await Promise.all([
         api.getPhase2ClosedLoopStatus(),
         api.getPhase2Maturity().catch(() => maturity),
+        api.getPhase2IndependentAuditReviews({ limit: 30 }).catch(() => closedLoopAuditReviews),
+        api.getPhase2IndependentAuditReviewQueue({ limit: 12 }).catch(() => closedLoopAuditReviewQueue),
       ])
       setClosedLoop(nextStatus)
       setMaturity(nextMaturity)
+      setClosedLoopAuditReviews(nextReviews)
+      setClosedLoopAuditReviewQueue(nextReviewQueue)
       setSelectedClosedLoopRunId(run.id)
     } catch (error) {
       setClosedLoopAuditReviewError(error instanceof Error ? error.message : 'Falha ao registrar revisão da auditoria')
@@ -685,6 +707,8 @@ export function Overview() {
           replayPreview={activeReplayPreview}
           promotionPreview={activePromotionPreview}
           promotionEvents={closedLoopPromotionEvents}
+          auditReviews={closedLoopAuditReviews}
+          auditReviewQueue={closedLoopAuditReviewQueue}
           promotionActionPendingId={closedLoopPromotionActionPendingId}
           promotionActionError={closedLoopPromotionActionError}
           auditReviewPendingRunId={closedLoopAuditReviewPendingRunId}
@@ -694,7 +718,7 @@ export function Overview() {
           onLoadReplayPreview={() => void handleLoadClosedLoopReplayPreview()}
           onRunSafeReplay={() => void handleClosedLoopSafeReplay()}
           onRunPromotionAction={(candidate) => void handleClosedLoopPromotionAction(candidate)}
-          onReviewIndependentAudit={(run) => void handleReviewIndependentAudit(run)}
+          onReviewIndependentAudit={(run, reason) => void handleReviewIndependentAudit(run, reason)}
           guards={closedLoop?.guards ?? []}
           governanceDecisions={governanceDecisions}
         />

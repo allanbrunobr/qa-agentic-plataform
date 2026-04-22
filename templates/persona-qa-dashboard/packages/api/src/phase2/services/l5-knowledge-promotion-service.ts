@@ -10,6 +10,7 @@ import type {
   KnowledgePromotionEventAction,
   KnowledgePromotionEventInput,
   KnowledgePromotionEventStatus,
+  L5ClosedLoopRun,
   L5Materialization,
   LearningProposal,
   ScenarioDraft,
@@ -65,7 +66,8 @@ export class L5KnowledgePromotionService {
       )
     }
 
-    if (!this.sessionService.getL5ClosedLoopRun(candidate.sourceRunId)) {
+    const sourceRun = this.sessionService.getL5ClosedLoopRun(candidate.sourceRunId)
+    if (!sourceRun) {
       const event = this.recordEvent(candidate, {
         action,
         status: 'failed',
@@ -73,6 +75,20 @@ export class L5KnowledgePromotionService {
         result: { error: `Source run ${candidate.sourceRunId} not found` },
       })
       throw withPromotionEvent(new Error(`Source run ${candidate.sourceRunId} not found`), event)
+    }
+
+    const auditGate = this.evaluateSourceRunAuditReviewGate(sourceRun)
+    if (!auditGate.allowed) {
+      const event = this.recordEvent(candidate, {
+        action,
+        status: 'blocked',
+        actor,
+        result: {
+          error: auditGate.reason,
+          gate: auditGate,
+        },
+      })
+      throw withPromotionEvent(new Error(auditGate.reason), event)
     }
 
     try {
@@ -244,6 +260,7 @@ export class L5KnowledgePromotionService {
         passed: Boolean(this.sessionService.getL5ClosedLoopRun(candidate.sourceRunId)),
         detail: `Source run ${candidate.sourceRunId} is available for audit traceability.`,
       }),
+      this.verifySourceRunAuditReview(candidate.sourceRunId),
       this.verifyGovernanceEvidence(candidate, action),
     ]
 
@@ -270,6 +287,65 @@ export class L5KnowledgePromotionService {
       checks,
       recommendation: buildVerificationRecommendation(checks),
     }
+  }
+
+  private evaluateSourceRunAuditReviewGate(run: L5ClosedLoopRun): {
+    allowed: boolean
+    reason: string
+    verdict?: unknown
+    reviewId?: string
+    reviewedAt?: string
+  } {
+    const independentAudit = recordValue(run.verification['independentAudit'])
+    const verdict = independentAudit['verdict']
+    if (verdict !== 'failed' && verdict !== 'warning') {
+      return {
+        allowed: true,
+        reason: 'Source run independent audit does not require review.',
+        verdict,
+      }
+    }
+
+    const review = this.sessionService.getLatestL5IndependentAuditReview(run.id)
+    if (review?.status === 'reviewed') {
+      return {
+        allowed: true,
+        reason: 'Source run independent audit was reviewed before promotion.',
+        verdict,
+        reviewId: review.id,
+        reviewedAt: review.createdAt,
+      }
+    }
+
+    return {
+      allowed: false,
+      reason: `Source run ${run.id} has independent audit ${String(verdict)} and must be reviewed before promotion.`,
+      verdict,
+    }
+  }
+
+  private verifySourceRunAuditReview(sourceRunId: string): L5PostPromotionVerificationCheck {
+    const run = this.sessionService.getL5ClosedLoopRun(sourceRunId)
+    if (!run) {
+      return buildCheck({
+        id: 'source_run_audit_review_gate',
+        passed: false,
+        detail: 'Source run is missing; audit review gate cannot be evaluated.',
+      })
+    }
+
+    const gate = this.evaluateSourceRunAuditReviewGate(run)
+    return buildCheck({
+      id: 'source_run_audit_review_gate',
+      passed: gate.allowed,
+      detail: gate.reason,
+      evidence: {
+        sourceRunId,
+        verdict: gate.verdict,
+        reviewId: gate.reviewId,
+        reviewedAt: gate.reviewedAt,
+      },
+    })
   }
 
   private verifyGovernanceEvidence(

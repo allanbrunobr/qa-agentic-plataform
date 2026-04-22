@@ -273,6 +273,18 @@ export interface L5IndependentAuditReview extends L5IndependentAuditReviewInput 
   createdAt: string
 }
 
+export interface L5IndependentAuditReviewQueueItem {
+  runId: string
+  status: L5ClosedLoopStatus
+  scenarioId?: string
+  verdict: 'failed' | 'warning'
+  checkedAt?: string
+  findingCount: number
+  auditedSessions: number
+  statusReason?: string
+  completedAt: string
+}
+
 export interface KnowledgePromotionEventInput {
   sourceRunId: string
   candidateId: string
@@ -1763,6 +1775,42 @@ export class SessionService {
     return rows.map((row) => this.mapL5IndependentAuditReview(row))
   }
 
+  getLatestL5IndependentAuditReview(runId: string): L5IndependentAuditReview | undefined {
+    return this.listL5IndependentAuditReviews({ runId, limit: 1 })[0]
+  }
+
+  listL5IndependentAuditReviewQueue(filter: {
+    limit?: number
+  } = {}): L5IndependentAuditReviewQueueItem[] {
+    const reviewedRunIds = new Set(
+      this.listL5IndependentAuditReviews({ limit: 500 })
+        .filter((review) => review.status === 'reviewed')
+        .map((review) => review.runId),
+    )
+
+    const limit = Math.max(1, Math.min(filter.limit ?? 25, 100))
+    return this.listL5ClosedLoopRuns({ limit: 500 })
+      .filter((run) => !reviewedRunIds.has(run.id))
+      .map((run): L5IndependentAuditReviewQueueItem | null => {
+        const audit = getIndependentAuditReviewSignal(run)
+        if (!audit) return null
+        const item: L5IndependentAuditReviewQueueItem = {
+          runId: run.id,
+          status: run.status,
+          verdict: audit.verdict,
+          findingCount: audit.findingCount,
+          auditedSessions: audit.auditedSessions,
+          completedAt: run.completedAt,
+        }
+        if (run.scenarioId) item.scenarioId = run.scenarioId
+        if (audit.checkedAt) item.checkedAt = audit.checkedAt
+        if (typeof run.summary['statusReason'] === 'string') item.statusReason = run.summary['statusReason']
+        return item
+      })
+      .filter((item): item is L5IndependentAuditReviewQueueItem => item !== null)
+      .slice(0, limit)
+  }
+
   private mapLearningProposal(row: LearningProposalRow): LearningProposal {
     return {
       id: row.proposal_id,
@@ -2220,4 +2268,35 @@ export class SessionService {
 
 export function createSessionServiceStub(): SessionService {
   return new SessionService(':memory:')
+}
+
+function getIndependentAuditReviewSignal(run: L5ClosedLoopRun): {
+  verdict: 'failed' | 'warning'
+  checkedAt?: string
+  findingCount: number
+  auditedSessions: number
+} | null {
+  const independentAudit = recordValue(run.verification['independentAudit'])
+  const verdict = independentAudit['verdict']
+  if (verdict !== 'failed' && verdict !== 'warning') return null
+
+  const summary = recordValue(independentAudit['summary'])
+  return {
+    verdict,
+    checkedAt: typeof independentAudit['checkedAt'] === 'string' ? independentAudit['checkedAt'] : undefined,
+    findingCount: Array.isArray(independentAudit['findings'])
+      ? independentAudit['findings'].length
+      : numberValue(summary['findings']),
+    auditedSessions: numberValue(summary['auditedSessions']),
+  }
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
