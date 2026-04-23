@@ -5,12 +5,14 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { Card, StatCard } from '@/components/ui/Card'
 import { MaturityStatusPanel } from '@/components/MaturityStatusPanel'
 import { L5RunAuditPanel } from '@/components/L5RunAuditPanel'
+import { DomainDiscoveryPanel } from '@/components/DomainDiscoveryPanel'
 import {
   api,
   type Phase2ClosedLoopAuditBundle,
   type Phase2ClosedLoopRun,
   type Phase2ClosedLoopSchedulerStatus,
   type Phase2ClosedLoopStatusResponse,
+  type Phase2DomainDiscoveryResponse,
   type Phase2GovernanceDecision,
   type Phase2IndependentAuditReview,
   type Phase2IndependentAuditReviewQueueItem,
@@ -109,6 +111,7 @@ export function Overview() {
   const [scenarios, setScenarios] = useState<Phase2ScenarioSummary[]>([])
   const [stats, setStats] = useState<Awaited<ReturnType<typeof api.getStats>> | null>(null)
   const [maturity, setMaturity] = useState<Phase2MaturityStatus | null>(null)
+  const [domainDiscovery, setDomainDiscovery] = useState<Phase2DomainDiscoveryResponse | null>(null)
   const [closedLoop, setClosedLoop] = useState<Phase2ClosedLoopStatusResponse | null>(null)
   const [closedLoopScheduler, setClosedLoopScheduler] = useState<Phase2ClosedLoopSchedulerStatus | null>(null)
   const [governanceDecisions, setGovernanceDecisions] = useState<Phase2GovernanceDecision[]>([])
@@ -159,6 +162,7 @@ export function Overview() {
           scenarioData,
           statsData,
           maturityData,
+          domainDiscoveryData,
           closedLoopData,
           schedulerData,
           governanceData,
@@ -170,6 +174,7 @@ export function Overview() {
           api.getPhase2Scenarios(),
           api.getStats(),
           api.getPhase2Maturity().catch(() => null),
+          api.getPhase2DomainDiscovery().catch(() => null),
           api.getPhase2ClosedLoopStatus().catch(() => null),
           api.getPhase2ClosedLoopSchedulerStatus().catch(() => null),
           api.getPhase2GovernanceDecisions({ limit: 12 }).catch(() => []),
@@ -182,6 +187,7 @@ export function Overview() {
         setScenarios(scenarioData)
         setStats(statsData)
         setMaturity(maturityData)
+        setDomainDiscovery(domainDiscoveryData)
         setClosedLoop(closedLoopData)
         setClosedLoopScheduler(schedulerData)
         setGovernanceDecisions(governanceData)
@@ -601,6 +607,10 @@ export function Overview() {
           <MaturityStatusPanel maturity={maturity} />
         </motion.div>
       )}
+
+      <motion.div variants={itemVariants}>
+        <DomainDiscoveryPanel discovery={domainDiscovery} />
+      </motion.div>
 
       <motion.div variants={itemVariants}>
         <Card className="p-6">

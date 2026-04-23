@@ -253,6 +253,102 @@ export interface Phase2MaturityStatus {
   }
 }
 
+export type Phase2DomainDiscoveryCandidateStatus = 'draft' | 'runnable_candidate' | 'restricted' | 'needs_human_mapping'
+
+export interface Phase2DomainDiscoveryEvidenceRef {
+  evidenceId: string
+  kind?: string
+}
+
+export interface Phase2DomainDiscoveryBaseCandidate {
+  confidence: number
+  status: Phase2DomainDiscoveryCandidateStatus
+  evidenceRefs: Phase2DomainDiscoveryEvidenceRef[]
+  risks?: unknown[]
+}
+
+export interface Phase2DomainDiscoveryPersona extends Phase2DomainDiscoveryBaseCandidate {
+  id: string
+  title: string
+  rationale: string
+  goals: string[]
+  allowedCapabilityIds: string[]
+}
+
+export interface Phase2DomainDiscoveryScenario extends Phase2DomainDiscoveryBaseCandidate {
+  id: string
+  title: string
+  rationale: string
+  participatingPersonaIds: string[]
+  requiredCapabilityIds: string[]
+  steps: unknown[]
+}
+
+export interface Phase2DomainDiscoveryCapability extends Phase2DomainDiscoveryBaseCandidate {
+  id: string
+  title: string
+  purpose: string
+  kind: string
+  mappedSurfaceIds: string[]
+  selectorHints: string[]
+}
+
+export interface Phase2DomainDiscoveryBundle {
+  surfaceMap: {
+    targetId: string
+    routes: unknown[]
+    components: unknown[]
+    forms: unknown[]
+    buttons: unknown[]
+    texts: unknown[]
+    navigation: unknown[]
+    packages: unknown[]
+    frameworks: unknown[]
+    tests: unknown[]
+  }
+  domain: Phase2DomainDiscoveryBaseCandidate & {
+    domain: string
+    label?: string
+    summary: string
+    entities: unknown[]
+  }
+  personas: Phase2DomainDiscoveryPersona[]
+  scenarios: Phase2DomainDiscoveryScenario[]
+  capabilities: Phase2DomainDiscoveryCapability[]
+  audit?: Phase2DomainDiscoveryBaseCandidate & {
+    id: string
+    summary: string
+    findings: Array<{
+      id: string
+      severity: string
+      message: string
+      candidateIds: string[]
+      evidenceRefs: Phase2DomainDiscoveryEvidenceRef[]
+    }>
+    downgradedCandidateIds: string[]
+  }
+}
+
+export interface Phase2DomainDiscoveryResponse {
+  available: boolean
+  filePath: string | null
+  summary: {
+    domain: string
+    label: string
+    confidence: number
+    status: Phase2DomainDiscoveryCandidateStatus
+    targetId: string
+    personas: number
+    scenarios: number
+    capabilities: number
+    evidenceItems: number
+    auditStatus: Phase2DomainDiscoveryCandidateStatus | null
+    auditFindings: number
+    mappingRequired: number
+  } | null
+  bundle: Phase2DomainDiscoveryBundle | null
+}
+
 export interface Phase2LearningProposal {
   id: string
   recommendationId: string
@@ -612,6 +708,8 @@ export const api = {
   getPhase2ArtifactContentUrl: (artifactId: string) => `${API_BASE}/api/p2/artifacts/${artifactId}/content`,
   getPhase2SessionWsUrl: (sessionId: string) => `${WS_BASE}/ws/p2/sessions/${sessionId}`,
   getPhase2Maturity: () => fetchJSON<Phase2MaturityStatus>(`${API_BASE}/api/p2/maturity`),
+  getPhase2DomainDiscovery: () =>
+    fetchJSON<Phase2DomainDiscoveryResponse>(`${API_BASE}/api/p2/domain-discovery`),
   getPhase2ClosedLoopStatus: () =>
     fetchJSON<Phase2ClosedLoopStatusResponse>(`${API_BASE}/api/p2/closed-loop/status`),
   getPhase2ClosedLoopAuditBundleUrl: (runId: string) =>

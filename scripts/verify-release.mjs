@@ -38,6 +38,7 @@ const apiReleaseTests = [
 ]
 
 const webReleaseTests = [
+  'src/components/__tests__/DomainDiscoveryPanel.test.tsx',
   'src/components/__tests__/L5GovernancePanel.test.tsx',
   'src/components/__tests__/MaturityStatusPanel.test.tsx',
   'src/components/__tests__/RunTimeline.test.tsx',
@@ -168,9 +169,15 @@ const steps = [
     env: releaseEnv,
   },
   {
-    name: 'api: adapter personas route node test',
+    name: 'api: adapter route node tests',
     command: releaseNodePath,
-    args: ['--import', tsxLoader, '--test', 'src/routes/__tests__/personas.test.ts'],
+    args: [
+      '--import',
+      tsxLoader,
+      '--test',
+      'src/routes/__tests__/personas.test.ts',
+      'src/routes/__tests__/domain-discovery.test.ts',
+    ],
     cwd: apiRoot,
   },
   {
