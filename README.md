@@ -158,7 +158,7 @@ cd '/path/to/projects/agentic-platform'
 npm run verify:release
 ```
 
-The release gate runs syntax validation for the verifiers, domain discovery contract validation, static frontend scanner verification, domain fixture matrix verification, the API L4/L5 release Vitest set, the web release Vitest set, the web production build, and a deterministic clean-room install/runtime/dashboard smoke. The smoke uses deterministic workflow tools so it does not depend on live application login or backend state. Override `API_PORT`, `WEB_PORT`, or `RELEASE_PORT_SEED` if local ports are busy.
+The release gate runs syntax validation for the verifiers, domain discovery contract validation, static frontend scanner verification, domain fixture matrix verification, domain specialist service verification, the API L4/L5 release Vitest set, the web release Vitest set, the web production build, and a deterministic clean-room install/runtime/dashboard smoke. The smoke uses deterministic workflow tools so it does not depend on live application login or backend state. Override `API_PORT`, `WEB_PORT`, or `RELEASE_PORT_SEED` if local ports are busy.
 
 A passing run prints:
 
@@ -169,6 +169,7 @@ A passing run prints:
 [verify-domain-discovery-contracts] PASS domain discovery contract verification
 [verify-static-frontend-scanner] PASS static frontend scanner verification
 [verify-domain-fixture-matrix] PASS domain fixture matrix verification
+[verify-domain-specialist-service] PASS domain specialist service verification
 [verify-generic-repository-types] PASS generic repository type install/discovery verification
 [verify-generic-runtime-execution] PASS generic repository deterministic runtime verification
 [verify-install-local] PASS tmp=...
