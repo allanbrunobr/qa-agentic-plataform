@@ -107,6 +107,12 @@ const steps = [
     cwd: repoRoot,
   },
   {
+    name: 'syntax: domain fixture matrix verifier',
+    command: releaseNodePath,
+    args: ['--check', 'scripts/verify-domain-fixture-matrix.mjs'],
+    cwd: repoRoot,
+  },
+  {
     name: 'domain discovery contract verification',
     command: 'npm',
     args: ['run', 'verify:domain-discovery-contracts'],
@@ -117,6 +123,13 @@ const steps = [
     name: 'static frontend scanner verification',
     command: 'npm',
     args: ['run', 'verify:static-frontend-scanner'],
+    cwd: repoRoot,
+    env: releaseEnv,
+  },
+  {
+    name: 'domain fixture matrix verification',
+    command: 'npm',
+    args: ['run', 'verify:domain-fixture-matrix'],
     cwd: repoRoot,
     env: releaseEnv,
   },
