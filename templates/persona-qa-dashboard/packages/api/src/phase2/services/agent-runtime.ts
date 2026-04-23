@@ -15,6 +15,8 @@ import { buildStepInstructionEnvelope, getGlobalAgenticInstructions } from './in
 import type { L5LearningSignal, RuntimeLearningOverlay, SessionService } from './session-service.js'
 import { defaultRuntimeHookBus, type RuntimeHookBus } from './runtime-hooks.js'
 import type { ToolRegistry } from './tool-registry.js'
+import { resolveProviderModel } from '../providers/provider-factory.js'
+import type { RuntimeProvider } from '../../services/runtime-settings.js'
 
 export interface StepContext {
   sessionId: string
@@ -49,6 +51,7 @@ export class AgentRuntime {
     private readonly toolRegistry?: ToolRegistry,
     private readonly sessionService?: SessionService,
     private readonly hooks: RuntimeHookBus = defaultRuntimeHookBus,
+    private readonly providerName?: RuntimeProvider,
   ) {}
 
   registerAgent(profile: AgentProfile): void {
@@ -652,10 +655,14 @@ export class AgentRuntime {
       throw new ModelDeadlineExceededError(profile.timeoutMs)
     }
 
+    const resolvedModel = profile.model && this.providerName
+      ? resolveProviderModel(this.providerName, profile.model)
+      : profile.model
+
     let timeout: ReturnType<typeof setTimeout> | undefined
     try {
       return await Promise.race([
-        this.provider!.chat(messages, toolDefs, { maxTokens: 4096, model: profile.model }),
+        this.provider!.chat(messages, toolDefs, { maxTokens: 4096, model: resolvedModel }),
         new Promise<never>((_, reject) => {
           timeout = setTimeout(() => reject(new ModelDeadlineExceededError(profile.timeoutMs)), remainingMs)
         }),

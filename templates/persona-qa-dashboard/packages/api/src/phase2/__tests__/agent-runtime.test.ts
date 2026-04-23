@@ -134,6 +134,25 @@ describe('AgentRuntime', () => {
     })
   })
 
+  describe('executeStep — provider model remapping', () => {
+    it('remaps anthropic profile models when provider is openai', async () => {
+      const provider = mockProvider([{
+        text: 'Customer created successfully.',
+        toolCalls: [],
+        stopReason: 'end_turn',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }])
+
+      const runtime = new AgentRuntime(provider, registry, sessionService, undefined, 'openai')
+      await runtime.executeStep(makeProfile(), makeStepContext())
+
+      expect(provider.chat).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(provider.chat).mock.calls[0]?.[2]).toMatchObject({
+        model: 'gpt-4.1-mini',
+      })
+    })
+  })
+
   describe('executeStep — L5 runtime learning overlays', () => {
     it('consults retained L5 learning signals scoped to scenario, step, and agent', async () => {
       const session = sessionService.createSession('first_order')

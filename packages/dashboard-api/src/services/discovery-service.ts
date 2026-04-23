@@ -1,4 +1,3 @@
-import { ReferenceStoreDiscoveryProvider } from '../../../../adapters/reference-store/src/discovery.ts'
 import type { HostProjectPointer } from '../../../host-sdk/src/contracts.ts'
 import { GenericFrontendDiscoveryProvider } from './generic-discovery-provider.ts'
 import type {
@@ -8,35 +7,13 @@ import type {
   DiscoveryResponse,
 } from '../types/api.ts'
 
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    const { access } = await import('node:fs/promises')
-    await access(path)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function isReferenceStoreRepo(repoPath: string): Promise<boolean> {
-  return (
-    await pathExists(`${repoPath}/apps/webapp/src/modules/customers`)
-    && await pathExists(`${repoPath}/apps/webapp/src/modules/schedule`)
-  )
-}
-
-async function resolveProvider(repoPath: string, adapterHint?: string) {
-  if (adapterHint === 'auto') {
-    return await isReferenceStoreRepo(repoPath)
-      ? new ReferenceStoreDiscoveryProvider()
-      : new GenericFrontendDiscoveryProvider()
-  }
-
-  if (adapterHint === 'generic' || adapterHint === 'frontend') {
+async function resolveProvider(_repoPath: string, adapterHint?: string) {
+  if (!adapterHint || adapterHint === 'auto' || adapterHint === 'generic' || adapterHint === 'frontend' || adapterHint === 'repository') {
     return new GenericFrontendDiscoveryProvider()
   }
 
-  if (!adapterHint || adapterHint === 'reference-store') {
+  if (adapterHint === 'reference-store') {
+    const { ReferenceStoreDiscoveryProvider } = await import('../../../../adapters/reference-store/src/discovery.ts')
     return new ReferenceStoreDiscoveryProvider()
   }
 

@@ -93,8 +93,20 @@ function toCamelCase(value: string) {
   return value.replace(/_+([a-z0-9])/g, (_, char: string) => char.toUpperCase())
 }
 
+function toTitle(value: string) {
+  return normalizeId(value)
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
 function toLowerEvidence(value: string) {
   return value.normalize('NFKD').toLowerCase()
+}
+
+function legacyStoreFallbackEnabled() {
+  return process.env.AGENTIC_PLATFORM_ENABLE_LEGACY_STORE_FALLBACK === '1'
 }
 
 function extractRoutePathFromEvidence(evidence: string) {
@@ -114,11 +126,14 @@ function extractRoutePathFromEvidence(evidence: string) {
 }
 
 function inferProducedArtifacts(stepId: NormalizedStep) {
-  if (stepId === 'create_customer') return ['customerId']
-  if (stepId === 'schedule_order' || stepId === 'schedule_return') return ['eventId']
-  if (stepId === 'complete_fulfillment' || stepId === 'complete_return_fulfillment') return ['fulfillmentCompleted']
-  if (stepId === 'review_billing_guide') return ['billingGuideValidated']
-  if (stepId === 'validate_closure') return ['financeValidated', 'reportsValidated']
+  if (legacyStoreFallbackEnabled()) {
+    if (stepId === 'create_customer') return ['customerId']
+    if (stepId === 'schedule_order' || stepId === 'schedule_return') return ['eventId']
+    if (stepId === 'complete_fulfillment' || stepId === 'complete_return_fulfillment') return ['fulfillmentCompleted']
+    if (stepId === 'review_billing_guide') return ['billingGuideValidated']
+    if (stepId === 'validate_closure') return ['financeValidated', 'reportsValidated']
+  }
+
   if (stepId === 'fill_customer_email') return ['customerEmail']
   if (stepId === 'add_cart_item') return ['cartItemId']
   if (stepId === 'submit_order') return ['orderSubmitted']
@@ -134,15 +149,18 @@ function inferProducedArtifacts(stepId: NormalizedStep) {
   if (stepId === 'verify_public_api_docs') return ['publicApiDocsVerified']
   if (stepId === 'inspect_repository_structure') return ['repositoryStructure']
   if (stepId === 'identify_test_entrypoints') return ['testEntrypoints']
-  return []
+  if (stepId.includes('verify') || stepId.includes('validate') || stepId.includes('assert')) return ['verificationResult']
+  if (stepId.includes('call') || stepId.includes('request') || stepId.includes('endpoint')) return ['response']
+  if (stepId.includes('inspect') || stepId.includes('identify') || stepId.includes('discover')) return ['inspectionResult']
+  if (stepId.includes('run') || stepId.includes('command') || stepId.includes('cli')) return ['commandResult']
+  if (stepId.includes('open') || stepId.includes('navigate') || stepId.includes('visit')) return ['pageLoaded']
+  if (stepId.includes('fill') || stepId.includes('add') || stepId.includes('submit') || stepId.includes('interact')) {
+    return ['interactionResult']
+  }
+  return [`${toCamelCase(normalizeId(stepId))}Result`]
 }
 
 function inferCapabilityId(stepId: NormalizedStep) {
-  if (stepId === 'create_customer') return 'createCustomer'
-  if (stepId === 'schedule_order' || stepId === 'schedule_return') return 'scheduleOrder'
-  if (stepId === 'complete_fulfillment' || stepId === 'complete_return_fulfillment') return 'completeFulfillment'
-  if (stepId === 'review_billing_guide') return 'findBillingGuideByEventId'
-  if (stepId === 'validate_closure') return 'validateManagementClosure'
   if (stepId === 'fill_customer_email') return 'fillCustomerEmail'
   if (stepId === 'add_cart_item') return 'addCartItem'
   if (stepId === 'submit_order') return 'submitOrder'
@@ -163,10 +181,13 @@ function inferCapabilityId(stepId: NormalizedStep) {
 }
 
 function inferStepRole(stepId: NormalizedStep, fallbackRoles: string[]) {
-  if (stepId === 'create_customer' || stepId === 'schedule_order' || stepId === 'schedule_return') return 'sales-associate'
-  if (stepId === 'complete_fulfillment' || stepId === 'complete_return_fulfillment') return 'fulfillment-agent'
-  if (stepId === 'review_billing_guide') return 'billing_clerk'
-  if (stepId === 'validate_closure') return 'store_manager'
+  if (legacyStoreFallbackEnabled()) {
+    if (stepId === 'create_customer' || stepId === 'schedule_order' || stepId === 'schedule_return') return 'sales-associate'
+    if (stepId === 'complete_fulfillment' || stepId === 'complete_return_fulfillment') return 'fulfillment-agent'
+    if (stepId === 'review_billing_guide') return 'billing_clerk'
+    if (stepId === 'validate_closure') return 'store_manager'
+  }
+
   if (
     stepId === 'fill_customer_email' ||
     stepId === 'add_cart_item' ||
@@ -184,7 +205,7 @@ function inferStepRole(stepId: NormalizedStep, fallbackRoles: string[]) {
   if (stepId === 'run_cli_help' || stepId === 'verify_cli_output') return 'cli_user'
   if (stepId === 'inspect_package_exports' || stepId === 'verify_public_api_docs') return 'integration_developer'
   if (stepId === 'inspect_repository_structure' || stepId === 'identify_test_entrypoints') return 'repository_reviewer'
-  return fallbackRoles[0] ?? 'unknown'
+  return fallbackRoles[0] ?? 'primary_user'
 }
 
 function toYaml(value: unknown, indent = 0): string {
@@ -364,14 +385,6 @@ function buildMaterializedRoutes(report: DiscoveryReport): MaterializedRoute[] {
 
 function inferCapabilityRouteHint(capabilityId: string, routes: MaterializedRoute[]) {
   const routeMap: Record<string, string[]> = {
-    createCustomer: ['/customers'],
-    scheduleOrder: ['/agenda'],
-    openOrderDetails: ['/registros/[customerId]', '/registros'],
-    completeFulfillment: ['/registros/[customerId]', '/registros'],
-    findBillingGuideByEventId: ['/billing/guias-pedido', '/billing/lotes'],
-    verifyFinanceDashboard: ['/financas', '/painel-financeiro'],
-    verifyReportsPage: ['/relatorios/atendimento/dia', '/relatorios'],
-    validateManagementClosure: ['/financas', '/relatorios', '/painel-financeiro'],
     fillCustomerEmail: ['/'],
     addCartItem: ['/'],
     submitOrder: ['/'],
@@ -389,14 +402,6 @@ function inferCapabilityRouteHint(capabilityId: string, routes: MaterializedRout
 
 function buildMaterializedCapabilities(capabilityIds: string[], routes: MaterializedRoute[]): MaterializedCapability[] {
   const purposeByCapability: Record<string, string> = {
-    createCustomer: 'Register a new customer in the host product.',
-    scheduleOrder: 'Create or reschedule an order in the agenda.',
-    openOrderDetails: 'Open the customer order details for review.',
-    completeFulfillment: 'Record and finalize a fulfillment.',
-    findBillingGuideByEventId: 'Locate and validate Billing fulfillment guide data.',
-    verifyFinanceDashboard: 'Verify finance dashboard and closure data.',
-    verifyReportsPage: 'Verify reporting outputs for the expected period.',
-    validateManagementClosure: 'Validate management closure across finance and reporting surfaces.',
     fillCustomerEmail: 'Fill the primary customer email or identity field.',
     addCartItem: 'Add an item through the primary frontend interaction.',
     submitOrder: 'Submit the primary order or checkout form.',
@@ -418,7 +423,7 @@ function buildMaterializedCapabilities(capabilityIds: string[], routes: Material
 
   return capabilityIds.map((capabilityId) => ({
     id: capabilityId,
-    purpose: purposeByCapability[capabilityId] ?? 'Generated from normalized discovery draft',
+    purpose: purposeByCapability[capabilityId] ?? `Execute ${toTitle(capabilityId)} from the normalized discovery draft.`,
     sourceHint: 'Review and map this capability to host-specific automation',
     routeHint: inferCapabilityRouteHint(capabilityId, routes),
   }))
@@ -524,6 +529,8 @@ function buildAssertionsStub(scenarios: MaterializedScenario[]) {
 }
 
 function buildReferenceBridge(capabilities: MaterializedCapability[]): ReferenceBridgeEntry[] {
+  if (!legacyStoreFallbackEnabled()) return []
+
   const mapping: Record<string, Omit<ReferenceBridgeEntry, 'capabilityId'>> = {
     createCustomer: {
       modulePath: 'host-source-snapshot/integration-test/persona-tests/support/capabilities/customers.ts',
@@ -584,6 +591,15 @@ function buildNormalizedPersonas(report: DiscoveryReport, draft: BootstrapDraft)
   const personas: GeneratedPersonaDraft[] = []
 
   if (report.repository) {
+    return draft.personas.map((persona) => ({
+      id: normalizeId(persona.id),
+      title: persona.title,
+      rationale: persona.rationale,
+      allowedTools: persona.allowedTools,
+    }))
+  }
+
+  if (!legacyStoreFallbackEnabled()) {
     return draft.personas.map((persona) => ({
       id: normalizeId(persona.id),
       title: persona.title,
@@ -672,6 +688,16 @@ function buildNormalizedScenarios(report: DiscoveryReport, draft: BootstrapDraft
     }))
   }
 
+  if (!legacyStoreFallbackEnabled()) {
+    return draft.scenarios.map((scenario) => ({
+      id: normalizeId(scenario.id),
+      title: scenario.title,
+      participatingRoles: scenario.participatingRoles.map(normalizeId),
+      rationale: scenario.rationale,
+      candidateSteps: normalizeFallbackSteps(scenario.candidateSteps),
+    }))
+  }
+
   if (hasReception && hasAgent && (hasCustomerModule || hasScheduleModule)) {
     scenarios.push(buildScenario(
       'first_order',
@@ -742,6 +768,7 @@ function classifyFallbackStep(step: string): NormalizedStep | null {
   if (text.includes('docs') || text.includes('public api')) return 'verify_public_api_docs'
   if (text.includes('repository') || text.includes('structure')) return 'inspect_repository_structure'
   if (text.includes('test') || text.includes('entrypoint')) return 'identify_test_entrypoints'
+  if (!legacyStoreFallbackEnabled()) return null
   if (text.includes('customer') && (text.includes('create') || text.includes('register') || text.includes('cadast'))) return 'create_customer'
   if ((text.includes('schedule') || text.includes('book') || text.includes('agenda')) && text.includes('return')) return 'schedule_return'
   if (text.includes('schedule') || text.includes('book') || text.includes('agenda')) return 'schedule_order'

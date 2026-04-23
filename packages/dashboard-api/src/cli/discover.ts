@@ -1,16 +1,13 @@
-import type { HostProjectPointer } from '../../../host-sdk/src/contracts.ts'
-import { ReferenceStoreDiscoveryProvider } from '../../../../adapters/reference-store/src/discovery.ts'
+import { runDiscovery } from '../services/discovery-service.ts'
 
 export async function runDiscoverCommand(args: string[]) {
   const repoPath = args[0]
+  const adapterHint = args[1]
 
   if (!repoPath) {
-    throw new Error('discover requires <repoPath>')
+    throw new Error('discover requires <repoPath> [adapterHint]')
   }
 
-  const pointer: HostProjectPointer = { repoPath }
-  const provider = new ReferenceStoreDiscoveryProvider()
-  const report = await provider.discover(pointer)
-
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
+  const result = await runDiscovery({ repoPath, adapterHint })
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
 }

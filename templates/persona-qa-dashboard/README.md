@@ -33,13 +33,14 @@ Este template nao contem personas, cenarios ou regras de dominio fixas. Esses ar
 
 Sem discovery/materializacao, a API retorna listas vazias para personas e cenarios em vez de carregar exemplos fixos.
 
-Para repositorios front-end, o runtime usa Playwright e `ANTHROPIC_API_KEY`. Para repositorios backend API, CLI, library, monorepo ou unknown, o runtime usa execucao deterministica sem browser/modelo: ele inspeciona o repositorio, executa probes seguros quando houver URL/comando configurado, e grava artefatos de dry-run quando faltar mapeamento real.
+Para repositorios front-end, o runtime usa Playwright e um provider de modelo selecionado em `Settings` (`Anthropic` ou `OpenAI`). Para repositorios backend API, CLI, library, monorepo ou unknown, o runtime usa execucao deterministica sem browser/modelo: ele inspeciona o repositorio, executa probes seguros quando houver URL/comando configurado, e grava artefatos de dry-run quando faltar mapeamento real.
 
 ## Variaveis Principais
 
 | Variavel | Uso |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | Chave usada pelo runtime local para chamadas de modelo. |
+| `ANTHROPIC_API_KEY` | Chave usada quando o provider selecionado for Anthropic. |
+| `OPENAI_API_KEY` | Chave usada quando o provider selecionado for OpenAI. |
 | `PLAYWRIGHT_BASE_URL` | URL base do frontend alvo a ser testado. |
 | `GENERIC_API_BASE_URL` / `TARGET_API_BASE_URL` / `API_BASE_URL` | URL base para probes reais de backend API. |
 | `GENERIC_CLI_COMMAND` / `TARGET_CLI_COMMAND` | Comando CLI quando o package `bin` nao for suficiente. |
@@ -59,3 +60,5 @@ Em instalacoes reais, prefira o script gerado:
 ```bash
 ./scripts/start-local-dashboard.generated.sh --api-port 3201 --web-port 5176
 ```
+
+Depois de subir, abra `Settings` e selecione o provider que sera usado na proxima run.

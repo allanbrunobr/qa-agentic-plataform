@@ -6,6 +6,7 @@ import { runsRoutes } from './routes/runs.js';
 import { scenariosRoutes } from './routes/scenarios.js';
 import { findingsRoutes } from './routes/findings.js';
 import { statsRoutes } from './routes/stats.js';
+import { settingsRoutes } from './routes/settings.js';
 import { wsRoutes } from './routes/ws.js';
 import { personasRoutes } from './routes/personas.js';
 import { insightsRoutes } from './routes/insights.js';
@@ -46,6 +47,7 @@ async function buildApp() {
   await app.register(scenariosRoutes);
   await app.register(findingsRoutes);
   await app.register(statsRoutes);
+  await app.register(settingsRoutes);
   await app.register(wsRoutes);
   await app.register(personasRoutes);
   await app.register(insightsRoutes);
