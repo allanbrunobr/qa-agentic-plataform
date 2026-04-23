@@ -1,17 +1,13 @@
-import type { HostProjectPointer } from '../../../host-sdk/src/contracts.ts'
-import { ReferenceStoreDiscoveryProvider } from '../../../../adapters/reference-store/src/discovery.ts'
+import { runBootstrap } from '../services/discovery-service.ts'
 
 export async function runBootstrapCommand(args: string[]) {
   const repoPath = args[0]
+  const adapterHint = args[1]
 
   if (!repoPath) {
-    throw new Error('bootstrap requires <repoPath>')
+    throw new Error('bootstrap requires <repoPath> [adapterHint]')
   }
 
-  const pointer: HostProjectPointer = { repoPath }
-  const provider = new ReferenceStoreDiscoveryProvider()
-  const report = await provider.discover(pointer)
-  const draft = await provider.synthesize(report)
-
-  process.stdout.write(`${JSON.stringify({ report, draft }, null, 2)}\n`)
+  const result = await runBootstrap({ repoPath, adapterHint })
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
 }

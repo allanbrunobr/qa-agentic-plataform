@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 
 const WEB_PORT = Number(process.env.AGENTIC_PLATFORM_WEB_PORT ?? 4177)
 const API_PORT = Number(process.env.AGENTIC_PLATFORM_API_PORT ?? 3101)
-const DEFAULT_REPO = '/path/to/projects/reference-store/reference-store-frontend'
+const DEFAULT_REPO = process.env.AGENTIC_PLATFORM_DEFAULT_REPO ?? process.cwd()
 
 const html = `<!doctype html>
 <html lang="en">

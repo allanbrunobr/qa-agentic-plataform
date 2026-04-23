@@ -3,6 +3,12 @@ import { ToolPolicySchema } from './tool-types.ts'
 
 export const AgentRoleSchema = z.enum([
   'orchestrator',
+  'primary_user',
+  'api_consumer',
+  'cli_user',
+  'integration_developer',
+  'repository_reviewer',
+  'quality_auditor',
   'sales-associate',
   'fulfillment-agent',
   'billing_clerk',

@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type Page = 'overview' | 'scenarios' | 'findings' | 'runs' | 'agentic-runs' | 'personas' | 'pr-tracking' | 'insights'
+type Page = 'overview' | 'scenarios' | 'findings' | 'runs' | 'agentic-runs' | 'personas' | 'pr-tracking' | 'insights' | 'settings'
 
 interface NavItem {
   id: Page
@@ -112,15 +112,20 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
         )}
         <button
           title="Settings"
+          onClick={() => onNavigate('settings')}
           className={cn(
             'flex w-full items-center rounded-lg px-2.5 py-2',
             'text-sm font-medium text-[var(--text-secondary)]',
             'hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
             'transition-colors duration-150',
+            activePage === 'settings' && 'bg-[var(--accent)]/10 text-[var(--accent)]',
             collapsed && 'justify-center px-2',
           )}
         >
-          <Settings className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+          <Settings className={cn(
+            'h-4 w-4 shrink-0',
+            activePage === 'settings' ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]',
+          )} />
           {!collapsed && <span className="ml-2.5">Settings</span>}
         </button>
       </div>

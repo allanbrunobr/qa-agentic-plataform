@@ -10,7 +10,8 @@ import {
   resolveGeneratedTargetRepoPath,
 } from '../services/generated-adapter-runtime.js'
 import { getSessionService } from './sessions.js'
-import { validateAnthropicApiKey } from '../providers/anthropic-provider.js'
+import { loadRuntimeSettings } from '../../services/runtime-settings.js'
+import { validateProviderCredentials } from '../providers/provider-factory.js'
 
 const StartAgenticRunBody = z.object({
   scenario_id: z.string(),
@@ -79,21 +80,16 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const useDeterministicRuntime = isGeneratedNonFrontendRuntime()
+    const runtimeSettings = useDeterministicRuntime ? null : loadRuntimeSettings()
 
-    if (!useDeterministicRuntime && !process.env.ANTHROPIC_API_KEY) {
-      return reply.status(503).send({
-        error: 'missing_anthropic_api_key',
-        message: 'ANTHROPIC_API_KEY is required to start an agentic run from the dashboard.',
-      })
-    }
-
-    if (!useDeterministicRuntime && process.env.STRICT_ANTHROPIC_VALIDATION === '1') {
-      const anthropicValidation = await validateAnthropicApiKey(process.env.ANTHROPIC_API_KEY ?? '')
-      if (!anthropicValidation.ok) {
+    if (runtimeSettings) {
+      const providerValidation = await validateProviderCredentials(runtimeSettings.provider)
+      if (!providerValidation.ok) {
         return reply.status(503).send({
-          error: 'invalid_anthropic_api_key',
-          message: 'The configured ANTHROPIC_API_KEY is invalid for the local .agentic-qa runtime.',
-          details: anthropicValidation,
+          error: 'invalid_runtime_provider_configuration',
+          provider: runtimeSettings.provider,
+          message: `The configured ${runtimeSettings.provider} provider is not ready for the local .agentic-qa runtime.`,
+          details: providerValidation,
         })
       }
     }
@@ -113,7 +109,9 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
     const uniqueSuffix = Date.now().toString().slice(-6)
     const customerName = parsed.data.customer_name ?? `Maria Agentic ${uniqueSuffix}`
 
-    const runtime = createPhase2Runtime({ deterministic: useDeterministicRuntime })
+    const runtime = useDeterministicRuntime
+      ? createPhase2Runtime({ deterministic: true })
+      : createPhase2Runtime({ providerName: runtimeSettings!.provider })
     const session = runtime.sessionService.createSession(scenario.id)
 
     void (async () => {

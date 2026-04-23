@@ -153,9 +153,9 @@ function fromAnthropicResponse(response: AnthropicResponse): ModelResponse {
 
 /** Create provider from environment */
 export function createAnthropicProvider(model: string): AnthropicProvider {
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  const apiKey = process.env.ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_API
   if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY environment variable is required')
+    throw new Error('ANTHROPIC_API_KEY or ANTHROPIC_API environment variable is required')
   }
   return new AnthropicProvider({ apiKey, model })
 }

@@ -1,6 +1,8 @@
 import process from 'node:process'
 import { loadScenario } from '../scenarios/index.js'
 import { createPhase2Runtime } from '../services/runtime-bootstrap.js'
+import { loadRuntimeSettings } from '../../services/runtime-settings.js'
+import { validateProviderCredentials } from '../providers/provider-factory.js'
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2).filter((arg) => arg !== '--')
@@ -8,9 +10,11 @@ async function main(): Promise<void> {
   const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3012'
   const uniqueSuffix = Date.now().toString().slice(-6)
   const customerName = process.env.PHASE2_CUSTOMER_NAME ?? `Maria Fase 2 ${uniqueSuffix}`
+  const runtimeSettings = loadRuntimeSettings()
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY is required to run a live Phase 2 scenario')
+  const providerValidation = await validateProviderCredentials(runtimeSettings.provider)
+  if (!providerValidation.ok) {
+    throw new Error(`Configured provider "${runtimeSettings.provider}" is not ready: ${providerValidation.message}`)
   }
 
   await assertBaseUrlReachable(baseUrl)
@@ -21,7 +25,7 @@ async function main(): Promise<void> {
 
   try {
     const scenario = loadScenario(scenarioId)
-    const { orchestrator, dbPath } = createPhase2Runtime()
+    const { orchestrator, dbPath, providerName, providerModel } = createPhase2Runtime({ providerName: runtimeSettings.provider })
     const result = await orchestrator.executeRun(scenario, {
       page,
       customerName,
@@ -34,6 +38,8 @@ async function main(): Promise<void> {
       baseUrl,
       customerName,
       dbPath,
+      providerName,
+      providerModel,
       sessionId: result.sessionId,
       status: result.status,
       stepsCompleted: result.stepsCompleted,

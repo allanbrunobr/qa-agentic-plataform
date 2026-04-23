@@ -4,12 +4,46 @@ import { getDb, schema } from '../db/index.js';
 import { buildContractEvaluation } from '../phase2/services/contract-evaluation.js';
 import { buildScenarioQualityGateMap } from '../phase2/services/scenario-quality-gates.js';
 import { getSessionService } from '../phase2/routes/sessions.js';
+import { loadRuntimeSettings, listRuntimeProviders } from '../services/runtime-settings.js';
 
 // In-memory cache for last sync info (hydrated from sync_meta on first access)
 let lastSyncTimestamp: string | null = null;
 let lastSyncSource: string | null = null;
 let syncHydrated = false;
 const ACTIVE_RUN_STALE_MS = 60 * 60 * 1000;
+type RuntimeConfigState = 'configured' | 'default' | 'missing';
+
+function envValue(...names: string[]): string | null {
+  for (const name of names) {
+    const value = process.env[name];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function envState(names: string[], hasDefault = false): RuntimeConfigState {
+  return envValue(...names) ? 'configured' : hasDefault ? 'default' : 'missing';
+}
+
+function getRuntimeConfigStatus() {
+  const runtimeSettings = loadRuntimeSettings();
+  return {
+    provider: runtimeSettings.provider,
+    supported_providers: listRuntimeProviders(),
+    anthropic_key: envState(['ANTHROPIC_API_KEY', 'ANTHROPIC_API']),
+    openai_key: envState(['OPENAI_API_KEY']),
+    test_user: envState(['TEST_USER'], true),
+    test_password: envState(['TEST_PASSWORD'], true),
+    secondary_user: envState(['RECEPTIONIST_USER'], true),
+    playwright_base_url: envState(['PLAYWRIGHT_BASE_URL'], true),
+    target_app_url:
+      envValue('PLAYWRIGHT_BASE_URL', 'GENERIC_API_BASE_URL', 'TARGET_API_BASE_URL', 'API_BASE_URL')
+      ?? 'not configured',
+    secret_values: 'masked',
+  };
+}
 
 export function setLastSync(timestamp: string, source: string): void {
   lastSyncTimestamp = timestamp;
@@ -184,6 +218,7 @@ export async function statsRoutes(app: FastifyInstance): Promise<void> {
       last_sync_source: syncInfo.source,
       latest_activity_at: latestActivityAt,
       latest_activity_source: latestActivitySource,
+      runtime_config: getRuntimeConfigStatus(),
       active_run: activeRun
         ? {
             id: activeRun.id,

@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createAnthropicProvider } from '../providers/anthropic-provider.js'
 import { createDeterministicProvider } from '../providers/deterministic-provider.js'
+import { createModelProvider } from '../providers/provider-factory.js'
 import { listProfiles } from '../profiles/agent-profiles.js'
 import { artifactSensor } from '../sensors/artifact-sensor.js'
 import { outputSensor } from '../sensors/output-sensor.js'
@@ -10,6 +10,7 @@ import { timeoutSensor } from '../sensors/timeout-sensor.js'
 import { toolPolicySensor } from '../sensors/tool-policy-sensor.js'
 import { AgentRuntime } from './agent-runtime.js'
 import { Orchestrator } from './orchestrator.js'
+import { defaultRuntimeHookBus } from './runtime-hooks.js'
 import { SensorRunner } from './sensor-runner.js'
 import { SessionService } from './session-service.js'
 import { getSessionService, setSessionService } from '../routes/sessions.js'
@@ -18,6 +19,7 @@ import { registerEvidenceTools } from '../tools/evidence-tools.js'
 import { registerGeneratedAdapterTools } from '../tools/generated-adapter-tools.js'
 import { registerWorkflowTools } from '../tools/workflow-tools.js'
 import type { ModelProvider } from '../types/agent-types.js'
+import type { RuntimeProvider } from '../../services/runtime-settings.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -27,6 +29,7 @@ export interface Phase2RuntimeOptions {
   dbPath?: string
   model?: string
   provider?: ModelProvider
+  providerName?: RuntimeProvider
   deterministic?: boolean
 }
 
@@ -47,11 +50,20 @@ export function createPhase2Runtime(options: Phase2RuntimeOptions = {}) {
 
   const profiles = listProfiles()
   const primaryPersona = profiles.find((profile) => profile.role !== 'orchestrator')
+  const providerSelection = options.provider
+    ? null
+    : (options.deterministic
+      ? null
+      : createModelProvider({
+          provider: options.providerName,
+          model: options.model ?? primaryPersona?.model ?? 'claude-sonnet-4-6',
+        }))
   const provider = options.provider
     ?? (options.deterministic
       ? createDeterministicProvider()
-      : createAnthropicProvider(options.model ?? primaryPersona?.model ?? 'claude-sonnet-4-6'))
-  const agentRuntime = new AgentRuntime(provider, toolRegistry, sessionService)
+      : providerSelection!.provider)
+  const providerName = options.deterministic ? undefined : (options.providerName ?? providerSelection?.providerName)
+  const agentRuntime = new AgentRuntime(provider, toolRegistry, sessionService, defaultRuntimeHookBus, providerName)
   const sensorRunner = new SensorRunner()
 
   sensorRunner.registerSensor('schema', schemaSensor)
@@ -68,6 +80,8 @@ export function createPhase2Runtime(options: Phase2RuntimeOptions = {}) {
 
   return {
     dbPath,
+    providerName,
+    providerModel: providerSelection?.model,
     sessionService,
     toolRegistry,
     agentRuntime,

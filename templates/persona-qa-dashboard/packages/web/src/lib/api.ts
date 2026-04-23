@@ -185,6 +185,47 @@ export interface DashboardStats {
   }
 }
 
+export interface DashboardStatus {
+  api: 'up' | string
+  db: 'ok' | 'error' | string
+  last_sync: string | null
+  last_sync_source: string | null
+  latest_activity_at: string | null
+  latest_activity_source: 'runs' | 'p2_sessions' | null
+  runtime_config?: {
+    provider: 'anthropic' | 'openai'
+    supported_providers: Array<{
+      id: 'anthropic' | 'openai'
+      label: string
+      description: string
+    }>
+    anthropic_key: 'configured' | 'default' | 'missing'
+    openai_key: 'configured' | 'default' | 'missing'
+    test_user: 'configured' | 'default' | 'missing'
+    test_password: 'configured' | 'default' | 'missing'
+    secondary_user: 'configured' | 'default' | 'missing'
+    playwright_base_url: 'configured' | 'default' | 'missing'
+    target_app_url: string
+    secret_values: 'masked'
+  }
+  active_run: {
+    id: number | string
+    status: string
+    started_at: string
+    source: 'runs' | 'p2_sessions'
+  } | null
+}
+
+export interface RuntimeSettingsResponse {
+  provider: 'anthropic' | 'openai'
+  supportedProviders: Array<{
+    id: 'anthropic' | 'openai'
+    label: string
+    description: string
+  }>
+  appliesTo: 'next_run'
+}
+
 export type Phase2LearningProposalStatus = 'proposed' | 'approved' | 'applied' | 'rejected'
 export type Phase2LearningProposalPatchKind = 'none' | 'prompt_overlay' | 'capability_patch' | 'environment_check'
 export type Phase2HealingActionStatus = 'proposed' | 'applied' | 'blocked' | 'rolled_back'
@@ -717,6 +758,7 @@ export const api = {
   getScenario: (id: string) => fetchJSON(`${API_BASE}/api/scenarios/${id}`),
   getFindings: (params?: Record<string, string>) =>
     fetchJSON(`${API_BASE}/api/findings?${new URLSearchParams(params)}`),
+  getStatus: () => fetchJSON<DashboardStatus>(`${API_BASE}/api/status`),
   getStats: () => fetchJSON<DashboardStats>(`${API_BASE}/api/stats`),
   getPersonas: () => fetchJSON(`${API_BASE}/api/personas`),
   createPersona: (data: CreatePersonaPayload) =>
@@ -726,6 +768,12 @@ export const api = {
     }),
   getInsights: () => fetchJSON(`${API_BASE}/api/insights`),
   getFindingScreenshotUrl: (id: number) => `${API_BASE}/api/findings/${id}/screenshot`,
+  getRuntimeSettings: () => fetchJSON<RuntimeSettingsResponse>(`${API_BASE}/api/settings/runtime`),
+  updateRuntimeSettings: (data: { provider: 'anthropic' | 'openai' }) =>
+    fetchJSON<RuntimeSettingsResponse>(`${API_BASE}/api/settings/runtime`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
   getPhase2Sessions: () => fetchJSON<Phase2SessionSummary[]>(`${API_BASE}/api/p2/sessions`),
   getPhase2Scenarios: () => fetchJSON<Phase2ScenarioSummary[]>(`${API_BASE}/api/p2/scenarios`),
   getPhase2ScenarioWorkflowContract: (id: string) =>

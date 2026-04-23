@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowRight, Bot, CheckCircle2, Clock3, MessageSquareText, Wrench, XCircle } from 'lucide-react'
+import { ArrowRight, Bot, CheckCircle2, Clock3, MessageSquareText, Play, Wrench, XCircle } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
-import { api, type Phase2SessionArtifact, type Phase2SessionDetail, type Phase2SessionEvent, type Phase2SessionFinding, type Phase2SessionSummary, type Phase2WorkflowContractResponse } from '@/lib/api'
+import { Button } from '@/components/ui/Button'
+import { api, type Phase2ScenarioSummary, type Phase2SessionArtifact, type Phase2SessionDetail, type Phase2SessionEvent, type Phase2SessionFinding, type Phase2SessionSummary, type Phase2WorkflowContractResponse } from '@/lib/api'
 import { cn, formatDuration, formatRelativeTime } from '@/lib/utils'
 
 type AgenticStatus = Phase2SessionSummary['status']
+type RunsView = 'current' | 'history'
 type SessionFilter = 'all' | 'single' | 'multi'
 type ContractFilter = 'all' | 'contract_compliant' | 'contract_drift' | 'contract_violated' | 'contract_evaluating'
 type SortMode = 'recent' | 'contract_severity'
@@ -18,6 +20,7 @@ function parseAgenticRunsHash() {
   if (page !== 'agentic-runs') return null
 
   const params = new URLSearchParams(query)
+  const tab = params.get('tab')
   const sessionFilter = params.get('sessionFilter')
   const contractFilter = params.get('contractFilter')
   const sortMode = params.get('sortMode')
@@ -27,6 +30,7 @@ function parseAgenticRunsHash() {
   const selectedId = params.get('selectedId')
 
   return {
+    tab: tab === 'current' || tab === 'history' ? (tab as RunsView) : null,
     selectedId,
     sessionFilter: sessionFilter === 'all' || sessionFilter === 'single' || sessionFilter === 'multi'
       ? (sessionFilter as SessionFilter)
@@ -52,6 +56,7 @@ function parseAgenticRunsHash() {
 }
 
 function writeAgenticRunsHash(state: {
+  tab: RunsView
   selectedId: string | null
   sessionFilter: SessionFilter
   contractFilter: ContractFilter
@@ -61,11 +66,12 @@ function writeAgenticRunsHash(state: {
   handoffFilter: HandoffFilter
 }) {
   const params = new URLSearchParams()
-  if (state.selectedId) params.set('selectedId', state.selectedId)
-  if (state.sessionFilter !== 'all') params.set('sessionFilter', state.sessionFilter)
-  if (state.contractFilter !== 'all') params.set('contractFilter', state.contractFilter)
-  if (state.sortMode !== 'recent') params.set('sortMode', state.sortMode)
-  if (state.sessionWindow !== 'all') params.set('sessionWindow', state.sessionWindow)
+  if (state.tab === 'history') params.set('tab', 'history')
+  if (state.tab === 'history' && state.selectedId) params.set('selectedId', state.selectedId)
+  if (state.tab === 'history' && state.sessionFilter !== 'all') params.set('sessionFilter', state.sessionFilter)
+  if (state.tab === 'history' && state.contractFilter !== 'all') params.set('contractFilter', state.contractFilter)
+  if (state.tab === 'history' && state.sortMode !== 'recent') params.set('sortMode', state.sortMode)
+  if (state.tab === 'history' && state.sessionWindow !== 'all') params.set('sessionWindow', state.sessionWindow)
   if (state.agentFilter !== 'all') params.set('agentFilter', state.agentFilter)
   if (state.handoffFilter !== 'all') params.set('handoffFilter', state.handoffFilter)
   const nextHash = params.toString() ? `#agentic-runs?${params.toString()}` : '#agentic-runs'
@@ -1041,8 +1047,15 @@ function SpecVsRunReal({
 
 export function AgenticRuns() {
   const [sessions, setSessions] = useState<Phase2SessionSummary[]>([])
+  const [scenarios, setScenarios] = useState<Phase2ScenarioSummary[]>([])
   const initialHashState = parseAgenticRunsHash()
+  const [activeView, setActiveView] = useState<RunsView>(initialHashState?.tab ?? 'current')
   const [selectedId, setSelectedId] = useState<string | null>(initialHashState?.selectedId ?? null)
+  const [currentSessionIdOverride, setCurrentSessionIdOverride] = useState<string | null>(null)
+  const [selectedScenario, setSelectedScenario] = useState('first_order_multi_role')
+  const [customerName, setCustomerName] = useState('')
+  const [startingRun, setStartingRun] = useState(false)
+  const [startError, setStartError] = useState<string | null>(null)
   const [sessionDetail, setSessionDetail] = useState<Phase2SessionDetail | null>(null)
   const [events, setEvents] = useState<Phase2SessionEvent[]>([])
   const [findings, setFindings] = useState<Phase2SessionFinding[]>([])
@@ -1065,7 +1078,8 @@ export function AgenticRuns() {
     const handleAgenticRunStarted = (rawEvent: Event) => {
       const event = rawEvent as CustomEvent<{ session_id?: string }>
       if (event.detail?.session_id) {
-        setSelectedId(event.detail.session_id)
+        setActiveView('current')
+        setCurrentSessionIdOverride(event.detail.session_id)
       }
     }
 
@@ -1077,6 +1091,7 @@ export function AgenticRuns() {
     const syncFromHash = () => {
       const hashState = parseAgenticRunsHash()
       if (!hashState) return
+      setActiveView(hashState.tab ?? 'current')
       setSelectedId(hashState.selectedId ?? null)
       setSessionFilter(hashState.sessionFilter ?? 'all')
       setContractFilter(hashState.contractFilter ?? 'all')
@@ -1095,10 +1110,18 @@ export function AgenticRuns() {
 
     const load = async () => {
       try {
-        const nextSessions = await api.getPhase2Sessions()
+        const [nextSessions, nextScenarios] = await Promise.all([
+          api.getPhase2Sessions(),
+          api.getPhase2Scenarios(),
+        ])
         if (!mounted) return
         setSessions(nextSessions)
-        setSelectedId((current) => current ?? nextSessions[0]?.id ?? null)
+        setScenarios(nextScenarios)
+        setSelectedScenario((current) => (
+          nextScenarios.some((scenario) => scenario.id === current)
+            ? current
+            : nextScenarios[0]?.id ?? current
+        ))
       } finally {
         if (mounted) setLoading(false)
       }
@@ -1112,8 +1135,32 @@ export function AgenticRuns() {
     }
   }, [])
 
+  const sessionsByRecency = useMemo(
+    () => [...sessions].sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()),
+    [sessions],
+  )
+
+  const activeSession = sessions.find((session) => session.status === 'running' || session.status === 'pending') ?? null
+  const currentSessionSummary = useMemo(() => {
+    if (currentSessionIdOverride) {
+      const overrideSession = sessions.find((session) => session.id === currentSessionIdOverride)
+      if (overrideSession) return overrideSession
+    }
+    return activeSession ?? sessionsByRecency[0] ?? null
+  }, [activeSession, currentSessionIdOverride, sessions, sessionsByRecency])
+
+  const detailSessionId = activeView === 'current'
+    ? currentSessionIdOverride ?? currentSessionSummary?.id ?? null
+    : selectedId
+
   useEffect(() => {
-    if (!selectedId) {
+    if (currentSessionIdOverride && currentSessionSummary?.id === currentSessionIdOverride) {
+      setCurrentSessionIdOverride(null)
+    }
+  }, [currentSessionIdOverride, currentSessionSummary?.id])
+
+  useEffect(() => {
+    if (!detailSessionId) {
       setSessionDetail(null)
       setEvents([])
       setFindings([])
@@ -1129,10 +1176,10 @@ export function AgenticRuns() {
     const loadDetail = async () => {
       try {
         const [detail, nextEvents, nextFindings, nextArtifacts] = await Promise.all([
-          api.getPhase2Session(selectedId),
-          api.getPhase2SessionEvents(selectedId),
-          api.getPhase2SessionFindings(selectedId),
-          api.getPhase2SessionArtifacts(selectedId),
+          api.getPhase2Session(detailSessionId),
+          api.getPhase2SessionEvents(detailSessionId),
+          api.getPhase2SessionFindings(detailSessionId),
+          api.getPhase2SessionArtifacts(detailSessionId),
         ])
         if (!mounted) return
         setSessionDetail(detail)
@@ -1157,7 +1204,7 @@ export function AgenticRuns() {
     let ws: WebSocket | null = null
 
     try {
-      ws = new WebSocket(api.getPhase2SessionWsUrl(selectedId))
+      ws = new WebSocket(api.getPhase2SessionWsUrl(detailSessionId))
 
       ws.onopen = () => {
         socketSettled = true
@@ -1222,7 +1269,7 @@ export function AgenticRuns() {
       }
       ws?.close()
     }
-  }, [selectedId])
+  }, [detailSessionId])
 
   useEffect(() => {
     if (!sessionDetail?.scenarioId) {
@@ -1304,7 +1351,12 @@ export function AgenticRuns() {
     })
   }, [agentFilter, events, handoffFilter])
 
-  const orderedSessions = useMemo(() => {
+  const historySessions = useMemo(
+    () => sessions.filter((session) => session.id !== currentSessionSummary?.id),
+    [currentSessionSummary?.id, sessions],
+  )
+
+  const orderedHistorySessions = useMemo(() => {
     const severityRank = (verdict: Phase2SessionSummary['contractVerdict']) => {
       switch (verdict) {
         case 'contract_violated':
@@ -1350,10 +1402,22 @@ export function AgenticRuns() {
 
     const limit = Number(sessionWindow)
     return filtered.slice(0, limit)
-  }, [contractFilter, sessionFilter, sessionWindow, sessions, sortMode])
+  }, [contractFilter, historySessions, sessionFilter, sessionWindow, sortMode])
+
+  useEffect(() => {
+    if (activeView !== 'history') return
+
+    const hasSelectedHistorySession = selectedId
+      ? orderedHistorySessions.some((session) => session.id === selectedId)
+      : false
+
+    if (!hasSelectedHistorySession) {
+      setSelectedId(orderedHistorySessions[0]?.id ?? null)
+    }
+  }, [activeView, orderedHistorySessions, selectedId])
 
   const visibleContractSummary = useMemo(() => {
-    return orderedSessions.reduce(
+    return orderedHistorySessions.reduce(
       (acc, session) => {
         switch (session.contractVerdict) {
           case 'contract_violated':
@@ -1376,10 +1440,10 @@ export function AgenticRuns() {
       },
       { violated: 0, drift: 0, compliant: 0, noContract: 0 },
     )
-  }, [orderedSessions])
+  }, [orderedHistorySessions])
 
   const visibleContractSeverity = useMemo(() => {
-    return orderedSessions.reduce(
+    return orderedHistorySessions.reduce(
       (acc, session) => {
         acc.hardViolations += session.contractHardViolations ?? 0
         acc.driftSignals += session.contractDriftSignals ?? 0
@@ -1387,10 +1451,35 @@ export function AgenticRuns() {
       },
       { hardViolations: 0, driftSignals: 0 },
     )
-  }, [orderedSessions])
+  }, [orderedHistorySessions])
+
+  const selectedScenarioGate = scenarios.find((scenario) => scenario.id === selectedScenario)?.quality_gate
+  const startRunDisabled = !selectedScenario || selectedScenarioGate?.status === 'restricted' || Boolean(activeSession)
+
+  const handleStartRun = async () => {
+    if (startRunDisabled || startingRun) return
+    if (selectedScenarioGate?.status === 'restricted') return
+    setStartingRun(true)
+    setStartError(null)
+
+    try {
+      const result = await api.startPhase2Run({
+        scenario_id: selectedScenario,
+        customer_name: customerName.trim() || undefined,
+      })
+      setActiveView('current')
+      setCurrentSessionIdOverride(result.session_id)
+      window.dispatchEvent(new CustomEvent('agentic-run-started', { detail: result }))
+    } catch (error) {
+      setStartError(error instanceof Error ? error.message : 'Falha ao iniciar sessão agentic')
+    } finally {
+      setStartingRun(false)
+    }
+  }
 
   useEffect(() => {
     writeAgenticRunsHash({
+      tab: activeView,
       selectedId,
       sessionFilter,
       contractFilter,
@@ -1399,10 +1488,188 @@ export function AgenticRuns() {
       agentFilter,
       handoffFilter,
     })
-  }, [agentFilter, contractFilter, handoffFilter, selectedId, sessionFilter, sessionWindow, sortMode])
+  }, [activeView, agentFilter, contractFilter, handoffFilter, selectedId, sessionFilter, sessionWindow, sortMode])
+
+  const detailContent = !detailSessionId ? (
+    <Card>
+      <p className="text-sm text-[var(--text-muted)]">
+        {activeView === 'current'
+          ? 'Nenhuma execução em foco. Inicie uma nova run para acompanhar os eventos desta aba.'
+          : 'Selecione uma sessão do histórico.'}
+      </p>
+    </Card>
+  ) : detailLoading && !sessionDetail ? (
+    <Card>
+      <p className="text-sm text-[var(--text-muted)]">Loading session detail...</p>
+    </Card>
+  ) : sessionDetail ? (
+    <>
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="p-4">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">
+            <CheckCircle2 className="h-4 w-4" />
+            Status
+          </div>
+          <p className="mt-3 text-lg font-semibold text-[var(--text-primary)]">
+            {sessionDetail.status}
+          </p>
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">
+            <Clock3 className="h-4 w-4" />
+            Duration
+          </div>
+          <p className="mt-3 text-lg font-semibold text-[var(--text-primary)]">
+            {sessionDuration ?? 'Running'}
+          </p>
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">
+            <MessageSquareText className="h-4 w-4" />
+            Events
+          </div>
+          <p className="mt-3 text-lg font-semibold text-[var(--text-primary)]">
+            {events.length}
+          </p>
+          <p className="mt-2 text-xs text-[var(--text-muted)]">
+            {detailConnection === 'live'
+              ? 'Live via WebSocket'
+              : detailConnection === 'fallback'
+                ? 'Fallback polling'
+                : detailConnection === 'connecting'
+                  ? 'Connecting...'
+                  : 'Idle'}
+          </p>
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">
+            {findings.length > 0 ? <XCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+            Findings
+          </div>
+          <p className="mt-3 text-lg font-semibold text-[var(--text-primary)]">
+            {findings.length}
+          </p>
+        </Card>
+      </div>
+
+      <Card className="space-y-3">
+        <div>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">
+            {sessionDetail.scenarioId}
+          </h2>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
+            Session ID: {sessionDetail.id}
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
+            <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Started</p>
+            <p className="mt-2 text-sm text-[var(--text-primary)]">{formatRelativeTime(sessionDetail.startedAt)}</p>
+          </div>
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
+            <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Checkpoint</p>
+            <p className="mt-2 text-sm text-[var(--text-primary)]">
+              step {sessionDetail.checkpoint.lastCompletedStep} / cursor {sessionDetail.checkpoint.cursor}
+            </p>
+          </div>
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
+            <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Artifacts</p>
+            <p className="mt-2 text-sm text-[var(--text-primary)]">
+              {Object.keys(sessionDetail.artifacts ?? {}).length}
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <WorkflowSpecPanel
+        workflowYaml={sessionDetail.workflowContractYaml ?? workflowContract?.workflow_contract_yaml}
+        loading={workflowLoading}
+        error={workflowError}
+      />
+      <SpecVsRunReal
+        workflowContract={workflowContract}
+        sessionDetail={sessionDetail}
+        events={events}
+      />
+      <Card className="space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">View filters</h3>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">
+            Filtre a sessão por agente ou status de handoff.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div>
+            <p className="mb-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">Agent</p>
+            <div className="flex flex-wrap gap-2">
+              {availableAgents.map((agentId) => (
+                <button
+                  key={agentId}
+                  onClick={() => setAgentFilter(agentId)}
+                  className={cn(
+                    'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+                    agentFilter === agentId
+                      ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
+                      : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
+                  )}
+                >
+                  {agentId === 'all' ? 'All agents' : formatAgentName(agentId)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">Handoff status</p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                ['all', 'All'],
+                ['proposed', 'Proposed'],
+                ['accepted', 'Accepted'],
+                ['rejected', 'Rejected'],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => setHandoffFilter(id as HandoffFilter)}
+                  className={cn(
+                    'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+                    handoffFilter === id
+                      ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
+                      : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <HandoffBoard events={filteredEvents} />
+      <ScreenshotGallery
+        artifacts={artifacts.filter((artifact) => agentFilter === 'all' || artifact.agentRole === agentFilter)}
+        onOpenScreenshot={(src, alt) => setScreenshotModal({ src, alt })}
+      />
+      <FindingsByAgent findings={findings.filter((finding) => agentFilter === 'all' || finding.agentId === agentFilter)} />
+      <AgentConversation
+        events={filteredEvents}
+        artifactsById={artifactsById}
+        onOpenScreenshot={(src, alt) => setScreenshotModal({ src, alt })}
+      />
+      <EventTimeline
+        events={filteredEvents}
+        artifactsById={artifactsById}
+        onOpenScreenshot={(src, alt) => setScreenshotModal({ src, alt })}
+      />
+    </>
+  ) : (
+    <Card>
+      <p className="text-sm text-[var(--text-muted)]">Falha ao carregar a sessão.</p>
+    </Card>
+  )
 
   return (
-    <div className="grid h-full gap-6 p-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+    <div className="flex h-full flex-col gap-4 p-6">
       <AnimatePresence>
         {screenshotModal && (
           <ScreenshotModal
@@ -1412,361 +1679,381 @@ export function AgenticRuns() {
           />
         )}
       </AnimatePresence>
-      <Card className="flex min-h-0 flex-col overflow-hidden p-0">
-        <div className="border-b border-[var(--border)] px-5 py-4">
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">Agentic sessions</h2>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Runs multi-agent com handoff e eventos persistidos.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <span className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-red-300">
-              violated {visibleContractSummary.violated}
-            </span>
-            <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-amber-300">
-              drift {visibleContractSummary.drift}
-            </span>
-            <span className="rounded-md border border-green-500/30 bg-green-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-green-300">
-              compliant {visibleContractSummary.compliant}
-            </span>
-            <span className="rounded-md border border-zinc-500/30 bg-zinc-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-zinc-300">
-              no contract {visibleContractSummary.noContract}
-            </span>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <span className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-red-300">
-              {visibleContractSeverity.hardViolations} hard violations
-            </span>
-            <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-amber-300">
-              {visibleContractSeverity.driftSignals} drift signals
-            </span>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {[
-              { id: 'all', label: 'All' },
-              { id: 'single', label: 'Single-agent' },
-              { id: 'multi', label: 'Multi-agent' },
-            ].map((filter) => (
-              <button
-                key={filter.id}
-                onClick={() => setSessionFilter(filter.id as 'all' | 'single' | 'multi')}
-                className={cn(
-                  'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
-                  sessionFilter === filter.id
-                    ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
-                    : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
-                )}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {[
-              { id: 'all', label: 'All contracts' },
-              { id: 'contract_evaluating', label: 'Evaluating' },
-              { id: 'contract_compliant', label: 'Compliant' },
-              { id: 'contract_drift', label: 'Drift' },
-              { id: 'contract_violated', label: 'Violated' },
-            ].map((filter) => (
-              <button
-                key={filter.id}
-                onClick={() => setContractFilter(filter.id as ContractFilter)}
-                className={cn(
-                  'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
-                  contractFilter === filter.id
-                    ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
-                    : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
-                )}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {[
-              { id: 'recent', label: 'Most recent' },
-              { id: 'contract_severity', label: 'Contract severity' },
-            ].map((mode) => (
-              <button
-                key={mode.id}
-                onClick={() => setSortMode(mode.id as 'recent' | 'contract_severity')}
-                className={cn(
-                  'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
-                  sortMode === mode.id
-                    ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
-                    : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
-                )}
-              >
-                {mode.label}
-              </button>
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {[
-              { id: 'all', label: 'All sessions' },
-              { id: '10', label: 'Recent 10' },
-              { id: '20', label: 'Recent 20' },
-            ].map((windowOption) => (
-              <button
-                key={windowOption.id}
-                onClick={() => setSessionWindow(windowOption.id as 'all' | '10' | '20')}
-                className={cn(
-                  'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
-                  sessionWindow === windowOption.id
-                    ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
-                    : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
-                )}
-              >
-                {windowOption.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {loading ? (
-            <div className="p-5 text-sm text-[var(--text-muted)]">Loading sessions...</div>
-          ) : orderedSessions.length === 0 ? (
-            <div className="p-5 text-sm text-[var(--text-muted)]">Nenhuma sessão agentic registrada.</div>
-          ) : (
-            <div className="space-y-2 p-3">
-              {orderedSessions.map((session) => {
-                const isMultiRole = session.scenarioId.includes('multi_role')
-                return (
-                <button
-                  key={session.id}
-                  onClick={() => setSelectedId(session.id)}
-                  className={cn(
-                    'w-full rounded-lg border px-4 py-3 text-left transition-colors',
-                    selectedId === session.id
-                      ? 'border-[var(--accent)] bg-[var(--accent)]/10'
-                      : 'border-[var(--border)] bg-[var(--bg-primary)] hover:border-[var(--accent)]/30',
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="truncate text-sm font-semibold text-[var(--text-primary)]">
-                      {session.scenarioId}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <span className={cn(
-                        'rounded-md border px-2 py-1 text-[10px] font-semibold uppercase',
-                        isMultiRole
-                          ? 'border-violet-500/30 bg-violet-500/10 text-violet-300'
-                          : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-300',
-                      )}>
-                        {isMultiRole ? 'multi-agent' : 'single-agent'}
-                      </span>
-                      <span className={cn('rounded-md border px-2 py-1 text-[10px] font-semibold uppercase', statusClasses(session.status))}>
-                        {session.status}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <span className={cn('rounded-md border px-2 py-1 text-[10px] font-semibold uppercase', contractVerdictClasses(session.contractVerdict ?? null))}>
-                      {formatContractVerdict(session.contractVerdict ?? null)}
-                    </span>
-                    {session.contractVerdict && (
-                      <span className="rounded-md border border-[var(--border)] px-2 py-1 text-[10px] text-[var(--text-secondary)]">
-                        {session.contractHardViolations ?? 0} hard / {session.contractDriftSignals ?? 0} drift
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-[var(--text-muted)]">
-                    <span>{session.eventCount} events</span>
-                    <span>{session.artifactCount} artifacts</span>
-                    <span>{session.findingCount} findings</span>
-                  </div>
-                  {session.status === 'failed' && session.lastError && (
-                    <p className="mt-2 line-clamp-2 text-xs text-red-300" title={session.lastError}>
-                      {session.lastError}
-                    </p>
-                  )}
-                  <p className="mt-2 text-xs text-[var(--text-muted)]">
-                    {formatRelativeTime(session.startedAt)}
-                  </p>
-                </button>
-                )
-              })}
-            </div>
-          )}
+      <Card className="p-2">
+        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Agentic Runs views">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeView === 'current'}
+            onClick={() => setActiveView('current')}
+            className={cn(
+              'rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+              activeView === 'current'
+                ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
+                : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
+            )}
+          >
+            Execução Atual {(currentSessionSummary || currentSessionIdOverride) ? '(1)' : '(0)'}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeView === 'history'}
+            onClick={() => setActiveView('history')}
+            className={cn(
+              'rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+              activeView === 'history'
+                ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
+                : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
+            )}
+          >
+            Histórico ({historySessions.length})
+          </button>
         </div>
       </Card>
 
-      <div className="min-h-0 space-y-6 overflow-y-auto pr-1">
-        {!selectedId ? (
-          <Card>
-            <p className="text-sm text-[var(--text-muted)]">Selecione uma sessão agentic.</p>
-          </Card>
-        ) : detailLoading && !sessionDetail ? (
-          <Card>
-            <p className="text-sm text-[var(--text-muted)]">Loading session detail...</p>
-          </Card>
-        ) : sessionDetail ? (
-          <>
-            <div className="grid gap-4 md:grid-cols-4">
-              <Card className="p-4">
-                <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">
-                  <CheckCircle2 className="h-4 w-4" />
-                  Status
-                </div>
-                <p className="mt-3 text-lg font-semibold text-[var(--text-primary)]">
-                  {sessionDetail.status}
-                </p>
-              </Card>
-              <Card className="p-4">
-                <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">
-                  <Clock3 className="h-4 w-4" />
-                  Duration
-                </div>
-                <p className="mt-3 text-lg font-semibold text-[var(--text-primary)]">
-                  {sessionDuration ?? 'Running'}
-                </p>
-              </Card>
-              <Card className="p-4">
-                <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">
-                  <MessageSquareText className="h-4 w-4" />
-                  Events
-                </div>
-                <p className="mt-3 text-lg font-semibold text-[var(--text-primary)]">
-                  {events.length}
-                </p>
-                <p className="mt-2 text-xs text-[var(--text-muted)]">
-                  {detailConnection === 'live'
-                    ? 'Live via WebSocket'
-                    : detailConnection === 'fallback'
-                      ? 'Fallback polling'
-                      : detailConnection === 'connecting'
-                        ? 'Connecting...'
-                        : 'Idle'}
-                </p>
-              </Card>
-              <Card className="p-4">
-                <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">
-                  {findings.length > 0 ? <XCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Findings
-                </div>
-                <p className="mt-3 text-lg font-semibold text-[var(--text-primary)]">
-                  {findings.length}
-                </p>
-              </Card>
+      {activeView === 'current' ? (
+        <div className="grid min-h-0 flex-1 gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+          <Card className="flex min-h-0 flex-col overflow-hidden p-0">
+            <div className="border-b border-[var(--border)] px-5 py-4">
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Execução Atual</h2>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Uma única run em foco. Ao iniciar uma nova, a anterior vai para o histórico.
+              </p>
             </div>
 
-            <Card className="space-y-3">
-              <div>
-                <h2 className="text-base font-semibold text-[var(--text-primary)]">
-                  {sessionDetail.scenarioId}
-                </h2>
-                <p className="mt-1 text-sm text-[var(--text-muted)]">
-                  Session ID: {sessionDetail.id}
-                </p>
-              </div>
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
-                  <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Started</p>
-                  <p className="mt-2 text-sm text-[var(--text-primary)]">{formatRelativeTime(sessionDetail.startedAt)}</p>
-                </div>
-                <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
-                  <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Checkpoint</p>
-                  <p className="mt-2 text-sm text-[var(--text-primary)]">
-                    step {sessionDetail.checkpoint.lastCompletedStep} / cursor {sessionDetail.checkpoint.cursor}
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-3">
+                <div className="mb-3">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+                    Nova execução
+                  </h3>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">
+                    Inicie uma nova execução e acompanhe os eventos ao vivo nesta aba.
                   </p>
+                  {activeSession && (
+                    <p className="mt-2 rounded-md border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">
+                      Uma sessão já está em execução: {activeSession.scenarioId}
+                    </p>
+                  )}
                 </div>
-                <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
-                  <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Artifacts</p>
-                  <p className="mt-2 text-sm text-[var(--text-primary)]">
-                    {Object.keys(sessionDetail.artifacts ?? {}).length}
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Scenario
+                    </label>
+                    <select
+                      value={selectedScenario}
+                      onChange={(event) => setSelectedScenario(event.target.value)}
+                      className="h-9 w-full rounded-md border border-[var(--border)] bg-[var(--bg-card)] px-2.5 text-xs text-[var(--text-primary)] focus:border-[var(--accent)]/50 focus:outline-none"
+                    >
+                      {scenarios.map((scenario) => (
+                        <option key={scenario.id} value={scenario.id}>
+                          {scenario.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedScenarioGate ? (
+                    <div className="rounded-md border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">quality gate</span>
+                        <span
+                          className={cn(
+                            'rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase',
+                            selectedScenarioGate.status === 'restricted'
+                              ? 'border-red-500/20 bg-red-500/10 text-red-300'
+                              : selectedScenarioGate.status === 'review_required'
+                                ? 'border-amber-500/20 bg-amber-500/10 text-amber-300'
+                                : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
+                          )}
+                        >
+                          {selectedScenarioGate.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                        {selectedScenarioGate.reason}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Customer name
+                    </label>
+                    <input
+                      value={customerName}
+                      onChange={(event) => setCustomerName(event.target.value)}
+                      placeholder="Opcional; gera nome único se vazio"
+                      className="h-9 w-full rounded-md border border-[var(--border)] bg-[var(--bg-card)] px-2.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]/50 focus:outline-none"
+                    />
+                  </div>
+
+                  <Button
+                    variant="primary"
+                    icon={<Play className="h-3.5 w-3.5" />}
+                    loading={startingRun}
+                    onClick={handleStartRun}
+                    disabled={startRunDisabled}
+                    className="w-full justify-center"
+                  >
+                    {activeSession
+                      ? 'Sessão em execução'
+                      : selectedScenarioGate?.status === 'restricted'
+                        ? 'Scenario Restricted'
+                        : 'Iniciar Sessão'}
+                  </Button>
+
+                  {startError && (
+                    <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                      {startError}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+                      Run em foco
+                    </h3>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      A aba mostra a sessão ativa ou, na ausência de uma ativa, a mais recente.
+                    </p>
+                  </div>
+                  {currentSessionSummary && (
+                    <span className={cn('rounded-md border px-2 py-1 text-[10px] font-semibold uppercase', statusClasses(currentSessionSummary.status))}>
+                      {currentSessionSummary.status}
+                    </span>
+                  )}
+                </div>
+
+                {currentSessionIdOverride && currentSessionSummary?.id !== currentSessionIdOverride ? (
+                  <p className="mt-4 text-sm text-[var(--text-muted)]">Inicializando nova sessão...</p>
+                ) : currentSessionSummary ? (
+                  <div className="mt-4 space-y-3">
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--text-primary)]">{currentSessionSummary.scenarioId}</p>
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">{formatRelativeTime(currentSessionSummary.startedAt)}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className={cn('rounded-md border px-2 py-1 text-[10px] font-semibold uppercase', contractVerdictClasses(currentSessionSummary.contractVerdict ?? null))}>
+                        {formatContractVerdict(currentSessionSummary.contractVerdict ?? null)}
+                      </span>
+                      <span className="rounded-md border border-[var(--border)] px-2 py-1 text-[10px] text-[var(--text-secondary)]">
+                        {currentSessionSummary.eventCount} events
+                      </span>
+                      <span className="rounded-md border border-[var(--border)] px-2 py-1 text-[10px] text-[var(--text-secondary)]">
+                        {currentSessionSummary.artifactCount} artifacts
+                      </span>
+                      <span className="rounded-md border border-[var(--border)] px-2 py-1 text-[10px] text-[var(--text-secondary)]">
+                        {currentSessionSummary.findingCount} findings
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-[var(--text-muted)]">
+                    Nenhuma execução em foco no momento.
                   </p>
-                </div>
+                )}
               </div>
-            </Card>
-
-            <WorkflowSpecPanel
-              workflowYaml={sessionDetail.workflowContractYaml ?? workflowContract?.workflow_contract_yaml}
-              loading={workflowLoading}
-              error={workflowError}
-            />
-            <SpecVsRunReal
-              workflowContract={workflowContract}
-              sessionDetail={sessionDetail}
-              events={events}
-            />
-            <Card className="space-y-3">
-              <div>
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]">View filters</h3>
-                <p className="mt-1 text-xs text-[var(--text-muted)]">
-                  Filtre a sessão por agente ou status de handoff.
-                </p>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <div>
-                  <p className="mb-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">Agent</p>
-                  <div className="flex flex-wrap gap-2">
-                    {availableAgents.map((agentId) => (
-                      <button
-                        key={agentId}
-                        onClick={() => setAgentFilter(agentId)}
-                        className={cn(
-                          'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
-                          agentFilter === agentId
-                            ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
-                            : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
-                        )}
-                      >
-                        {agentId === 'all' ? 'All agents' : formatAgentName(agentId)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="mb-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">Handoff status</p>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      ['all', 'All'],
-                      ['proposed', 'Proposed'],
-                      ['accepted', 'Accepted'],
-                      ['rejected', 'Rejected'],
-                    ].map(([id, label]) => (
-                      <button
-                        key={id}
-                        onClick={() => setHandoffFilter(id as 'all' | 'proposed' | 'accepted' | 'rejected')}
-                        className={cn(
-                          'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
-                          handoffFilter === id
-                            ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
-                            : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
-                        )}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </Card>
-
-            <HandoffBoard events={filteredEvents} />
-            <ScreenshotGallery
-              artifacts={artifacts.filter((artifact) => agentFilter === 'all' || artifact.agentRole === agentFilter)}
-              onOpenScreenshot={(src, alt) => setScreenshotModal({ src, alt })}
-            />
-            <FindingsByAgent findings={findings.filter((finding) => agentFilter === 'all' || finding.agentId === agentFilter)} />
-            <AgentConversation
-              events={filteredEvents}
-              artifactsById={artifactsById}
-              onOpenScreenshot={(src, alt) => setScreenshotModal({ src, alt })}
-            />
-            <EventTimeline
-              events={filteredEvents}
-              artifactsById={artifactsById}
-              onOpenScreenshot={(src, alt) => setScreenshotModal({ src, alt })}
-            />
-          </>
-        ) : (
-          <Card>
-            <p className="text-sm text-[var(--text-muted)]">Falha ao carregar a sessão.</p>
+            </div>
           </Card>
-        )}
-      </div>
+
+          <div className="min-h-0 space-y-6 overflow-y-auto pr-1">
+            {detailContent}
+          </div>
+        </div>
+      ) : (
+        <div className="grid min-h-0 flex-1 gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+          <Card className="flex min-h-0 flex-col overflow-hidden p-0">
+            <div className="border-b border-[var(--border)] px-5 py-4">
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Histórico</h2>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Sessões finalizadas ou anteriores. A execução em foco fica isolada na aba Execução Atual.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-red-300">
+                  violated {visibleContractSummary.violated}
+                </span>
+                <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-amber-300">
+                  drift {visibleContractSummary.drift}
+                </span>
+                <span className="rounded-md border border-green-500/30 bg-green-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-green-300">
+                  compliant {visibleContractSummary.compliant}
+                </span>
+                <span className="rounded-md border border-zinc-500/30 bg-zinc-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-zinc-300">
+                  no contract {visibleContractSummary.noContract}
+                </span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-red-300">
+                  {visibleContractSeverity.hardViolations} hard violations
+                </span>
+                <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-amber-300">
+                  {visibleContractSeverity.driftSignals} drift signals
+                </span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  { id: 'all', label: 'All' },
+                  { id: 'single', label: 'Single-agent' },
+                  { id: 'multi', label: 'Multi-agent' },
+                ].map((filter) => (
+                  <button
+                    key={filter.id}
+                    onClick={() => setSessionFilter(filter.id as SessionFilter)}
+                    className={cn(
+                      'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+                      sessionFilter === filter.id
+                        ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
+                        : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
+                    )}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  { id: 'all', label: 'All contracts' },
+                  { id: 'contract_evaluating', label: 'Evaluating' },
+                  { id: 'contract_compliant', label: 'Compliant' },
+                  { id: 'contract_drift', label: 'Drift' },
+                  { id: 'contract_violated', label: 'Violated' },
+                ].map((filter) => (
+                  <button
+                    key={filter.id}
+                    onClick={() => setContractFilter(filter.id as ContractFilter)}
+                    className={cn(
+                      'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+                      contractFilter === filter.id
+                        ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
+                        : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
+                    )}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  { id: 'recent', label: 'Most recent' },
+                  { id: 'contract_severity', label: 'Contract severity' },
+                ].map((mode) => (
+                  <button
+                    key={mode.id}
+                    onClick={() => setSortMode(mode.id as SortMode)}
+                    className={cn(
+                      'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+                      sortMode === mode.id
+                        ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
+                        : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
+                    )}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  { id: 'all', label: 'All sessions' },
+                  { id: '10', label: 'Recent 10' },
+                  { id: '20', label: 'Recent 20' },
+                ].map((windowOption) => (
+                  <button
+                    key={windowOption.id}
+                    onClick={() => setSessionWindow(windowOption.id as SessionWindow)}
+                    className={cn(
+                      'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+                      sessionWindow === windowOption.id
+                        ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
+                        : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
+                    )}
+                  >
+                    {windowOption.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {loading ? (
+                <div className="p-5 text-sm text-[var(--text-muted)]">Loading sessions...</div>
+              ) : orderedHistorySessions.length === 0 ? (
+                <div className="p-5 text-sm text-[var(--text-muted)]">Nenhuma sessão anterior disponível.</div>
+              ) : (
+                <div className="space-y-2 p-3">
+                  {orderedHistorySessions.map((session) => {
+                    const isMultiRole = session.scenarioId.includes('multi_role')
+                    return (
+                      <button
+                        key={session.id}
+                        onClick={() => setSelectedId(session.id)}
+                        className={cn(
+                          'w-full rounded-lg border px-4 py-3 text-left transition-colors',
+                          selectedId === session.id
+                            ? 'border-[var(--accent)] bg-[var(--accent)]/10'
+                            : 'border-[var(--border)] bg-[var(--bg-primary)] hover:border-[var(--accent)]/30',
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="truncate text-sm font-semibold text-[var(--text-primary)]">
+                            {session.scenarioId}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              'rounded-md border px-2 py-1 text-[10px] font-semibold uppercase',
+                              isMultiRole
+                                ? 'border-violet-500/30 bg-violet-500/10 text-violet-300'
+                                : 'border-zinc-500/30 bg-zinc-500/10 text-zinc-300',
+                            )}>
+                              {isMultiRole ? 'multi-agent' : 'single-agent'}
+                            </span>
+                            <span className={cn('rounded-md border px-2 py-1 text-[10px] font-semibold uppercase', statusClasses(session.status))}>
+                              {session.status}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <span className={cn('rounded-md border px-2 py-1 text-[10px] font-semibold uppercase', contractVerdictClasses(session.contractVerdict ?? null))}>
+                            {formatContractVerdict(session.contractVerdict ?? null)}
+                          </span>
+                          {session.contractVerdict && (
+                            <span className="rounded-md border border-[var(--border)] px-2 py-1 text-[10px] text-[var(--text-secondary)]">
+                              {session.contractHardViolations ?? 0} hard / {session.contractDriftSignals ?? 0} drift
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-[var(--text-muted)]">
+                          <span>{session.eventCount} events</span>
+                          <span>{session.artifactCount} artifacts</span>
+                          <span>{session.findingCount} findings</span>
+                        </div>
+                        {session.status === 'failed' && session.lastError && (
+                          <p className="mt-2 line-clamp-2 text-xs text-red-300" title={session.lastError}>
+                            {session.lastError}
+                          </p>
+                        )}
+                        <p className="mt-2 text-xs text-[var(--text-muted)]">
+                          {formatRelativeTime(session.startedAt)}
+                        </p>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </Card>
+
+          <div className="min-h-0 space-y-6 overflow-y-auto pr-1">
+            {detailContent}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

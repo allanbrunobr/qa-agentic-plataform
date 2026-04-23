@@ -1,8 +1,14 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { BootstrapDraft, DiscoveryReport } from '../../../host-sdk/src/contracts.ts'
 
-const ADAPTERS_ROOT = path.resolve('/path/to/projects/agentic-platform/adapters')
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const PLATFORM_ROOT = path.resolve(__dirname, '../../../..')
+const ADAPTERS_ROOT = process.env.AGENTIC_PLATFORM_ADAPTERS_ROOT
+  ? path.resolve(process.env.AGENTIC_PLATFORM_ADAPTERS_ROOT)
+  : path.join(PLATFORM_ROOT, 'adapters')
 
 function toConstName(targetAdapterId: string, suffix: string) {
   const normalized = targetAdapterId.replace(/[-_]+(.)/g, (_, char: string) => char.toUpperCase())
@@ -19,30 +25,64 @@ function print(value: unknown) {
   return JSON.stringify(value, null, 2)
 }
 
-function inferStepRole(stepId: string, fallbackRoles: string[]) {
-  if (stepId.includes('customer') || stepId.includes('schedule')) return 'sales-associate'
-  if (stepId.includes('fulfillment')) return 'fulfillment-agent'
-  if (stepId.includes('billing') || stepId.includes('guide')) return 'billing_clerk'
-  if (stepId.includes('closure') || stepId.includes('finance') || stepId.includes('report')) return 'store_manager'
-  return fallbackRoles[0] ?? 'unknown'
+function toCamelCase(value: string) {
+  const parts = value
+    .trim()
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean)
+
+  return parts
+    .map((part, index) => {
+      const lower = part.toLowerCase()
+      if (index === 0) return lower
+      return lower.charAt(0).toUpperCase() + lower.slice(1)
+    })
+    .join('')
 }
 
-function inferCapabilityId(stepId: string) {
-  if (stepId === 'create_customer') return 'createCustomer'
-  if (stepId === 'schedule_order' || stepId === 'schedule_return') return 'scheduleOrder'
-  if (stepId === 'complete_fulfillment' || stepId === 'complete_return_fulfillment') return 'completeFulfillment'
-  if (stepId === 'review_billing_guide') return 'findBillingGuideByEventId'
-  if (stepId === 'validate_closure') return 'validateManagementClosure'
-  return 'TODO'
+function normalizeComparable(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
+function tokenize(value: string) {
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+}
+
+function inferStepRole(stepId: string, fallbackRoles: string[]) {
+  if (fallbackRoles.length === 1) return fallbackRoles[0]!
+
+  const stepTokens = new Set(tokenize(stepId))
+  const matchedRole = fallbackRoles.find((role) => tokenize(role).some((token) => stepTokens.has(token)))
+  return matchedRole ?? fallbackRoles[0] ?? 'primary_user'
+}
+
+function inferCapabilityId(stepId: string, capabilityCandidates: string[]) {
+  const comparableStepId = normalizeComparable(stepId)
+  const exactMatch = capabilityCandidates.find((candidate) => normalizeComparable(candidate) === comparableStepId)
+  if (exactMatch) return exactMatch
+
+  const stepTokens = new Set(tokenize(stepId))
+  const tokenMatch = capabilityCandidates.find((candidate) => tokenize(candidate).some((token) => stepTokens.has(token)))
+  return tokenMatch ?? toCamelCase(stepId) ?? 'executeStep'
 }
 
 function inferProducedArtifacts(stepId: string) {
-  if (stepId === 'create_customer') return ['customerId']
-  if (stepId === 'schedule_order' || stepId === 'schedule_return') return ['eventId']
-  if (stepId === 'complete_fulfillment' || stepId === 'complete_return_fulfillment') return ['fulfillmentCompleted']
-  if (stepId === 'review_billing_guide') return ['billingGuideValidated']
-  if (stepId === 'validate_closure') return ['financeValidated', 'reportsValidated']
-  return []
+  const tokens = new Set(tokenize(stepId))
+
+  if (tokens.has('verify') || tokens.has('validate') || tokens.has('assert')) return ['verificationResult']
+  if (tokens.has('api') || tokens.has('request') || tokens.has('endpoint')) return ['response']
+  if (tokens.has('inspect') || tokens.has('identify') || tokens.has('discover')) return ['inspectionResult']
+  if (tokens.has('run') || tokens.has('command') || tokens.has('cli')) return ['commandResult']
+  if (tokens.has('open') || tokens.has('navigate') || tokens.has('visit')) return ['pageLoaded']
+  if (tokens.has('fill') || tokens.has('add') || tokens.has('submit') || tokens.has('interact')) {
+    return ['interactionResult']
+  }
+
+  const artifactName = toCamelCase(`${stepId}_result`)
+  return artifactName ? [artifactName] : ['stepResult']
 }
 
 export async function materializeAdapterDraft(input: {
@@ -128,7 +168,7 @@ export const ${scenariosConst}: AdapterScenarioModel[] = ${print(
       stepDefinitions: scenario.candidateSteps.map((stepId) => ({
         id: stepId,
         roleId: inferStepRole(stepId, scenario.participatingRoles),
-        capabilityId: inferCapabilityId(stepId),
+        capabilityId: inferCapabilityId(stepId, input.draft.capabilityCandidates),
         producesArtifacts: inferProducedArtifacts(stepId),
       })),
     })),

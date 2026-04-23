@@ -15,7 +15,7 @@ export async function handleReviewRequest(body: BootstrapRequest): Promise<Revie
   const result = await renderBootstrapReviewDocument(body)
 
   return {
-    adapterId: body.adapterHint ?? 'reference-store-discovery',
+    adapterId: body.adapterHint ?? 'generic-repository-discovery',
     report: result.viewModel,
     html: result.html,
   }

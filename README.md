@@ -10,7 +10,7 @@ Stable baseline validated on `2026-04-16`:
 
 - install `.agentic-qa` into a real host repository
 - run discovery and materialize the adapter locally
-- generate `.env.local` from a validated or configured Anthropic key source
+- generate `.env.local` from configured provider key sources when available
 - start the generated dashboard and API in isolated ports
 - start real multi-role runs from the generated dashboard/runtime
 - persist and list sessions correctly in the generated runtime
@@ -53,13 +53,13 @@ AGENTIC_QA_TEMPLATE_ROOT=/absolute/path/to/persona-qa-dashboard
 At the moment, the platform expects these inputs from the operator:
 
 - target repository path
-- Anthropic API key from one of the supported sources when running browser/model-backed frontend flows
+- Anthropic or OpenAI API key from one of the supported sources when running browser/model-backed frontend flows
 - target frontend base URL through `PLAYWRIGHT_BASE_URL` when running web flows
 - API base URL through `GENERIC_API_BASE_URL`, `TARGET_API_BASE_URL`, or `API_BASE_URL` when running real backend API probes
 - CLI command through `GENERIC_CLI_COMMAND` or `TARGET_CLI_COMMAND` when the package `bin` entry is not enough
 - application credentials for the host under test when the adapter cannot infer them from existing host runtime knowledge
 
-Anthropic key resolution order:
+Provider key resolution order:
 
 1. `ANTHROPIC_API_KEY_OVERRIDE`
 2. `agentic-platform/.env.local`
@@ -67,7 +67,13 @@ Anthropic key resolution order:
 4. `ANTHROPIC_API`
 5. target `.agentic-qa/.env.local`
 
-Use `.env.example` as the local shape. `.env.local` is intentionally ignored by git.
+For OpenAI, the installer resolves:
+
+1. `agentic-platform/.env.local`
+2. `OPENAI_API_KEY`
+3. target `.agentic-qa/.env.local`
+
+Use `.env.example` as the local shape. `.env.local` is intentionally ignored by git. The generated dashboard exposes `Settings`, where the operator chooses which provider applies to the next run.
 
 ## Current Scope
 
@@ -103,10 +109,10 @@ For backend API, CLI, library, monorepo, and unknown repositories, AP now perfor
 
 - generated package patches native SQLite usage for local installation stability
 - generated package installs Playwright and required browser support automatically for frontend/browser runtimes
-- generated package skips Playwright and required Anthropic validation for non-frontend deterministic runtimes
+- generated package skips Playwright and required model provider validation for non-frontend deterministic runtimes
 - generated package writes `.env.example`
-- generated package writes `.env.local` when a key source is available, and can validate it when network access is available
-- strict model credential validation is opt-in through `STRICT_ANTHROPIC_VALIDATION=1`
+- generated package writes `.env.local` when a supported provider key source is available, and can validate it when network access is available
+- strict provider credential validation is enforced by the generated runtime before browser/model-backed runs
 - generated runtime now uses the same session store for run creation and session listing
 - generated launcher accepts isolated API and web ports
 - L5 changes are controlled: generated scenarios stay as drafts, profile changes are recommendations, and self-healing is bounded and logged
