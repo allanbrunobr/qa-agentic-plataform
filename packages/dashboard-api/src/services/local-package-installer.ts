@@ -18,7 +18,6 @@ const COPY_ROOT_FILES = [
 ] as const
 
 const COPY_ROOT_DIRS = [
-  'docs',
   path.join('packages', 'api', 'src'),
   path.join('packages', 'web'),
 ] as const
@@ -30,6 +29,7 @@ const COPY_EXTRA_FILES = [
 ] as const
 
 const EMPTY_DIRS = [
+  'docs',
   'data',
   path.join('adapter', 'manifest'),
   path.join('adapter', 'personas'),
@@ -75,6 +75,34 @@ async function copyTemplateEntry(fromRoot: string, toRoot: string, relativePath:
       return !shouldExclude(rel)
     },
   })
+}
+
+async function writeInstalledDocs(installedPath: string) {
+  const docsDir = path.join(installedPath, 'docs')
+  await fs.mkdir(docsDir, { recursive: true })
+  await fs.writeFile(
+    path.join(docsDir, 'README.md'),
+    [
+      '# Agentic QA Local Runtime',
+      '',
+      'This directory contains host-local documentation for the generated Persona QA dashboard.',
+      '',
+      'The runtime is generated from the target repository discovery output. Personas, scenarios, capabilities, workflow contracts, and runtime mappings live under `adapter/`.',
+      '',
+      'Useful paths:',
+      '',
+      '- `adapter/config/discovery-report.generated.json` - repository classification and discovery evidence.',
+      '- `adapter/config/domain-discovery-bundle.generated.json` - domain, persona, and scenario candidates when frontend discovery is available.',
+      '- `adapter/personas/personas.generated.json` - active generated personas.',
+      '- `adapter/scenarios/scenarios.generated.json` - active generated scenarios.',
+      '- `adapter/workflow-contracts/` - deterministic contracts used by the agentic runner.',
+      '- `.env.example` - model provider keys expected by this local package.',
+      '',
+      'Do not store real provider keys in committed files. Use `.env.local` on each machine.',
+      '',
+    ].join('\n'),
+    'utf8',
+  )
 }
 
 async function validateAnthropicApiKey(apiKey: string) {
@@ -490,6 +518,8 @@ export async function installLocalPackage(input: { repoPath: string }) {
   for (const relativePath of EMPTY_DIRS) {
     await fs.mkdir(path.join(installedPath, relativePath), { recursive: true })
   }
+
+  await writeInstalledDocs(installedPath)
 
   const runtimePatchResult = await patchInstalledRuntime(installedPath, input.repoPath)
 
