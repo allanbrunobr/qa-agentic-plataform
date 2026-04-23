@@ -225,6 +225,7 @@ function normalizeReport(report: DiscoveryReport): DiscoveryReport {
   return {
     framework: report.framework,
     repository: report.repository,
+    domainDiscovery: report.domainDiscovery,
     surfaces: report.surfaces.map((surface) => ({
       ...surface,
       id: normalizeId(surface.id || surface.label),
@@ -855,7 +856,7 @@ export async function materializeLocalDiscovery(input: {
     })),
   }))
 
-  const outputFiles = [
+  const outputFiles: Array<readonly [string, unknown]> = [
     [path.join(adapterRoot, 'manifest', 'adapter-manifest.generated.json'), manifest],
     [path.join(adapterRoot, 'auth', 'auth.generated.json'), auth],
     [path.join(adapterRoot, 'routes', 'routes.generated.json'), routes],
@@ -864,7 +865,14 @@ export async function materializeLocalDiscovery(input: {
     [path.join(adapterRoot, 'scenarios', 'scenarios.generated.json'), scenarios],
     [path.join(adapterRoot, 'config', 'discovery-report.generated.json'), normalizedReport],
     [path.join(adapterRoot, 'config', 'bootstrap-draft.generated.json'), normalizedDraft],
-  ] as const
+  ]
+
+  if (normalizedReport.domainDiscovery) {
+    outputFiles.push(
+      [path.join(adapterRoot, 'config', 'domain-discovery-bundle.generated.json'), normalizedReport.domainDiscovery],
+      [path.join(adapterRoot, 'config', 'frontend-surface-map.generated.json'), normalizedReport.domainDiscovery.surfaceMap],
+    )
+  }
 
   const writtenFiles: string[] = []
   for (const [filePath, payload] of outputFiles) {

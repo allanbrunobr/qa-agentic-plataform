@@ -122,6 +122,8 @@ function runCli(command) {
 
 function verifyGeneratedAdapter() {
   const report = readJson('.agentic-qa/adapter/config/discovery-report.generated.json')
+  const domainBundle = readJson('.agentic-qa/adapter/config/domain-discovery-bundle.generated.json')
+  const surfaceMap = readJson('.agentic-qa/adapter/config/frontend-surface-map.generated.json')
   const manifest = readJson('.agentic-qa/adapter/manifest/adapter-manifest.generated.json')
   const personas = readJson('.agentic-qa/adapter/personas/personas.generated.json')
   const scenarios = readJson('.agentic-qa/adapter/scenarios/scenarios.generated.json')
@@ -135,6 +137,11 @@ function verifyGeneratedAdapter() {
   assert(fs.existsSync(path.join(fixtureRoot, '.agentic-qa/.env.local')), 'installer did not create .agentic-qa/.env.local')
   assert(manifest.hostProduct === path.basename(fixtureRoot), `unexpected host product ${manifest.hostProduct}`)
   assert(report.framework === 'vite', `expected vite framework, got ${report.framework}`)
+  assert(report.domainDiscovery?.domain?.domain === 'commerce', `expected commerce domain in discovery report, got ${report.domainDiscovery?.domain?.domain}`)
+  assert(domainBundle.domain.domain === 'commerce', `expected commerce domain bundle, got ${domainBundle.domain.domain}`)
+  assert(domainBundle.personas.some((persona) => persona.id === 'shopper'), 'shopper domain persona candidate missing')
+  assert(domainBundle.scenarios.every((scenario) => scenario.status === 'needs_human_mapping'), 'domain scenarios must remain mapping gated')
+  assert(surfaceMap.targetId === 'generic_storefront_fixture', `unexpected surface map target ${surfaceMap.targetId}`)
   assert(personaIds.includes('primary_user'), `primary_user persona missing: ${personaIds.join(', ')}`)
   assert(!personaIds.includes('sales-associate') && !personaIds.includes('fulfillment-agent'), `Reference Store personas leaked into generic adapter: ${personaIds.join(', ')}`)
   assert(scenarioIds.includes('checkout_smoke'), `checkout_smoke scenario missing: ${scenarioIds.join(', ')}`)

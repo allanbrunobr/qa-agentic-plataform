@@ -142,6 +142,8 @@ node --import "$HOME/.nvm/versions/node/v22.13.1/lib/node_modules/tsx/dist/loade
   packages/dashboard-api/src/cli.ts discover-local <repoPath>
 ```
 
+For generic frontend repositories, discovery also writes `adapter/config/frontend-surface-map.generated.json` and `adapter/config/domain-discovery-bundle.generated.json` inside `.agentic-qa`. These files are evidence-backed domain drafts for later persona and scenario activation; generated domain scenarios remain review-gated until explicitly mapped.
+
 Start the generated package:
 
 ```bash
