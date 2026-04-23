@@ -158,6 +158,14 @@ export function Insights() {
         onApproveProposal={(id) => runL5Action(`proposal:${id}`, () => api.approvePhase2LearningProposal(id))}
         onApplyProposal={(id) => runL5Action(`proposal:${id}`, () => api.applyPhase2LearningProposal(id))}
         onRejectProposal={(id) => runL5Action(`proposal:${id}`, () => api.rejectPhase2LearningProposal(id))}
+        onConfirmDraftMapping={(id) => runL5Action(`draft-mapping:${id}`, () => api.updatePhase2ScenarioDraftMappingReview(id, {
+          selectorsMapped: true,
+          authMapped: true,
+          testDataMapped: true,
+          assertionsMapped: true,
+          reviewedBy: 'dashboard',
+          notes: 'Mapping reviewed from L5 control plane.',
+        }))}
         onApproveDraft={(id) => runL5Action(`draft:${id}`, () => api.updatePhase2ScenarioDraft(id, { status: 'approved', reviewedBy: 'dashboard' }))}
         onRejectDraft={(id) => runL5Action(`draft:${id}`, () => api.updatePhase2ScenarioDraft(id, { status: 'rejected', reviewedBy: 'dashboard' }))}
       />

@@ -1007,6 +1007,84 @@ describe('Phase 2 Session Routes', () => {
       }));
     });
 
+    it('should require domain mapping review before approving domain discovery drafts', async () => {
+      const draft = sessionService.createScenarioDraft({
+        scenarioId: 'domain_commerce_place_order',
+        name: 'Domain draft: Place order',
+        description: 'Generated from domain discovery',
+        contract: {
+          id: 'domain_commerce_place_order',
+          name: 'Place order',
+          steps: [],
+          domainDiscovery: {
+            sourceDomain: 'commerce',
+            sourceScenarioId: 'place_order',
+            mappingRequired: true,
+            mappingReview: {
+              selectorsMapped: false,
+              authMapped: false,
+              testDataMapped: false,
+              assertionsMapped: false,
+              reviewedBy: null,
+              reviewedAt: null,
+              notes: null,
+            },
+          },
+        },
+        gapType: 'domain_discovery_mapping',
+      });
+
+      const blockedApproval = await app.inject({
+        method: 'PATCH',
+        url: `/api/p2/scenarios/drafts/${draft.id}`,
+        payload: {
+          status: 'approved',
+          reviewedBy: 'qa_lead',
+        },
+      });
+      expect(blockedApproval.statusCode).toBe(409);
+      expect(blockedApproval.json()).toEqual(expect.objectContaining({
+        error: expect.stringContaining('Domain discovery scenario draft requires selectors'),
+      }));
+
+      const mappingReview = await app.inject({
+        method: 'PATCH',
+        url: `/api/p2/scenarios/drafts/${draft.id}/mapping-review`,
+        payload: {
+          selectorsMapped: true,
+          authMapped: true,
+          testDataMapped: true,
+          assertionsMapped: true,
+          reviewedBy: 'qa_lead',
+          notes: 'Mapped against host selectors and test data.',
+        },
+      });
+      expect(mappingReview.statusCode).toBe(200);
+      expect(mappingReview.json()).toEqual(expect.objectContaining({
+        complete: true,
+        mappingReview: expect.objectContaining({
+          selectorsMapped: true,
+          authMapped: true,
+          testDataMapped: true,
+          assertionsMapped: true,
+          reviewedBy: 'qa_lead',
+        }),
+      }));
+
+      const approved = await app.inject({
+        method: 'PATCH',
+        url: `/api/p2/scenarios/drafts/${draft.id}`,
+        payload: {
+          status: 'approved',
+          reviewedBy: 'qa_lead',
+        },
+      });
+      expect(approved.statusCode).toBe(200);
+      expect(approved.json()).toEqual(expect.objectContaining({
+        status: 'approved',
+      }));
+    });
+
     it('should materialize applied learning proposals', async () => {
       const proposal = sessionService.createLearningProposal({
         recommendationId: 'route-learning-apply',

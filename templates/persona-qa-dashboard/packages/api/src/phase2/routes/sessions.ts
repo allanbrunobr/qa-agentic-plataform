@@ -20,6 +20,12 @@ import { LearningPlaybookService } from '../services/learning-playbook-service.j
 import { buildMaturityStatus } from '../services/maturity-service.js';
 import { MetaOrchestrator } from '../services/meta-orchestrator.js';
 import { ProfileTuningService } from '../services/profile-tuning-service.js';
+import {
+  applyScenarioDraftMappingReview,
+  getScenarioDraftMappingReview,
+  requiresDomainMappingReview,
+  type ScenarioDraftMappingReviewPatch,
+} from '../services/scenario-draft-mapping-review.js';
 import { SelfHealingService } from '../services/self-healing-service.js';
 import {
   resolvePhase2ArtifactPath,
@@ -528,6 +534,43 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
       );
       if (!draft) return reply.status(404).send({ error: 'Scenario draft not found' });
       return reply.send(draft);
+    },
+  );
+
+  app.patch<{ Params: { id: string }; Body: ScenarioDraftMappingReviewPatch }>(
+    '/api/p2/scenarios/drafts/:id/mapping-review',
+    async (request, reply) => {
+      const service = getSessionService();
+      const currentDraft = service.getScenarioDraft(request.params.id);
+      if (!currentDraft) return reply.status(404).send({ error: 'Scenario draft not found' });
+      if (!requiresDomainMappingReview(currentDraft)) {
+        return reply.status(409).send({ error: 'Scenario draft does not require domain mapping review' });
+      }
+
+      const actor = request.body?.reviewedBy?.trim();
+      if (!actor) {
+        return reply.status(400).send({ error: 'Mapping review requires reviewedBy' });
+      }
+
+      const { contract, mappingReview } = applyScenarioDraftMappingReview(currentDraft, {
+        selectorsMapped: request.body?.selectorsMapped,
+        authMapped: request.body?.authMapped,
+        testDataMapped: request.body?.testDataMapped,
+        assertionsMapped: request.body?.assertionsMapped,
+        reviewedBy: actor,
+        notes: request.body?.notes,
+      });
+      const draft = service.updateScenarioDraftContract(request.params.id, contract);
+      if (!draft) return reply.status(404).send({ error: 'Scenario draft not found' });
+      return reply.send({
+        draft,
+        mappingReview,
+        complete: getScenarioDraftMappingReview(draft).selectorsMapped
+          && getScenarioDraftMappingReview(draft).authMapped
+          && getScenarioDraftMappingReview(draft).testDataMapped
+          && getScenarioDraftMappingReview(draft).assertionsMapped
+          && Boolean(getScenarioDraftMappingReview(draft).reviewedBy),
+      });
     },
   );
 
