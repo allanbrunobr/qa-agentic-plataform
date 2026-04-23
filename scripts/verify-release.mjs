@@ -113,6 +113,12 @@ const steps = [
     cwd: repoRoot,
   },
   {
+    name: 'syntax: domain specialist service verifier',
+    command: releaseNodePath,
+    args: ['--check', 'scripts/verify-domain-specialist-service.mjs'],
+    cwd: repoRoot,
+  },
+  {
     name: 'domain discovery contract verification',
     command: 'npm',
     args: ['run', 'verify:domain-discovery-contracts'],
@@ -130,6 +136,13 @@ const steps = [
     name: 'domain fixture matrix verification',
     command: 'npm',
     args: ['run', 'verify:domain-fixture-matrix'],
+    cwd: repoRoot,
+    env: releaseEnv,
+  },
+  {
+    name: 'domain specialist service verification',
+    command: 'npm',
+    args: ['run', 'verify:domain-specialist-service'],
     cwd: repoRoot,
     env: releaseEnv,
   },
