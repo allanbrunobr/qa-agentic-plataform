@@ -1,7 +1,7 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { DomainDiscoveryPanel } from '../DomainDiscoveryPanel'
-import type { Phase2DomainDiscoveryResponse } from '@/lib/api'
+import type { Phase2DomainDiscoveryResponse, Phase2DomainDiscoveryScenarioDraftResponse } from '@/lib/api'
 
 describe('DomainDiscoveryPanel', () => {
   it('renders unavailable state before discovery is generated', () => {
@@ -24,6 +24,43 @@ describe('DomainDiscoveryPanel', () => {
     expect(screen.getByText('Submit order')).toBeInTheDocument()
     expect(screen.getAllByText('needs human mapping').length).toBeGreaterThan(0)
     expect(screen.getByText('Selectors and auth still require mapping.')).toBeInTheDocument()
+  })
+
+  it('creates a scenario draft from a domain candidate on explicit action', async () => {
+    const onCreateScenarioDraft = vi.fn(async (): Promise<Phase2DomainDiscoveryScenarioDraftResponse> => ({
+      draft: {
+        id: 'draft-123',
+        scenarioId: 'domain_commerce_place_order',
+        name: 'Domain draft: Place order',
+        description: 'Order button exists.',
+        contract: {},
+        gapType: 'domain_discovery_mapping',
+        status: 'pending',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      source: {
+        domain: 'commerce',
+        targetId: 'commerce_fixture',
+        scenarioId: 'place_order',
+        status: 'needs_human_mapping',
+        confidence: 0.74,
+        mappingRequired: true,
+      },
+      warnings: ['Review selectors before approval.'],
+    }))
+
+    render(
+      <DomainDiscoveryPanel
+        discovery={domainDiscovery()}
+        onCreateScenarioDraft={onCreateScenarioDraft}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Criar draft' }))
+
+    await waitFor(() => expect(onCreateScenarioDraft).toHaveBeenCalledWith('place_order'))
+    expect(await screen.findByText('Draft criado')).toBeInTheDocument()
   })
 })
 

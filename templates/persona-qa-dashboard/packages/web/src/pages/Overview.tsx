@@ -609,7 +609,10 @@ export function Overview() {
       )}
 
       <motion.div variants={itemVariants}>
-        <DomainDiscoveryPanel discovery={domainDiscovery} />
+        <DomainDiscoveryPanel
+          discovery={domainDiscovery}
+          onCreateScenarioDraft={api.createPhase2DomainDiscoveryScenarioDraft}
+        />
       </motion.div>
 
       <motion.div variants={itemVariants}>

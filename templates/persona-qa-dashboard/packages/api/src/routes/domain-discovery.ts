@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
+import { getSessionService } from '../phase2/routes/sessions.js';
+import { L5LoopGuardService } from '../phase2/services/l5-loop-guard-service.js';
 
 const EvidenceRefSchema = z.object({
   evidenceId: z.string().min(1),
@@ -13,6 +15,23 @@ const CandidateBaseSchema = z.object({
   evidenceRefs: z.array(EvidenceRefSchema).default([]),
   risks: z.array(z.unknown()).default([]),
   status: z.enum(['draft', 'runnable_candidate', 'restricted', 'needs_human_mapping']),
+});
+
+const DomainDiscoveryStepSchema = z.object({
+  id: z.string().optional(),
+  title: z.string().optional(),
+  intent: z.string().optional(),
+  capabilityId: z.string().optional(),
+  evidenceRefs: z.array(EvidenceRefSchema).default([]),
+}).passthrough();
+
+const ScenarioCandidateSchema = CandidateBaseSchema.extend({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  rationale: z.string().default(''),
+  participatingPersonaIds: z.array(z.string()).default([]),
+  requiredCapabilityIds: z.array(z.string()).default([]),
+  steps: z.array(DomainDiscoveryStepSchema).default([]),
 });
 
 const DomainDiscoveryBundleSchema = z.object({
@@ -41,14 +60,7 @@ const DomainDiscoveryBundleSchema = z.object({
     goals: z.array(z.string()).default([]),
     allowedCapabilityIds: z.array(z.string()).default([]),
   })).default([]),
-  scenarios: z.array(CandidateBaseSchema.extend({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    rationale: z.string().default(''),
-    participatingPersonaIds: z.array(z.string()).default([]),
-    requiredCapabilityIds: z.array(z.string()).default([]),
-    steps: z.array(z.unknown()).default([]),
-  })).default([]),
+  scenarios: z.array(ScenarioCandidateSchema).default([]),
   capabilities: z.array(CandidateBaseSchema.extend({
     id: z.string().min(1),
     title: z.string().min(1),
@@ -72,6 +84,11 @@ const DomainDiscoveryBundleSchema = z.object({
 }).passthrough();
 
 type DomainDiscoveryBundle = z.infer<typeof DomainDiscoveryBundleSchema>;
+type DomainDiscoveryScenarioCandidate = z.infer<typeof ScenarioCandidateSchema>;
+type ValidatedDomainDiscoveryBundle =
+  | { status: 'missing' }
+  | { status: 'invalid'; filePath: string; details: unknown }
+  | { status: 'available'; filePath: string; bundle: DomainDiscoveryBundle };
 
 function getDomainDiscoveryCandidates(): string[] {
   return [
@@ -126,10 +143,133 @@ function summarizeBundle(bundle: DomainDiscoveryBundle) {
   };
 }
 
+async function loadDomainDiscoveryBundle(): Promise<ValidatedDomainDiscoveryBundle> {
+  const filePath = await firstExistingFile(getDomainDiscoveryCandidates());
+  if (!filePath) return { status: 'missing' };
+
+  try {
+    const content = await fs.readFile(filePath, 'utf-8');
+    const parsedJson = JSON.parse(content);
+    const parsed = DomainDiscoveryBundleSchema.safeParse(parsedJson);
+
+    if (!parsed.success) {
+      return {
+        status: 'invalid',
+        filePath,
+        details: parsed.error.issues,
+      };
+    }
+
+    return {
+      status: 'available',
+      filePath,
+      bundle: parsed.data,
+    };
+  } catch (error) {
+    return {
+      status: 'invalid',
+      filePath,
+      details: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function buildScenarioDraftInput(bundle: DomainDiscoveryBundle, scenario: DomainDiscoveryScenarioCandidate) {
+  const scenarioId = safeId(`domain_${bundle.domain.domain}_${scenario.id}`);
+  const fallbackAgentId = scenario.participatingPersonaIds[0] ?? 'domain_reviewer';
+  const sourceSteps = scenario.steps.length > 0
+    ? scenario.steps
+    : scenario.requiredCapabilityIds.map((capabilityId, index) => ({
+      id: `step_${index + 1}_${capabilityId}`,
+      title: capabilityId,
+      intent: `Map and execute capability ${capabilityId}.`,
+      capabilityId,
+      evidenceRefs: scenario.evidenceRefs,
+    }));
+
+  const steps = sourceSteps.map((step, index) => {
+    const capabilityId = step.capabilityId
+      ?? scenario.requiredCapabilityIds[index]
+      ?? `manual_mapping_required_${index + 1}`;
+    const stepId = safeId(step.id ?? `step_${index + 1}_${capabilityId}`);
+
+    return {
+      id: stepId,
+      name: step.title ?? step.intent ?? stepId,
+      description: step.intent ?? 'Map this domain-discovery step before execution.',
+      agentId: fallbackAgentId,
+      capabilityId,
+      order: index + 1,
+      requiredArtifacts: [],
+      producedArtifacts: [],
+    };
+  });
+
+  const evidence = [
+    `domain=${bundle.domain.domain}`,
+    `target=${bundle.surfaceMap.targetId}`,
+    `candidate=${scenario.id}`,
+    `status=${scenario.status}`,
+    `confidence=${scenario.confidence}`,
+    ...scenario.evidenceRefs.map((ref) => `evidence=${ref.kind ?? 'unknown'}:${ref.evidenceId}`),
+  ];
+
+  return {
+    scenarioId,
+    name: `Domain draft: ${scenario.title}`,
+    description: [
+      scenario.rationale,
+      'Generated from domain discovery and held for human mapping before execution.',
+    ].filter(Boolean).join(' '),
+    contract: {
+      id: scenarioId,
+      name: scenario.title,
+      description: scenario.rationale,
+      roles: scenario.participatingPersonaIds,
+      requiredArtifacts: [],
+      allowedTools: scenario.requiredCapabilityIds,
+      steps,
+      workflowContract: {
+        version: '1.0',
+        deterministic: true,
+        steps: steps.map((step) => ({
+          id: step.id,
+          order: step.order,
+          agentId: step.agentId,
+          capabilityId: step.capabilityId,
+          requiredArtifacts: step.requiredArtifacts,
+          producedArtifacts: step.producedArtifacts,
+        })),
+      },
+      domainDiscovery: {
+        sourceDomain: bundle.domain.domain,
+        sourceLabel: bundle.domain.label ?? bundle.domain.domain,
+        sourceTargetId: bundle.surfaceMap.targetId,
+        sourceScenarioId: scenario.id,
+        confidence: scenario.confidence,
+        status: scenario.status,
+        evidenceRefs: scenario.evidenceRefs,
+        risks: scenario.risks,
+        mappingRequired: scenario.status !== 'runnable_candidate',
+      },
+    },
+    gapType: 'domain_discovery_mapping',
+    gapEvidence: evidence,
+  };
+}
+
+function safeId(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 120) || 'domain_discovery_candidate';
+}
+
 export async function domainDiscoveryRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/p2/domain-discovery', async (_request, reply) => {
-    const filePath = await firstExistingFile(getDomainDiscoveryCandidates());
-    if (!filePath) {
+    const discovery = await loadDomainDiscoveryBundle();
+    if (discovery.status === 'missing') {
       return reply.send({
         available: false,
         filePath: null,
@@ -138,24 +278,75 @@ export async function domainDiscoveryRoutes(app: FastifyInstance): Promise<void>
       });
     }
 
-    const content = await fs.readFile(filePath, 'utf-8');
-    const parsedJson = JSON.parse(content);
-    const parsed = DomainDiscoveryBundleSchema.safeParse(parsedJson);
-
-    if (!parsed.success) {
+    if (discovery.status === 'invalid') {
       return reply.status(422).send({
         available: false,
-        filePath,
+        filePath: discovery.filePath,
         error: 'Invalid domain discovery bundle',
-        details: parsed.error.issues,
+        details: discovery.details,
       });
     }
 
     return reply.send({
       available: true,
-      filePath,
-      summary: summarizeBundle(parsed.data),
-      bundle: parsed.data,
+      filePath: discovery.filePath,
+      summary: summarizeBundle(discovery.bundle),
+      bundle: discovery.bundle,
     });
   });
+
+  app.post<{ Params: { scenarioId: string } }>(
+    '/api/p2/domain-discovery/scenarios/:scenarioId/drafts',
+    async (request, reply) => {
+      const discovery = await loadDomainDiscoveryBundle();
+      if (discovery.status === 'missing') {
+        return reply.status(404).send({ error: 'Domain discovery bundle not found' });
+      }
+
+      if (discovery.status === 'invalid') {
+        return reply.status(422).send({
+          error: 'Invalid domain discovery bundle',
+          filePath: discovery.filePath,
+          details: discovery.details,
+        });
+      }
+
+      const scenario = discovery.bundle.scenarios.find((candidate) => candidate.id === request.params.scenarioId);
+      if (!scenario) {
+        return reply.status(404).send({ error: 'Domain discovery scenario candidate not found' });
+      }
+
+      if (scenario.status === 'restricted') {
+        return reply.status(409).send({
+          error: 'Restricted domain discovery candidates cannot be promoted to scenario drafts',
+        });
+      }
+
+      const service = getSessionService();
+      try {
+        new L5LoopGuardService(service).assertLoopOpen('scenario_generation');
+      } catch (error) {
+        return reply.status(409).send({
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      const draft = service.createScenarioDraft(buildScenarioDraftInput(discovery.bundle, scenario));
+
+      return reply.status(201).send({
+        draft,
+        source: {
+          domain: discovery.bundle.domain.domain,
+          targetId: discovery.bundle.surfaceMap.targetId,
+          scenarioId: scenario.id,
+          status: scenario.status,
+          confidence: scenario.confidence,
+          mappingRequired: scenario.status !== 'runnable_candidate',
+        },
+        warnings: [
+          'Draft created from domain discovery evidence. Review selectors, auth, seed data, and assertions before approval.',
+        ],
+      });
+    },
+  );
 }

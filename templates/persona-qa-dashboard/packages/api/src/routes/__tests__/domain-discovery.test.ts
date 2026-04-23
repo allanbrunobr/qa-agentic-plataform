@@ -5,6 +5,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { domainDiscoveryRoutes } from '../domain-discovery.js';
+import { setSessionService } from '../../phase2/routes/sessions.js';
+import { SessionService } from '../../phase2/services/session-service.js';
 
 let tempDir = '';
 let bundleFile = '';
@@ -21,6 +23,7 @@ describe('/api/p2/domain-discovery', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'domain-discovery-route-'));
     bundleFile = path.join(tempDir, 'adapter', 'config', 'domain-discovery-bundle.generated.json');
     process.env['PERSONA_QA_DOMAIN_DISCOVERY_FILE'] = bundleFile;
+    setSessionService(new SessionService(':memory:'));
   });
 
   afterEach(async () => {
@@ -73,6 +76,53 @@ describe('/api/p2/domain-discovery', () => {
 
     assert.equal(res.statusCode, 422);
     assert.equal(JSON.parse(res.body).error, 'Invalid domain discovery bundle');
+  });
+
+  it('creates a pending scenario draft from a domain discovery scenario candidate', async () => {
+    await fs.mkdir(path.dirname(bundleFile), { recursive: true });
+    await fs.writeFile(bundleFile, JSON.stringify(domainBundle()), 'utf-8');
+
+    const app = await createApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/p2/domain-discovery/scenarios/place_order/drafts',
+    });
+    await app.close();
+
+    assert.equal(res.statusCode, 201);
+    const body = JSON.parse(res.body);
+    assert.equal(body.draft.status, 'pending');
+    assert.equal(body.draft.scenarioId, 'domain_commerce_place_order');
+    assert.equal(body.draft.name, 'Domain draft: Place order');
+    assert.equal(body.draft.gapType, 'domain_discovery_mapping');
+    assert.equal(body.source.domain, 'commerce');
+    assert.equal(body.source.mappingRequired, true);
+    assert.equal(body.draft.contract.domainDiscovery.sourceScenarioId, 'place_order');
+    assert.equal(body.draft.contract.domainDiscovery.mappingRequired, true);
+    assert.deepEqual(body.draft.contract.roles, ['shopper']);
+    assert.equal(body.draft.contract.steps[0].capabilityId, 'submit_order');
+    assert.equal(body.draft.contract.workflowContract.steps[0].capabilityId, 'submit_order');
+    assert.match(body.warnings[0], /Review selectors/);
+  });
+
+  it('blocks restricted domain discovery scenario candidates from draft creation', async () => {
+    const bundle = domainBundle();
+    bundle.scenarios[0].status = 'restricted';
+    await fs.mkdir(path.dirname(bundleFile), { recursive: true });
+    await fs.writeFile(bundleFile, JSON.stringify(bundle), 'utf-8');
+
+    const app = await createApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/p2/domain-discovery/scenarios/place_order/drafts',
+    });
+    await app.close();
+
+    assert.equal(res.statusCode, 409);
+    assert.equal(
+      JSON.parse(res.body).error,
+      'Restricted domain discovery candidates cannot be promoted to scenario drafts',
+    );
   });
 });
 
