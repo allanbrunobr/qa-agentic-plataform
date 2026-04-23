@@ -1376,6 +1376,19 @@ export class SessionService {
     return this.getScenarioDraft(id)
   }
 
+  updateScenarioDraftContract(id: string, contract: Record<string, unknown>): ScenarioDraft | undefined {
+    const now = new Date().toISOString()
+    this.sqlite
+      .prepare(
+        `UPDATE p2_scenario_drafts
+         SET contract_json = ?, updated_at = ?
+         WHERE draft_id = ?`,
+      )
+      .run(JSON.stringify(contract), now, id)
+
+    return this.getScenarioDraft(id)
+  }
+
   getScenarioDraft(id: string): ScenarioDraft | undefined {
     const row = this.sqlite
       .prepare(

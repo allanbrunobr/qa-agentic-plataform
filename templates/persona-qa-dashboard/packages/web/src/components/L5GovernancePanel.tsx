@@ -19,6 +19,7 @@ interface L5GovernancePanelProps {
   onApproveProposal?: (proposalId: string) => void
   onApplyProposal?: (proposalId: string) => void
   onRejectProposal?: (proposalId: string) => void
+  onConfirmDraftMapping?: (draftId: string) => void
   onApproveDraft?: (draftId: string) => void
   onRejectDraft?: (draftId: string) => void
 }
@@ -51,6 +52,7 @@ export function L5GovernancePanel({
   onApproveProposal,
   onApplyProposal,
   onRejectProposal,
+  onConfirmDraftMapping,
   onApproveDraft,
   onRejectDraft,
 }: L5GovernancePanelProps) {
@@ -161,10 +163,16 @@ export function L5GovernancePanel({
                 title={draft.name}
                 description={draft.description ?? `Coverage gap: ${draft.gapType}`}
                 status={draft.status}
-                pending={actionPendingId === `draft:${draft.id}`}
+                pending={actionPendingId === `draft:${draft.id}` || actionPendingId === `draft-mapping:${draft.id}`}
                 testId={`l5-draft-${draft.id}`}
+                extra={requiresDraftMappingReview(draft) ? <MappingReviewSummary draft={draft} /> : undefined}
                 actions={[
-                  onApproveDraft ? { label: 'Approve', onClick: () => onApproveDraft(draft.id), tone: 'success' as const } : null,
+                  requiresDraftMappingReview(draft) && !isDraftMappingReviewComplete(draft) && onConfirmDraftMapping
+                    ? { label: 'Confirm mapping', onClick: () => onConfirmDraftMapping(draft.id), tone: 'success' as const }
+                    : null,
+                  (!requiresDraftMappingReview(draft) || isDraftMappingReviewComplete(draft)) && onApproveDraft
+                    ? { label: 'Approve', onClick: () => onApproveDraft(draft.id), tone: 'success' as const }
+                    : null,
                   onRejectDraft ? { label: 'Reject', onClick: () => onRejectDraft(draft.id), tone: 'danger' as const } : null,
                 ].filter((action): action is ReviewAction => Boolean(action))}
               />
@@ -227,6 +235,7 @@ function ReviewItem({
   actions,
   pending,
   testId,
+  extra,
 }: {
   label: string
   title: string
@@ -235,6 +244,7 @@ function ReviewItem({
   actions: ReviewAction[]
   pending: boolean
   testId?: string
+  extra?: ReactNode
 }) {
   return (
     <div data-testid={testId} className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
@@ -248,6 +258,7 @@ function ReviewItem({
       </div>
       <p className="truncate text-sm font-medium text-[var(--text-primary)]">{title}</p>
       <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-[var(--text-secondary)]">{description}</p>
+      {extra}
       {actions.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {actions.map((action) => (
@@ -266,6 +277,44 @@ function ReviewItem({
             </button>
           ))}
         </div>
+      )}
+    </div>
+  )
+}
+
+function MappingReviewSummary({ draft }: { draft: Phase2ScenarioDraft }) {
+  const review = getDraftMappingReview(draft)
+  const checks = [
+    ['Selectors', review.selectorsMapped],
+    ['Auth', review.authMapped],
+    ['Test data', review.testDataMapped],
+    ['Assertions', review.assertionsMapped],
+  ] as const
+
+  return (
+    <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-2">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+        Mapping review required
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {checks.map(([label, done]) => (
+          <span
+            key={label}
+            className={cn(
+              'rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase',
+              done
+                ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+                : 'border-amber-500/20 bg-amber-500/10 text-amber-300',
+            )}
+          >
+            {label}
+          </span>
+        ))}
+      </div>
+      {review.reviewedBy && (
+        <p className="mt-2 text-[10px] text-[var(--text-muted)]">
+          Reviewed by {review.reviewedBy}
+        </p>
       )}
     </div>
   )
@@ -371,4 +420,42 @@ function formatTime(timestamp: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function requiresDraftMappingReview(draft: Phase2ScenarioDraft): boolean {
+  const domainDiscovery = getDomainDiscovery(draft)
+  return Boolean(domainDiscovery && domainDiscovery['mappingRequired'] !== false)
+}
+
+function isDraftMappingReviewComplete(draft: Phase2ScenarioDraft): boolean {
+  if (!requiresDraftMappingReview(draft)) return true
+  const review = getDraftMappingReview(draft)
+  return review.selectorsMapped
+    && review.authMapped
+    && review.testDataMapped
+    && review.assertionsMapped
+    && Boolean(review.reviewedBy)
+}
+
+function getDraftMappingReview(draft: Phase2ScenarioDraft) {
+  const domainDiscovery = getDomainDiscovery(draft)
+  const candidate = domainDiscovery?.['mappingReview']
+  const review = candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+    ? candidate as Record<string, unknown>
+    : {}
+
+  return {
+    selectorsMapped: review['selectorsMapped'] === true,
+    authMapped: review['authMapped'] === true,
+    testDataMapped: review['testDataMapped'] === true,
+    assertionsMapped: review['assertionsMapped'] === true,
+    reviewedBy: typeof review['reviewedBy'] === 'string' ? review['reviewedBy'] : null,
+  }
+}
+
+function getDomainDiscovery(draft: Phase2ScenarioDraft): Record<string, unknown> | null {
+  const candidate = draft.contract['domainDiscovery']
+  return candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+    ? candidate as Record<string, unknown>
+    : null
 }

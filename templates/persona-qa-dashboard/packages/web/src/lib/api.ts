@@ -421,6 +421,22 @@ export interface Phase2ScenarioDraft {
   updatedAt: string
 }
 
+export interface Phase2ScenarioDraftMappingReview {
+  selectorsMapped: boolean
+  authMapped: boolean
+  testDataMapped: boolean
+  assertionsMapped: boolean
+  reviewedBy: string | null
+  reviewedAt: string | null
+  notes: string | null
+}
+
+export interface Phase2ScenarioDraftMappingReviewResponse {
+  draft: Phase2ScenarioDraft
+  mappingReview: Phase2ScenarioDraftMappingReview
+  complete: boolean
+}
+
 export interface Phase2ClosedLoopRun {
   id: string
   status: Phase2ClosedLoopRunStatus
@@ -893,6 +909,18 @@ export const api = {
     reviewedBy?: string
   }) =>
     fetchJSON<Phase2ScenarioDraft>(`${API_BASE}/api/p2/scenarios/drafts/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  updatePhase2ScenarioDraftMappingReview: (id: string, payload: {
+    selectorsMapped?: boolean
+    authMapped?: boolean
+    testDataMapped?: boolean
+    assertionsMapped?: boolean
+    reviewedBy: string
+    notes?: string
+  }) =>
+    fetchJSON<Phase2ScenarioDraftMappingReviewResponse>(`${API_BASE}/api/p2/scenarios/drafts/${id}/mapping-review`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     }),

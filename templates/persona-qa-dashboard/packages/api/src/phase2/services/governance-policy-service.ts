@@ -9,6 +9,12 @@ import type {
 } from './session-service.js'
 import { IndependentAuditorService, type GovernanceAuditEvaluation } from './independent-auditor-service.js'
 import { defaultRuntimeHookBus } from './runtime-hooks.js'
+import {
+  DOMAIN_MAPPING_REVIEW_REQUIREMENTS,
+  getScenarioDraftMappingReview,
+  isScenarioDraftMappingReviewComplete,
+  requiresDomainMappingReview,
+} from './scenario-draft-mapping-review.js'
 
 type LearningGovernanceAction = 'approve' | 'apply' | 'reject'
 type HealingGovernanceAction = 'apply' | 'evaluate' | 'rollback'
@@ -231,6 +237,26 @@ export class GovernancePolicyService {
       draftStatus: draft.status,
       gapType: draft.gapType,
       reviewedBy: draft.reviewedBy,
+      mappingReview: requiresDomainMappingReview(draft)
+        ? getScenarioDraftMappingReview(draft)
+        : undefined,
+    }
+
+    if (
+      (governanceAction === 'approve' || governanceAction === 'promote')
+      && requiresDomainMappingReview(draft)
+      && !isScenarioDraftMappingReviewComplete(draft)
+    ) {
+      return this.withIndependentAudit({
+        subjectType: 'scenario_draft',
+        subjectId: draft.id,
+        action: governanceAction,
+        verdict: 'blocked',
+        reason: 'Domain discovery scenario draft requires selectors, auth, test data, and assertions mapping review before approval',
+        actor,
+        requirements: DOMAIN_MAPPING_REVIEW_REQUIREMENTS,
+        metadata,
+      }, draft, actor)
     }
 
     return this.withIndependentAudit({

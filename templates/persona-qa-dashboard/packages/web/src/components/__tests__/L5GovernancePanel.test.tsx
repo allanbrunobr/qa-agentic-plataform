@@ -76,6 +76,59 @@ describe('L5GovernancePanel', () => {
     expect(onApproveProposal).toHaveBeenCalledWith('proposal-2')
     expect(onRejectDraft).toHaveBeenCalledWith('draft-1')
   })
+
+  it('requires mapping confirmation before domain draft approval actions are shown', () => {
+    const onConfirmDraftMapping = vi.fn()
+    const onApproveDraft = vi.fn()
+
+    const { rerender } = render(
+      <L5GovernancePanel
+        healingActions={[]}
+        governanceDecisions={[]}
+        learningProposals={[]}
+        scenarioDrafts={[domainScenarioDraft({ id: 'domain-draft-1', status: 'pending' })]}
+        onConfirmDraftMapping={onConfirmDraftMapping}
+        onApproveDraft={onApproveDraft}
+      />,
+    )
+
+    expect(screen.getByText('Mapping review required')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirm mapping' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm mapping' }))
+    expect(onConfirmDraftMapping).toHaveBeenCalledWith('domain-draft-1')
+
+    rerender(
+      <L5GovernancePanel
+        healingActions={[]}
+        governanceDecisions={[]}
+        learningProposals={[]}
+        scenarioDrafts={[domainScenarioDraft({
+          id: 'domain-draft-1',
+          status: 'pending',
+          contract: {
+            domainDiscovery: {
+              mappingRequired: true,
+              mappingReview: {
+                selectorsMapped: true,
+                authMapped: true,
+                testDataMapped: true,
+                assertionsMapped: true,
+                reviewedBy: 'qa_lead',
+              },
+            },
+          },
+        })]}
+        onConfirmDraftMapping={onConfirmDraftMapping}
+        onApproveDraft={onApproveDraft}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Confirm mapping' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+    expect(onApproveDraft).toHaveBeenCalledWith('domain-draft-1')
+  })
 })
 
 function healingAction(overrides: Partial<Phase2HealingAction> = {}): Phase2HealingAction {
@@ -136,4 +189,26 @@ function scenarioDraft(overrides: Partial<Phase2ScenarioDraft> = {}): Phase2Scen
     updatedAt: now,
     ...overrides,
   }
+}
+
+function domainScenarioDraft(overrides: Partial<Phase2ScenarioDraft> = {}): Phase2ScenarioDraft {
+  return scenarioDraft({
+    id: 'domain-draft',
+    scenarioId: 'domain_commerce_place_order',
+    name: 'Domain draft: Place order',
+    gapType: 'domain_discovery_mapping',
+    contract: {
+      domainDiscovery: {
+        mappingRequired: true,
+        mappingReview: {
+          selectorsMapped: false,
+          authMapped: false,
+          testDataMapped: false,
+          assertionsMapped: false,
+          reviewedBy: null,
+        },
+      },
+    },
+    ...overrides,
+  })
 }
