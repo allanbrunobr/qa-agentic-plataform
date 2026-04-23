@@ -8,7 +8,9 @@ import type {
   RepositoryClassification,
   RepositoryKind,
 } from '../../../host-sdk/src/contracts.ts'
+import { inferDomainDiscoveryBundle } from './domain-specialist-service.ts'
 import { classifyRepository } from './repository-classifier.ts'
+import { scanStaticFrontend } from './static-frontend-scanner.ts'
 
 export class GenericFrontendDiscoveryProvider implements DiscoveryHintsProvider {
   readonly id = 'generic-repository-discovery'
@@ -42,10 +44,14 @@ async function analyzeGenericFrontend(repoPath: string): Promise<{ report: Disco
   const repository = await classifyRepository(repoPath)
   const framework = detectFramework(packageJson, sourceFiles, repository)
   const surfaces = buildSurfaces(repoPath, packageJson, sourceFiles, sourceText, repository)
+  const domainDiscovery = repository.kind === 'frontend'
+    ? inferDomainDiscoveryBundle(await scanStaticFrontend(repoPath))
+    : undefined
 
   const report: DiscoveryReport = {
     framework,
     repository,
+    ...(domainDiscovery ? { domainDiscovery } : {}),
     surfaces,
     roles: buildRoles(repoPath, sourceFiles, repository),
     risks: buildRisks(repository),

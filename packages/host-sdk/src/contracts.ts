@@ -1,3 +1,5 @@
+import type { DomainDiscoveryBundle } from './domain-discovery-contracts.ts'
+
 export interface HostProjectPointer {
   repoPath: string
   appPath?: string
@@ -33,6 +35,7 @@ export interface DiscoveredSurface {
 export interface DiscoveryReport {
   framework: string | null
   repository?: RepositoryClassification
+  domainDiscovery?: DomainDiscoveryBundle
   surfaces: DiscoveredSurface[]
   roles: DiscoveredRole[]
   risks: string[]
