@@ -43,6 +43,16 @@ function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
 
+function verifyInstalledDocs() {
+  const docsDir = path.join(fixtureRoot, '.agentic-qa', 'docs')
+  const readmePath = path.join(docsDir, 'README.md')
+  assert(fs.existsSync(readmePath), 'generic installed docs README missing')
+  const docFiles = fs.readdirSync(docsDir)
+  assert(docFiles.length === 1 && docFiles[0] === 'README.md', `legacy docs copied into installed package: ${docFiles.join(', ')}`)
+  const text = fs.readFileSync(readmePath, 'utf8')
+  assert(!/reference-store|sales-associate|fulfillment-agent|billing_clerk|store_manager|customer|billing|notes/i.test(text), 'installed docs README contains host-specific legacy text')
+}
+
 function createFixture() {
   fs.rmSync(fixtureRoot, { recursive: true, force: true })
   fs.mkdirSync(fixtureRoot, { recursive: true })
@@ -135,6 +145,7 @@ function verifyGeneratedAdapter() {
   const capabilityIds = capabilities.map((capability) => capability.id)
 
   assert(fs.existsSync(path.join(fixtureRoot, '.agentic-qa/.env.local')), 'installer did not create .agentic-qa/.env.local')
+  verifyInstalledDocs()
   assert(manifest.hostProduct === path.basename(fixtureRoot), `unexpected host product ${manifest.hostProduct}`)
   assert(report.framework === 'vite', `expected vite framework, got ${report.framework}`)
   assert(report.domainDiscovery?.domain?.domain === 'commerce', `expected commerce domain in discovery report, got ${report.domainDiscovery?.domain?.domain}`)
