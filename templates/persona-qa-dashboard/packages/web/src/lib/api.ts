@@ -349,6 +349,19 @@ export interface Phase2DomainDiscoveryResponse {
   bundle: Phase2DomainDiscoveryBundle | null
 }
 
+export interface Phase2DomainDiscoveryScenarioDraftResponse {
+  draft: Phase2ScenarioDraft
+  source: {
+    domain: string
+    targetId: string
+    scenarioId: string
+    status: Phase2DomainDiscoveryCandidateStatus
+    confidence: number
+    mappingRequired: boolean
+  }
+  warnings: string[]
+}
+
 export interface Phase2LearningProposal {
   id: string
   recommendationId: string
@@ -710,6 +723,11 @@ export const api = {
   getPhase2Maturity: () => fetchJSON<Phase2MaturityStatus>(`${API_BASE}/api/p2/maturity`),
   getPhase2DomainDiscovery: () =>
     fetchJSON<Phase2DomainDiscoveryResponse>(`${API_BASE}/api/p2/domain-discovery`),
+  createPhase2DomainDiscoveryScenarioDraft: (scenarioId: string) =>
+    fetchJSON<Phase2DomainDiscoveryScenarioDraftResponse>(
+      `${API_BASE}/api/p2/domain-discovery/scenarios/${encodeURIComponent(scenarioId)}/drafts`,
+      { method: 'POST' },
+    ),
   getPhase2ClosedLoopStatus: () =>
     fetchJSON<Phase2ClosedLoopStatusResponse>(`${API_BASE}/api/p2/closed-loop/status`),
   getPhase2ClosedLoopAuditBundleUrl: (runId: string) =>

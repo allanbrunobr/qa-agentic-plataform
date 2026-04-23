@@ -1,17 +1,23 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Compass, FileCheck2, ShieldAlert, Users } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
 import type {
   Phase2DomainDiscoveryBaseCandidate,
   Phase2DomainDiscoveryResponse,
+  Phase2DomainDiscoveryScenarioDraftResponse,
 } from '@/lib/api'
 
 interface DomainDiscoveryPanelProps {
   discovery: Phase2DomainDiscoveryResponse | null
+  onCreateScenarioDraft?: (scenarioId: string) => Promise<Phase2DomainDiscoveryScenarioDraftResponse>
 }
 
-export function DomainDiscoveryPanel({ discovery }: DomainDiscoveryPanelProps) {
+export function DomainDiscoveryPanel({ discovery, onCreateScenarioDraft }: DomainDiscoveryPanelProps) {
+  const [pendingScenarioId, setPendingScenarioId] = useState<string | null>(null)
+  const [createdDraftIds, setCreatedDraftIds] = useState<Record<string, string>>({})
+  const [draftError, setDraftError] = useState<string | null>(null)
   const available = Boolean(discovery?.available && discovery.bundle && discovery.summary)
 
   if (!available) {
@@ -46,6 +52,23 @@ export function DomainDiscoveryPanel({ discovery }: DomainDiscoveryPanelProps) {
   const scenarios = bundle.scenarios
   const capabilities = bundle.capabilities
   const auditFindings = bundle.audit?.findings ?? []
+
+  const handleCreateScenarioDraft = async (scenarioId: string) => {
+    if (!onCreateScenarioDraft) return
+    setPendingScenarioId(scenarioId)
+    setDraftError(null)
+    try {
+      const result = await onCreateScenarioDraft(scenarioId)
+      setCreatedDraftIds((current) => ({
+        ...current,
+        [scenarioId]: result.draft.id,
+      }))
+    } catch (error) {
+      setDraftError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPendingScenarioId(null)
+    }
+  }
 
   return (
     <Card className="p-5">
@@ -116,6 +139,23 @@ export function DomainDiscoveryPanel({ discovery }: DomainDiscoveryPanelProps) {
             title: scenario.title,
             description: scenario.rationale,
             candidate: scenario,
+            action: onCreateScenarioDraft ? (
+              createdDraftIds[scenario.id] ? (
+                <span className="shrink-0 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-emerald-300">
+                  Draft criado
+                </span>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={pendingScenarioId === scenario.id}
+                  disabled={scenario.status === 'restricted'}
+                  onClick={() => void handleCreateScenarioDraft(scenario.id)}
+                >
+                  Criar draft
+                </Button>
+              )
+            ) : undefined,
           }))}
         />
         <CandidateList
@@ -129,6 +169,12 @@ export function DomainDiscoveryPanel({ discovery }: DomainDiscoveryPanelProps) {
           }))}
         />
       </div>
+
+      {draftError && (
+        <p role="alert" className="mt-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
+          {draftError}
+        </p>
+      )}
 
       {auditFindings.length > 0 && (
         <div className="mt-5 border-t border-[var(--border)] pt-4">
@@ -196,6 +242,7 @@ function CandidateList({
     title: string
     description: string
     candidate: Phase2DomainDiscoveryBaseCandidate
+    action?: ReactNode
   }>
 }) {
   return (
@@ -211,7 +258,10 @@ function CandidateList({
             <div key={item.id} className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
               <div className="mb-2 flex items-start justify-between gap-2">
                 <p className="min-w-0 truncate text-sm font-medium text-[var(--text-primary)]">{item.title}</p>
-                <StatusPill candidate={item.candidate} compact />
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  <StatusPill candidate={item.candidate} compact />
+                  {item.action}
+                </div>
               </div>
               <p className="line-clamp-2 text-xs leading-relaxed text-[var(--text-secondary)]">{item.description}</p>
               <p className="mt-2 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
