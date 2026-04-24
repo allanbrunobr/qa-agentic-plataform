@@ -105,6 +105,45 @@ async function loadCodeGraph(): Promise<ValidatedCodeGraph> {
 function summarizeCodeGraph(graph: CodeGraph) {
   const nodeTypes = countBy(graph.nodes.map((node) => node.type));
   const edgeTypes = countBy(graph.edges.map((edge) => edge.type));
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const supportEdges = graph.edges.filter((edge) => edge.type === 'supports_capability');
+  const supportEdgesByCapability = new Map<string, typeof supportEdges>();
+  for (const edge of supportEdges) {
+    const list = supportEdgesByCapability.get(edge.to) ?? [];
+    list.push(edge);
+    supportEdgesByCapability.set(edge.to, list);
+  }
+  const capabilityMappings = graph.nodes
+    .filter((node) => node.type === 'capability_candidate')
+    .map((node) => {
+      const edges = supportEdgesByCapability.get(node.id) ?? [];
+      const sources = edges
+        .map((edge) => nodeById.get(edge.from))
+        .filter((source): source is NonNullable<typeof source> => Boolean(source));
+      const graphMapping = node.metadata['graphMapping'];
+      const mapping = graphMapping && typeof graphMapping === 'object' && !Array.isArray(graphMapping)
+        ? graphMapping as Record<string, unknown>
+        : {};
+      return {
+        id: node.id,
+        capabilityId: typeof node.metadata['capabilityId'] === 'string' ? node.metadata['capabilityId'] : node.label,
+        label: node.label,
+        status: node.status ?? null,
+        mappingStatus: typeof mapping['status'] === 'string'
+          ? mapping['status']
+          : edges.length > 0 ? 'mapped' : 'unmapped',
+        confidence: typeof mapping['confidence'] === 'number'
+          ? mapping['confidence']
+          : Math.max(0, ...edges.map((edge) => edge.confidence ?? 0)),
+        sourceCount: sources.length,
+        sources: sources.slice(0, 5).map((source) => ({
+          id: source.id,
+          type: source.type,
+          label: source.label,
+          source: source.source ?? null,
+        })),
+      };
+    });
   const endpoints = graph.nodes
     .filter((node) => node.type === 'endpoint')
     .slice(0, 12)
@@ -138,10 +177,14 @@ function summarizeCodeGraph(graph: CodeGraph) {
     endpointCount: nodeTypes['endpoint'] ?? 0,
     httpCallCount: nodeTypes['http_call'] ?? 0,
     linkedHttpCallCount: graph.edges.filter((edge) => edge.type === 'calls').length,
+    capabilitySupportEdgeCount: supportEdges.length,
+    mappedCapabilityCount: capabilityMappings.filter((mapping) => mapping.mappingStatus === 'mapped').length,
+    unmappedCapabilityCount: capabilityMappings.filter((mapping) => mapping.mappingStatus !== 'mapped').length,
     nodeTypes,
     edgeTypes,
     endpoints,
     httpCalls,
+    capabilityMappings,
   };
 }
 

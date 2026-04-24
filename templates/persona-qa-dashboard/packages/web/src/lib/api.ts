@@ -442,6 +442,9 @@ export interface Phase2CodeGraphResponse {
     endpointCount: number
     httpCallCount: number
     linkedHttpCallCount: number
+    capabilitySupportEdgeCount: number
+    mappedCapabilityCount: number
+    unmappedCapabilityCount: number
     nodeTypes: Record<string, number>
     edgeTypes: Record<string, number>
     endpoints: Array<{
@@ -458,6 +461,21 @@ export interface Phase2CodeGraphResponse {
       method: string | null
       url: string | null
       normalizedPath: string | null
+    }>
+    capabilityMappings: Array<{
+      id: string
+      capabilityId: string
+      label: string
+      status: string | null
+      mappingStatus: string
+      confidence: number
+      sourceCount: number
+      sources: Array<{
+        id: string
+        type: string
+        label: string
+        source: Phase2CodeGraphNode['source'] | null
+      }>
     }>
   } | null
   graph: {
