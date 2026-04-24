@@ -227,6 +227,30 @@ function verifyGeneratedAdapter() {
       && node.metadata?.graphMapping?.status === 'mapped'),
     'code graph submitOrder capability mapping metadata missing',
   )
+  assert(
+    codeGraph.nodes.some((node) => node.type === 'scenario_candidate'
+      && node.metadata?.scenarioId === 'checkout_smoke'
+      && node.metadata?.graphReadiness?.status === 'partially_mapped'
+      && node.metadata?.graphReadiness?.mappedCapabilityIds?.includes('submitOrder')
+      && node.metadata?.graphReadiness?.missingCapabilityIds?.includes('fillCustomerEmail')),
+    'code graph checkout scenario readiness metadata missing',
+  )
+  assert(
+    codeGraph.nodes.some((node) => node.type === 'scenario_step_candidate'
+      && node.metadata?.stepId === 'submit_order'
+      && node.metadata?.graphReadiness?.status === 'fully_mapped'
+      && node.metadata?.graphReadiness?.supportSourceTypes?.includes('http_call')),
+    'code graph submit_order step readiness metadata missing',
+  )
+  assert(
+    codeGraph.edges.some((edge) => {
+      if (edge.type !== 'related_to' || edge.metadata?.relation !== 'graph_readiness_support') return false
+      const from = codeGraph.nodes.find((node) => node.id === edge.from)
+      const to = codeGraph.nodes.find((node) => node.id === edge.to)
+      return from?.type === 'scenario_candidate' && from.metadata?.scenarioId === 'checkout_smoke' && ['http_call', 'endpoint'].includes(to?.type)
+    }),
+    'code graph scenario readiness support edge missing',
+  )
   assert(personaIds.includes('primary_user'), `primary_user persona missing: ${personaIds.join(', ')}`)
   assert(!personaIds.includes('sales-associate') && !personaIds.includes('fulfillment-agent'), `Reference Store personas leaked into generic adapter: ${personaIds.join(', ')}`)
   assert(scenarioIds.includes('checkout_smoke'), `checkout_smoke scenario missing: ${scenarioIds.join(', ')}`)

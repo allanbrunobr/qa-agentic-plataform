@@ -79,6 +79,10 @@ export function CodeGraph() {
     graph?.nodes.filter((node) => node.type.endsWith('_candidate')).slice(0, 10) ?? []
   ), [graph])
 
+  const scenarioReadiness = useMemo(() => (
+    summary?.scenarioReadiness.filter((item) => item.type === 'scenario_candidate').slice(0, 8) ?? []
+  ), [summary])
+
   const endpointLinks = useMemo(() => {
     if (!graph) return []
     const nodeById = new Map(graph.nodes.map((node) => [node.id, node]))
@@ -153,8 +157,8 @@ export function CodeGraph() {
           label="Candidates"
           value={summary.candidateNodeCount}
           sub={`${summary.mappedCapabilityCount} capabilities mapeadas`}
-          trend={summary.unmappedCapabilityCount === 0 ? 'up' : 'neutral'}
-          trendValue={`${summary.unmappedCapabilityCount} precisam revisão`}
+          trend={summary.fullyMappedScenarioCount > 0 ? 'up' : 'neutral'}
+          trendValue={`${summary.fullyMappedScenarioCount}/${summary.fullyMappedScenarioCount + summary.partiallyMappedScenarioCount + summary.unmappedScenarioCount} cenários prontos`}
           icon={<Workflow className="h-4 w-4" />}
           accentColor="var(--warning)"
         />
@@ -216,6 +220,39 @@ export function CodeGraph() {
           detail: `${mapping.mappingStatus} · ${mapping.sourceCount} source(s) · ${Math.round(mapping.confidence * 100)}%`,
         }))} />
       </div>
+
+      <Card className="p-5">
+        <SectionHeader title="Scenario Readiness" description="Gate calculado a partir de capabilities suportadas pelo grafo." />
+        <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {scenarioReadiness.length === 0 ? (
+            <p className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3 text-xs text-[var(--text-muted)]">
+              Nenhum cenário com readiness calculado.
+            </p>
+          ) : scenarioReadiness.map((scenario) => (
+            <div key={scenario.id} className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-xs font-semibold text-[var(--text-primary)]">{scenario.label}</p>
+                <span className="shrink-0 rounded border border-[var(--border)] px-2 py-0.5 text-[10px] uppercase text-[var(--text-muted)]">
+                  {scenario.readinessStatus}
+                </span>
+              </div>
+              <p className="mt-1 text-[10px] text-[var(--text-muted)]">
+                {scenario.mappedCapabilityCount}/{scenario.requiredCapabilityCount} capabilities · {Math.round(scenario.confidence * 100)}%
+              </p>
+              {scenario.missingCapabilityIds.length > 0 && (
+                <p className="mt-1 truncate text-[10px] text-[var(--warning)]">
+                  faltando: {scenario.missingCapabilityIds.slice(0, 4).join(', ')}
+                </p>
+              )}
+              {scenario.supportSourceTypes.length > 0 && (
+                <p className="mt-1 truncate text-[10px] text-[var(--text-muted)]">
+                  fontes: {scenario.supportSourceTypes.join(', ')}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      </Card>
 
       <Card className="p-5">
         <SectionHeader title="Candidate Nodes" description="Personas, cenários e steps detectados para revisão." />
