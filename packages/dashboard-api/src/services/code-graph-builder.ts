@@ -1376,6 +1376,139 @@ function resolveCapabilitySupport(input: {
   }
 }
 
+function graphMappingFor(node: CodeGraphNode): Record<string, unknown> {
+  const graphMapping = node.metadata['graphMapping']
+  return graphMapping && typeof graphMapping === 'object' && !Array.isArray(graphMapping)
+    ? graphMapping as Record<string, unknown>
+    : {}
+}
+
+function enrichScenarioReadiness(input: {
+  nodes: Map<string, CodeGraphNode>
+  edges: Map<string, CodeGraphEdge>
+}) {
+  const nodeById = new Map([...input.nodes.values()].map((node) => [node.id, node]))
+  const supportEdgesByCapability = new Map<string, CodeGraphEdge[]>()
+  const requiredCapabilityEdgesByCandidate = new Map<string, CodeGraphEdge[]>()
+
+  for (const edge of input.edges.values()) {
+    if (edge.type === 'supports_capability') {
+      const capabilityNode = nodeById.get(edge.to)
+      if (capabilityNode?.type !== 'capability_candidate') continue
+      const list = supportEdgesByCapability.get(edge.to) ?? []
+      list.push(edge)
+      supportEdgesByCapability.set(edge.to, list)
+    }
+
+    if (edge.type === 'requires_capability') {
+      const fromNode = nodeById.get(edge.from)
+      const toNode = nodeById.get(edge.to)
+      if (
+        !fromNode
+        || !['scenario_candidate', 'scenario_step_candidate'].includes(fromNode.type)
+        || toNode?.type !== 'capability_candidate'
+      ) continue
+      const list = requiredCapabilityEdgesByCandidate.get(edge.from) ?? []
+      list.push(edge)
+      requiredCapabilityEdgesByCandidate.set(edge.from, list)
+    }
+  }
+
+  for (const candidate of input.nodes.values()) {
+    if (!['scenario_candidate', 'scenario_step_candidate'].includes(candidate.type)) continue
+    const requiredEdges = requiredCapabilityEdgesByCandidate.get(candidate.id) ?? []
+    const requiredCapabilities = requiredEdges
+      .map((edge) => nodeById.get(edge.to))
+      .filter((node): node is CodeGraphNode => Boolean(node?.type === 'capability_candidate'))
+
+    if (requiredCapabilities.length === 0) {
+      updateNodeMetadata(input.nodes, candidate.id, {
+        graphReadiness: {
+          status: 'unmapped',
+          confidence: 0,
+          mappedCapabilityIds: [],
+          missingCapabilityIds: [],
+          requiredCapabilityCount: 0,
+          mappedCapabilityCount: 0,
+          resolver: 'scenario_graph_readiness_v1',
+          reason: 'candidate has no required capabilities',
+        },
+      })
+      continue
+    }
+
+    const mappedCapabilityIds: string[] = []
+    const missingCapabilityIds: string[] = []
+    const supportSourceIds = new Set<string>()
+    const supportSourceTypes = new Set<string>()
+    const supportScores: number[] = []
+
+    for (const capability of requiredCapabilities) {
+      const supportEdges = supportEdgesByCapability.get(capability.id) ?? []
+      const mapping = graphMappingFor(capability)
+      const capabilityId = typeof capability.metadata['capabilityId'] === 'string'
+        ? capability.metadata['capabilityId']
+        : capability.label
+      const mappingStatus = typeof mapping['status'] === 'string'
+        ? mapping['status']
+        : supportEdges.length > 0 ? 'mapped' : 'unmapped'
+
+      if (mappingStatus === 'mapped') {
+        mappedCapabilityIds.push(capabilityId)
+      } else {
+        missingCapabilityIds.push(capabilityId)
+      }
+
+      const confidence = typeof mapping['confidence'] === 'number'
+        ? mapping['confidence']
+        : Math.max(0, ...supportEdges.map((edge) => edge.confidence ?? 0))
+      if (confidence > 0) supportScores.push(confidence)
+
+      for (const edge of supportEdges) {
+        const sourceNode = nodeById.get(edge.from)
+        if (!sourceNode) continue
+        supportSourceIds.add(sourceNode.id)
+        supportSourceTypes.add(sourceNode.type)
+        addEdge(input.edges, {
+          id: edgeId('related_to', candidate.id, sourceNode.id),
+          from: candidate.id,
+          to: sourceNode.id,
+          type: 'related_to',
+          confidence: edge.confidence,
+          metadata: {
+            relation: 'graph_readiness_support',
+            capabilityId,
+            supportEdgeId: edge.id,
+          },
+        })
+      }
+    }
+
+    const mappedCapabilityCount = mappedCapabilityIds.length
+    const requiredCapabilityCount = requiredCapabilities.length
+    const confidence = supportScores.length > 0
+      ? supportScores.reduce((sum, score) => sum + score, 0) / supportScores.length
+      : 0
+    const status = mappedCapabilityCount === requiredCapabilityCount
+      ? 'fully_mapped'
+      : mappedCapabilityCount > 0 ? 'partially_mapped' : 'unmapped'
+
+    updateNodeMetadata(input.nodes, candidate.id, {
+      graphReadiness: {
+        status,
+        confidence: Number(confidence.toFixed(3)),
+        mappedCapabilityIds,
+        missingCapabilityIds,
+        requiredCapabilityCount,
+        mappedCapabilityCount,
+        supportSourceIds: [...supportSourceIds].slice(0, 20),
+        supportSourceTypes: [...supportSourceTypes].sort(),
+        resolver: 'scenario_graph_readiness_v1',
+      },
+    })
+  }
+}
+
 function scoreCapabilityTarget(capabilityTokens: Set<string>, capabilityKind: string, target: CodeGraphNode) {
   const targetTokens = tokenizeGraphText([
     target.label,
@@ -1527,6 +1660,13 @@ function addDraftScenario(
     const capabilityNodeId = capabilityNodeById.get(capabilityId)
     if (!capabilityNodeId) continue
     addEdge(edges, {
+      id: edgeId('requires_capability', stepNodeId, capabilityNodeId),
+      from: stepNodeId,
+      to: capabilityNodeId,
+      type: 'requires_capability',
+      metadata: { capabilityId },
+    })
+    addEdge(edges, {
       id: edgeId('requires_capability', scenarioNodeId, capabilityNodeId),
       from: scenarioNodeId,
       to: capabilityNodeId,
@@ -1618,6 +1758,7 @@ export async function buildCodeGraph(input: BuildCodeGraphInput): Promise<CodeGr
   })
 
   resolveCapabilitySupport({ nodes, edges })
+  enrichScenarioReadiness({ nodes, edges })
 
   const graphNodes = [...nodes.values()]
   const graphEdges = [...edges.values()].filter((edge) => nodes.has(edge.from) && nodes.has(edge.to))

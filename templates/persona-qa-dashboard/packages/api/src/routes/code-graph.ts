@@ -149,6 +149,30 @@ function summarizeCodeGraph(graph: CodeGraph) {
         })),
       };
     });
+  const scenarioReadiness = graph.nodes
+    .filter((node) => ['scenario_candidate', 'scenario_step_candidate'].includes(node.type))
+    .map((node) => {
+      const graphReadiness = node.metadata['graphReadiness'];
+      const readiness = graphReadiness && typeof graphReadiness === 'object' && !Array.isArray(graphReadiness)
+        ? graphReadiness as Record<string, unknown>
+        : {};
+      return {
+        id: node.id,
+        type: node.type,
+        label: node.label,
+        status: node.status ?? null,
+        readinessStatus: typeof readiness['status'] === 'string' ? readiness['status'] : 'unmapped',
+        confidence: typeof readiness['confidence'] === 'number' ? readiness['confidence'] : 0,
+        requiredCapabilityCount: typeof readiness['requiredCapabilityCount'] === 'number' ? readiness['requiredCapabilityCount'] : 0,
+        mappedCapabilityCount: typeof readiness['mappedCapabilityCount'] === 'number' ? readiness['mappedCapabilityCount'] : 0,
+        missingCapabilityIds: Array.isArray(readiness['missingCapabilityIds'])
+          ? readiness['missingCapabilityIds'].filter((item): item is string => typeof item === 'string')
+          : [],
+        supportSourceTypes: Array.isArray(readiness['supportSourceTypes'])
+          ? readiness['supportSourceTypes'].filter((item): item is string => typeof item === 'string')
+          : [],
+      };
+    });
   const endpoints = graph.nodes
     .filter((node) => node.type === 'endpoint')
     .slice(0, 12)
@@ -185,11 +209,15 @@ function summarizeCodeGraph(graph: CodeGraph) {
     capabilitySupportEdgeCount: supportEdges.length,
     mappedCapabilityCount: capabilityMappings.filter((mapping) => mapping.mappingStatus === 'mapped').length,
     unmappedCapabilityCount: capabilityMappings.filter((mapping) => mapping.mappingStatus !== 'mapped').length,
+    fullyMappedScenarioCount: scenarioReadiness.filter((item) => item.type === 'scenario_candidate' && item.readinessStatus === 'fully_mapped').length,
+    partiallyMappedScenarioCount: scenarioReadiness.filter((item) => item.type === 'scenario_candidate' && item.readinessStatus === 'partially_mapped').length,
+    unmappedScenarioCount: scenarioReadiness.filter((item) => item.type === 'scenario_candidate' && item.readinessStatus === 'unmapped').length,
     nodeTypes,
     edgeTypes,
     endpoints,
     httpCalls,
     capabilityMappings,
+    scenarioReadiness,
   };
 }
 

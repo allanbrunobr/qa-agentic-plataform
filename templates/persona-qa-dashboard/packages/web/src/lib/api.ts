@@ -445,6 +445,9 @@ export interface Phase2CodeGraphResponse {
     capabilitySupportEdgeCount: number
     mappedCapabilityCount: number
     unmappedCapabilityCount: number
+    fullyMappedScenarioCount: number
+    partiallyMappedScenarioCount: number
+    unmappedScenarioCount: number
     nodeTypes: Record<string, number>
     edgeTypes: Record<string, number>
     endpoints: Array<{
@@ -476,6 +479,18 @@ export interface Phase2CodeGraphResponse {
         label: string
         source: Phase2CodeGraphNode['source'] | null
       }>
+    }>
+    scenarioReadiness: Array<{
+      id: string
+      type: string
+      label: string
+      status: string | null
+      readinessStatus: string
+      confidence: number
+      requiredCapabilityCount: number
+      mappedCapabilityCount: number
+      missingCapabilityIds: string[]
+      supportSourceTypes: string[]
     }>
   } | null
   graph: {
