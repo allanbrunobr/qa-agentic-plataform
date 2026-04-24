@@ -90,7 +90,7 @@ export function CodeGraph() {
         to: nodeById.get(edge.to),
       }))
       .filter((item): item is { edge: Phase2CodeGraphEdge; from: Phase2CodeGraphNode; to: Phase2CodeGraphNode } => (
-        Boolean(item.from && item.to)
+        Boolean(item.from?.type === 'http_call' && item.to?.type === 'endpoint')
       ))
       .slice(0, 12)
   }, [graph])

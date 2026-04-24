@@ -90,21 +90,13 @@ function createFixture() {
   }, null, 2)}\n`)
   writeFile('src/main.tsx', `import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { submitOrder } from './order-service'
 import './styles.css'
 
 function App() {
   const [email, setEmail] = useState('')
   const [items, setItems] = useState(0)
   const [message, setMessage] = useState('')
-
-  async function submitOrder() {
-    await fetch('/api/orders', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, items }),
-    })
-    setMessage('Order submitted successfully')
-  }
 
   return (
     <main>
@@ -115,7 +107,7 @@ function App() {
       </label>
       <button onClick={() => setItems((value) => value + 1)}>Add item to cart</button>
       <p>Cart items: {items}</p>
-      <button disabled={!email || items === 0} onClick={() => void submitOrder()}>
+      <button disabled={!email || items === 0} onClick={() => void submitOrder({ email, items }).then(() => setMessage('Order submitted successfully'))}>
         Submit order
       </button>
       <output>{message}</output>
@@ -124,6 +116,14 @@ function App() {
 }
 
 createRoot(document.getElementById('root')!).render(<App />)
+`)
+  writeFile('src/order-service.ts', `export async function submitOrder(payload: { email: string; items: number }) {
+  return fetch('/api/orders', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
 `)
   writeFile('src/server.ts', `type Request = { body?: unknown }
 type Response = { status: (code: number) => Response; json: (body: unknown) => void }
@@ -184,13 +184,35 @@ function verifyGeneratedAdapter() {
   assert(codeGraph.nodes.some((node) => node.type === 'scenario_candidate'), 'code graph scenario candidate missing')
   assert(codeGraph.nodes.some((node) => node.type === 'capability_candidate'), 'code graph capability candidate missing')
   assert(codeGraph.nodes.some((node) => node.type === 'source_file' && node.label === 'src/server.ts'), 'code graph source file evidence missing')
+  assert(codeGraph.nodes.some((node) => node.type === 'source_file' && node.label === 'src/order-service.ts'), 'code graph service source file evidence missing')
+  assert(codeGraph.nodes.some((node) => node.type === 'function' && node.metadata?.name === 'submitOrder' && node.source?.filePath === 'src/order-service.ts'), 'code graph service function evidence missing')
+  assert(codeGraph.nodes.some((node) => node.type === 'function' && node.metadata?.name === 'registerOrderRoutes' && node.source?.filePath === 'src/server.ts'), 'code graph endpoint registration function evidence missing')
   assert(codeGraph.nodes.some((node) => node.type === 'endpoint' && node.metadata?.method === 'POST' && node.metadata?.path === '/api/orders'), 'code graph endpoint evidence missing')
   assert(codeGraph.nodes.some((node) => node.type === 'http_call' && node.metadata?.method === 'POST' && node.metadata?.normalizedPath === '/api/orders'), 'code graph HTTP call evidence missing')
   assert(codeGraph.edges.some((edge) => edge.type === 'has_evidence'), 'code graph evidence edges missing')
   assert(codeGraph.edges.some((edge) => edge.type === 'requires_capability'), 'code graph capability dependency edges missing')
+  assert(codeGraph.edges.some((edge) => edge.type === 'imports'), 'code graph import edge missing')
   assert(codeGraph.edges.some((edge) => edge.type === 'handles'), 'code graph source file endpoint handler edge missing')
   assert(codeGraph.edges.some((edge) => edge.type === 'makes_http_request'), 'code graph source file HTTP call edge missing')
   assert(codeGraph.edges.some((edge) => edge.type === 'calls'), 'code graph HTTP call to endpoint edge missing')
+  assert(
+    codeGraph.edges.some((edge) => {
+      if (edge.type !== 'calls') return false
+      const from = codeGraph.nodes.find((node) => node.id === edge.from)
+      const to = codeGraph.nodes.find((node) => node.id === edge.to)
+      return from?.type === 'function' && from.metadata?.name === 'submitOrder' && to?.type === 'http_call'
+    }),
+    'code graph service function to HTTP call edge missing',
+  )
+  assert(
+    codeGraph.edges.some((edge) => {
+      if (edge.type !== 'handles') return false
+      const from = codeGraph.nodes.find((node) => node.id === edge.from)
+      const to = codeGraph.nodes.find((node) => node.id === edge.to)
+      return from?.type === 'function' && from.metadata?.name === 'registerOrderRoutes' && to?.type === 'endpoint'
+    }),
+    'code graph route registration function to endpoint edge missing',
+  )
   assert(
     codeGraph.edges.some((edge) => {
       if (edge.type !== 'supports_capability') return false
