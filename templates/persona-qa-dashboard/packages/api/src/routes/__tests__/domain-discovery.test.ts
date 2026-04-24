@@ -10,6 +10,7 @@ import { SessionService } from '../../phase2/services/session-service.js';
 
 let tempDir = '';
 let bundleFile = '';
+let codeGraphFile = '';
 
 async function createApp() {
   const app = Fastify();
@@ -22,12 +23,15 @@ describe('/api/p2/domain-discovery', () => {
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'domain-discovery-route-'));
     bundleFile = path.join(tempDir, 'adapter', 'config', 'domain-discovery-bundle.generated.json');
+    codeGraphFile = path.join(tempDir, 'adapter', 'config', 'code-graph.generated.json');
     process.env['PERSONA_QA_DOMAIN_DISCOVERY_FILE'] = bundleFile;
+    process.env['PERSONA_QA_CODE_GRAPH_FILE'] = codeGraphFile;
     setSessionService(new SessionService(':memory:'));
   });
 
   afterEach(async () => {
     delete process.env['PERSONA_QA_DOMAIN_DISCOVERY_FILE'];
+    delete process.env['PERSONA_QA_CODE_GRAPH_FILE'];
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -81,6 +85,7 @@ describe('/api/p2/domain-discovery', () => {
   it('creates a pending scenario draft from a domain discovery scenario candidate', async () => {
     await fs.mkdir(path.dirname(bundleFile), { recursive: true });
     await fs.writeFile(bundleFile, JSON.stringify(domainBundle()), 'utf-8');
+    await fs.writeFile(codeGraphFile, JSON.stringify(codeGraphWithReadiness()), 'utf-8');
 
     const app = await createApp();
     const res = await app.inject({
@@ -97,8 +102,11 @@ describe('/api/p2/domain-discovery', () => {
     assert.equal(body.draft.gapType, 'domain_discovery_mapping');
     assert.equal(body.source.domain, 'commerce');
     assert.equal(body.source.mappingRequired, true);
+    assert.equal(body.source.graphReadiness.status, 'partially_mapped');
     assert.equal(body.draft.contract.domainDiscovery.sourceScenarioId, 'place_order');
     assert.equal(body.draft.contract.domainDiscovery.mappingRequired, true);
+    assert.equal(body.draft.contract.domainDiscovery.graphReadiness.status, 'partially_mapped');
+    assert.deepEqual(body.draft.contract.domainDiscovery.graphReadiness.missingCapabilityIds, ['submit_order']);
     assert.deepEqual(body.draft.contract.roles, ['shopper']);
     assert.equal(body.draft.contract.steps[0].capabilityId, 'submit_order');
     assert.equal(body.draft.contract.workflowContract.steps[0].capabilityId, 'submit_order');
@@ -202,6 +210,39 @@ function domainBundle() {
       status: 'needs_human_mapping',
       evidenceRefs: [evidenceRef],
       risks: [],
+    },
+  };
+}
+
+function codeGraphWithReadiness() {
+  return {
+    schemaVersion: 'code-graph/v1',
+    targetId: 'commerce_fixture',
+    repositoryKind: 'frontend',
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    nodes: [{
+      id: 'scenario_candidate:place_order',
+      type: 'scenario_candidate',
+      label: 'Place order',
+      metadata: {
+        scenarioId: 'place_order',
+        graphReadiness: {
+          status: 'partially_mapped',
+          confidence: 0.42,
+          requiredCapabilityCount: 1,
+          mappedCapabilityCount: 0,
+          mappedCapabilityIds: [],
+          missingCapabilityIds: ['submit_order'],
+          supportSourceTypes: ['http_call'],
+        },
+      },
+    }],
+    edges: [],
+    stats: {
+      nodeCount: 1,
+      edgeCount: 0,
+      evidenceNodeCount: 0,
+      candidateNodeCount: 1,
     },
   };
 }
