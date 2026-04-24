@@ -6,6 +6,7 @@ import type {
   GeneratedPersonaDraft,
   GeneratedScenarioDraft,
 } from '../../../host-sdk/src/contracts.ts'
+import { buildCodeGraph } from './code-graph-builder.ts'
 
 type NormalizedStep = string
 
@@ -846,6 +847,11 @@ export async function materializeLocalDiscovery(input: {
   const hostId = inferTargetId(input.repoPath)
   const normalizedReport = normalizeReport(input.report)
   const normalizedDraft = buildNormalizedDraft(normalizedReport, input.draft)
+  const codeGraph = buildCodeGraph({
+    targetId: hostId,
+    report: normalizedReport,
+    draft: normalizedDraft,
+  })
   const routes = buildMaterializedRoutes(normalizedReport)
   const auth = await detectAuth(input.repoPath, normalizedReport)
 
@@ -901,6 +907,7 @@ export async function materializeLocalDiscovery(input: {
     [path.join(adapterRoot, 'scenarios', 'scenarios.generated.json'), scenarios],
     [path.join(adapterRoot, 'config', 'discovery-report.generated.json'), normalizedReport],
     [path.join(adapterRoot, 'config', 'bootstrap-draft.generated.json'), normalizedDraft],
+    [path.join(adapterRoot, 'config', 'code-graph.generated.json'), codeGraph],
   ]
 
   if (normalizedReport.domainDiscovery) {

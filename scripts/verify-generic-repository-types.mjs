@@ -143,6 +143,7 @@ function verifyFixture(fixtureName, expected) {
   const personas = readGeneratedJson(fixtureName, 'personas/personas.generated.json')
   const scenarios = readGeneratedJson(fixtureName, 'scenarios/scenarios.generated.json')
   const capabilities = readGeneratedJson(fixtureName, 'capabilities/capabilities.generated.json')
+  const codeGraph = readGeneratedJson(fixtureName, 'config/code-graph.generated.json')
   const contractsIndex = readGeneratedJson(fixtureName, 'workflow-contracts/index.generated.json')
 
   const personaIds = personas.map((persona) => persona.id)
@@ -151,6 +152,13 @@ function verifyFixture(fixtureName, expected) {
   const surfaceIds = report.surfaces.map((surface) => surface.id)
 
   assert(report.repository?.kind === expected.kind, `${fixtureName}: expected ${expected.kind}, got ${report.repository?.kind}`)
+  assert(codeGraph.schemaVersion === 'code-graph/v1', `${fixtureName}: code graph schema missing`)
+  assert(codeGraph.repositoryKind === expected.kind, `${fixtureName}: expected code graph kind ${expected.kind}, got ${codeGraph.repositoryKind}`)
+  assert(codeGraph.nodes.some((node) => node.type === 'repository'), `${fixtureName}: code graph repository node missing`)
+  assert(codeGraph.nodes.some((node) => node.type === 'persona_candidate'), `${fixtureName}: code graph persona candidate missing`)
+  assert(codeGraph.nodes.some((node) => node.type === 'scenario_candidate'), `${fixtureName}: code graph scenario candidate missing`)
+  assert(codeGraph.nodes.some((node) => node.type === 'capability_candidate'), `${fixtureName}: code graph capability candidate missing`)
+  assert(codeGraph.edges.some((edge) => edge.type === 'requires_capability'), `${fixtureName}: code graph capability edges missing`)
   assert(personaIds.includes(expected.persona), `${fixtureName}: missing persona ${expected.persona}; got ${personaIds.join(', ')}`)
   assert(scenarioIds.includes(expected.scenario), `${fixtureName}: missing scenario ${expected.scenario}; got ${scenarioIds.join(', ')}`)
   for (const capabilityId of expected.capabilities) {
