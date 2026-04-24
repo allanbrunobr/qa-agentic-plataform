@@ -11,8 +11,12 @@ import { IndependentAuditorService, type GovernanceAuditEvaluation } from './ind
 import { defaultRuntimeHookBus } from './runtime-hooks.js'
 import {
   DOMAIN_MAPPING_REVIEW_REQUIREMENTS,
+  GRAPH_READINESS_REQUIREMENTS,
+  getScenarioDraftGraphReadiness,
   getScenarioDraftMappingReview,
+  isScenarioDraftGraphReady,
   isScenarioDraftMappingReviewComplete,
+  requiresGraphReadinessGate,
   requiresDomainMappingReview,
 } from './scenario-draft-mapping-review.js'
 
@@ -240,6 +244,27 @@ export class GovernancePolicyService {
       mappingReview: requiresDomainMappingReview(draft)
         ? getScenarioDraftMappingReview(draft)
         : undefined,
+      graphReadiness: requiresGraphReadinessGate(draft)
+        ? getScenarioDraftGraphReadiness(draft)
+        : undefined,
+    }
+
+    if (
+      (governanceAction === 'approve' || governanceAction === 'promote')
+      && requiresGraphReadinessGate(draft)
+      && !isScenarioDraftGraphReady(draft)
+    ) {
+      const readiness = getScenarioDraftGraphReadiness(draft)
+      return this.withIndependentAudit({
+        subjectType: 'scenario_draft',
+        subjectId: draft.id,
+        action: governanceAction,
+        verdict: 'blocked',
+        reason: `Scenario draft graph readiness must be fully_mapped before ${governanceAction}; current status is ${readiness?.status ?? 'unknown'}`,
+        actor,
+        requirements: GRAPH_READINESS_REQUIREMENTS,
+        metadata,
+      }, draft, actor)
     }
 
     if (

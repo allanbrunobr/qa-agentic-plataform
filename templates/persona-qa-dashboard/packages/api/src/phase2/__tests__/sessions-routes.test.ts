@@ -1085,6 +1085,72 @@ describe('Phase 2 Session Routes', () => {
       }));
     });
 
+    it('should block domain draft approval until graph readiness is fully mapped', async () => {
+      const draft = sessionService.createScenarioDraft({
+        scenarioId: 'domain_commerce_partial_graph',
+        name: 'Domain draft: Partial graph',
+        description: 'Generated from domain discovery with partial graph support',
+        contract: {
+          id: 'domain_commerce_partial_graph',
+          name: 'Partial graph',
+          steps: [],
+          domainDiscovery: {
+            sourceDomain: 'commerce',
+            sourceScenarioId: 'place_order',
+            mappingRequired: true,
+            graphReadiness: {
+              status: 'partially_mapped',
+              confidence: 0.55,
+              requiredCapabilityCount: 2,
+              mappedCapabilityCount: 1,
+              mappedCapabilityIds: ['submitOrder'],
+              missingCapabilityIds: ['fillCustomerEmail'],
+              supportSourceTypes: ['endpoint', 'http_call'],
+            },
+            mappingReview: {
+              selectorsMapped: true,
+              authMapped: true,
+              testDataMapped: true,
+              assertionsMapped: true,
+              reviewedBy: 'qa_lead',
+              reviewedAt: new Date().toISOString(),
+              notes: 'Manual mapping completed, but graph remains partial.',
+            },
+          },
+        },
+        gapType: 'domain_discovery_mapping',
+      });
+
+      const blockedApproval = await app.inject({
+        method: 'PATCH',
+        url: `/api/p2/scenarios/drafts/${draft.id}`,
+        payload: {
+          status: 'approved',
+          reviewedBy: 'qa_lead',
+        },
+      });
+
+      expect(blockedApproval.statusCode).toBe(409);
+      expect(blockedApproval.json()).toEqual(expect.objectContaining({
+        error: expect.stringContaining('graph readiness must be fully_mapped'),
+      }));
+      expect(sessionService.getScenarioDraft(draft.id)?.status).toBe('pending');
+      expect(sessionService.listGovernanceDecisions({
+        subjectType: 'scenario_draft',
+        subjectId: draft.id,
+      })).toContainEqual(expect.objectContaining({
+        action: 'approve',
+        verdict: 'blocked',
+        requirements: expect.arrayContaining(['graph_readiness_fully_mapped']),
+        metadata: expect.objectContaining({
+          graphReadiness: expect.objectContaining({
+            status: 'partially_mapped',
+            missingCapabilityIds: ['fillCustomerEmail'],
+          }),
+        }),
+      }));
+    });
+
     it('should materialize applied learning proposals', async () => {
       const proposal = sessionService.createLearningProposal({
         recommendationId: 'route-learning-apply',

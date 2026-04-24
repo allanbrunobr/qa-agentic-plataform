@@ -90,11 +90,29 @@ type ValidatedDomainDiscoveryBundle =
   | { status: 'invalid'; filePath: string; details: unknown }
   | { status: 'available'; filePath: string; bundle: DomainDiscoveryBundle };
 
+interface ScenarioGraphReadinessSnapshot {
+  status: string;
+  confidence: number;
+  requiredCapabilityCount: number;
+  mappedCapabilityCount: number;
+  mappedCapabilityIds: string[];
+  missingCapabilityIds: string[];
+  supportSourceTypes: string[];
+}
+
 function getDomainDiscoveryCandidates(): string[] {
   return [
     process.env['PERSONA_QA_DOMAIN_DISCOVERY_FILE'],
     path.resolve(process.cwd(), 'adapter', 'config', 'domain-discovery-bundle.generated.json'),
     path.resolve(process.cwd(), '..', '..', 'adapter', 'config', 'domain-discovery-bundle.generated.json'),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+}
+
+function getCodeGraphCandidates(): string[] {
+  return [
+    process.env['PERSONA_QA_CODE_GRAPH_FILE'],
+    path.resolve(process.cwd(), 'adapter', 'config', 'code-graph.generated.json'),
+    path.resolve(process.cwd(), '..', '..', 'adapter', 'config', 'code-graph.generated.json'),
   ].filter((candidate): candidate is string => Boolean(candidate));
 }
 
@@ -174,7 +192,49 @@ async function loadDomainDiscoveryBundle(): Promise<ValidatedDomainDiscoveryBund
   }
 }
 
-function buildScenarioDraftInput(bundle: DomainDiscoveryBundle, scenario: DomainDiscoveryScenarioCandidate) {
+async function loadScenarioGraphReadiness(scenarioId: string): Promise<ScenarioGraphReadinessSnapshot | null> {
+  const filePath = await firstExistingFile(getCodeGraphCandidates());
+  if (!filePath) return null;
+
+  try {
+    const content = await fs.readFile(filePath, 'utf-8');
+    const graph = JSON.parse(content);
+    const nodes = Array.isArray(graph?.nodes) ? graph.nodes as Array<Record<string, unknown>> : [];
+    const scenarioNode = nodes.find((node) => {
+      if (node['type'] !== 'scenario_candidate') return false;
+      const metadata = node['metadata'];
+      return metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>)['scenarioId'] === scenarioId
+        : false;
+    });
+    const metadata = scenarioNode?.['metadata'];
+    const graphReadiness = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+      ? (metadata as Record<string, unknown>)['graphReadiness']
+      : null;
+    const readiness = graphReadiness && typeof graphReadiness === 'object' && !Array.isArray(graphReadiness)
+      ? graphReadiness as Record<string, unknown>
+      : null;
+    if (!readiness) return null;
+
+    return {
+      status: typeof readiness['status'] === 'string' ? readiness['status'] : 'unmapped',
+      confidence: typeof readiness['confidence'] === 'number' ? readiness['confidence'] : 0,
+      requiredCapabilityCount: typeof readiness['requiredCapabilityCount'] === 'number' ? readiness['requiredCapabilityCount'] : 0,
+      mappedCapabilityCount: typeof readiness['mappedCapabilityCount'] === 'number' ? readiness['mappedCapabilityCount'] : 0,
+      mappedCapabilityIds: readStringList(readiness['mappedCapabilityIds']),
+      missingCapabilityIds: readStringList(readiness['missingCapabilityIds']),
+      supportSourceTypes: readStringList(readiness['supportSourceTypes']),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildScenarioDraftInput(
+  bundle: DomainDiscoveryBundle,
+  scenario: DomainDiscoveryScenarioCandidate,
+  graphReadiness: ScenarioGraphReadinessSnapshot | null = null,
+) {
   const scenarioId = safeId(`domain_${bundle.domain.domain}_${scenario.id}`);
   const fallbackAgentId = scenario.participatingPersonaIds[0] ?? 'domain_reviewer';
   const sourceSteps = scenario.steps.length > 0
@@ -250,6 +310,7 @@ function buildScenarioDraftInput(bundle: DomainDiscoveryBundle, scenario: Domain
         status: scenario.status,
         evidenceRefs: scenario.evidenceRefs,
         risks: scenario.risks,
+        graphReadiness,
         mappingRequired: scenario.status !== 'runnable_candidate',
         mappingReview: {
           selectorsMapped: false,
@@ -265,6 +326,12 @@ function buildScenarioDraftInput(bundle: DomainDiscoveryBundle, scenario: Domain
     gapType: 'domain_discovery_mapping',
     gapEvidence: evidence,
   };
+}
+
+function readStringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 function safeId(value: string): string {
@@ -340,7 +407,8 @@ export async function domainDiscoveryRoutes(app: FastifyInstance): Promise<void>
         });
       }
 
-      const draft = service.createScenarioDraft(buildScenarioDraftInput(discovery.bundle, scenario));
+      const graphReadiness = await loadScenarioGraphReadiness(scenario.id);
+      const draft = service.createScenarioDraft(buildScenarioDraftInput(discovery.bundle, scenario, graphReadiness));
 
       return reply.status(201).send({
         draft,
@@ -350,6 +418,7 @@ export async function domainDiscoveryRoutes(app: FastifyInstance): Promise<void>
           scenarioId: scenario.id,
           status: scenario.status,
           confidence: scenario.confidence,
+          graphReadiness,
           mappingRequired: scenario.status !== 'runnable_candidate',
         },
         warnings: [
