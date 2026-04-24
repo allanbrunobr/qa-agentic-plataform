@@ -167,6 +167,7 @@ export function Insights() {
           notes: 'Mapping reviewed from L5 control plane.',
         }))}
         onApproveDraft={(id) => runL5Action(`draft:${id}`, () => api.updatePhase2ScenarioDraft(id, { status: 'approved', reviewedBy: 'dashboard' }))}
+        onPromoteDraft={(id) => runL5Action(`draft-promote:${id}`, () => api.promotePhase2ScenarioDraft(id, { reviewedBy: 'dashboard' }))}
         onRejectDraft={(id) => runL5Action(`draft:${id}`, () => api.updatePhase2ScenarioDraft(id, { status: 'rejected', reviewedBy: 'dashboard' }))}
       />
 

@@ -187,10 +187,11 @@ export class L5KnowledgePromotionService {
       const draft = currentDraft.status === 'promoted'
         ? this.recordScenarioDraftPromotionEvidence(currentDraft, actor)
         : this.transitionScenarioDraft(currentDraft, 'promoted', actor)
-      const materialization = await new L5MaterializationService(this.sessionService).materializeScenarioDraft(draft)
+      const materialization = await new L5MaterializationService(this.sessionService).promoteScenarioDraftToRunnable(draft)
       return {
         draft,
-        materialization: serializeMaterialization(materialization),
+        materialization: serializeMaterialization(materialization.manifest),
+        runnableScenarioRegistry: serializeMaterialization(materialization.runnableScenarioRegistry),
       }
     }
 

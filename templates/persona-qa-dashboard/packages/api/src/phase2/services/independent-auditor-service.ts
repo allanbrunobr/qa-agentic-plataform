@@ -403,7 +403,7 @@ function auditMaterializationKind(
 ): void {
   const allowedKinds: Record<L5MaterializationSubjectType, string[]> = {
     learning_proposal: ['learning_prompt_overlay', 'learning_proposal_manifest'],
-    scenario_draft: ['scenario_draft_manifest'],
+    scenario_draft: ['scenario_draft_manifest', 'runnable_scenario_registry'],
     healing_action: ['healing_action_manifest'],
   }
 

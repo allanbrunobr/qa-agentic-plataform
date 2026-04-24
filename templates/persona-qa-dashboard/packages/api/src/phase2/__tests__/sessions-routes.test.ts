@@ -1,20 +1,23 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { phase2SessionRoutes, setSessionService } from '../routes/sessions.js';
 import { SessionService } from '../services/session-service.js';
+import { listScenarios } from '../scenarios/index.js';
 
 describe('Phase 2 Session Routes', () => {
   const app = Fastify();
   let sessionService: SessionService;
   let previousArtifactDir: string | undefined;
   let previousLegacyScenarios: string | undefined;
+  let previousPromotedScenariosFile: string | undefined;
 
   beforeAll(async () => {
     previousArtifactDir = process.env.PHASE2_ARTIFACT_DIR;
     previousLegacyScenarios = process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS;
+    previousPromotedScenariosFile = process.env.PERSONA_QA_PROMOTED_SCENARIOS_FILE;
     process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS = '1';
     await app.register(phase2SessionRoutes);
     await app.ready();
@@ -31,11 +34,20 @@ describe('Phase 2 Session Routes', () => {
     } else {
       process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS = previousLegacyScenarios;
     }
+    if (previousPromotedScenariosFile === undefined) {
+      delete process.env.PERSONA_QA_PROMOTED_SCENARIOS_FILE;
+    } else {
+      process.env.PERSONA_QA_PROMOTED_SCENARIOS_FILE = previousPromotedScenariosFile;
+    }
     await app.close();
   });
 
   beforeEach(() => {
     process.env.PHASE2_ARTIFACT_DIR = mkdtempSync(path.join(tmpdir(), 'p2-route-artifacts-'));
+    process.env.PERSONA_QA_PROMOTED_SCENARIOS_FILE = path.join(
+      mkdtempSync(path.join(tmpdir(), 'p2-promoted-scenarios-')),
+      'scenarios.promoted.json',
+    );
     sessionService = new SessionService();
     setSessionService(sessionService);
   });
@@ -934,6 +946,18 @@ describe('Phase 2 Session Routes', () => {
           kind: 'scenario_draft_manifest',
           status: 'active',
         }),
+        runnableScenarioRegistry: expect.objectContaining({
+          subjectType: 'scenario_draft',
+          subjectId: draft.id,
+          kind: 'runnable_scenario_registry',
+          status: 'active',
+        }),
+      }));
+      expect(listScenarios()).toContain('promotable_draft');
+      const promotedScenarios = JSON.parse(readFileSync(process.env.PERSONA_QA_PROMOTED_SCENARIOS_FILE!, 'utf8'));
+      expect(promotedScenarios).toContainEqual(expect.objectContaining({
+        id: 'promotable_draft',
+        title: 'Promotable Draft',
       }));
       const materializations = await app.inject({
         method: 'GET',
@@ -944,6 +968,11 @@ describe('Phase 2 Session Routes', () => {
         subjectType: 'scenario_draft',
         subjectId: draft.id,
         kind: 'scenario_draft_manifest',
+      }));
+      expect(materializations.json()).toContainEqual(expect.objectContaining({
+        subjectType: 'scenario_draft',
+        subjectId: draft.id,
+        kind: 'runnable_scenario_registry',
       }));
       expect(sessionService.listGovernanceDecisions({
         subjectType: 'scenario_draft',

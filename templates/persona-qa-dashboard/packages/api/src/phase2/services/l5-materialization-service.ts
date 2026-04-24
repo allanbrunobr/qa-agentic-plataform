@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import fs from 'node:fs'
 import path from 'node:path'
 import {
   resolvePhase2ArtifactPath,
@@ -16,11 +17,39 @@ export interface L5MaterializationOptions {
   artifactRoot?: string
 }
 
+export interface L5ScenarioDraftPromotionMaterialization {
+  manifest: L5Materialization
+  runnableScenarioRegistry: L5Materialization
+}
+
+interface AdapterScenarioStepModel {
+  id: string
+  roleId: string
+  capabilityId: string
+  producesArtifacts?: string[]
+}
+
+interface AdapterScenarioModel {
+  id: string
+  title: string
+  roles: string[]
+  steps: string[]
+  expectedArtifacts?: string[]
+  stepDefinitions?: AdapterScenarioStepModel[]
+  source?: Record<string, unknown>
+}
+
 export class L5MaterializationService {
   constructor(
     private readonly sessionService: SessionService,
     private readonly options: L5MaterializationOptions = {},
   ) {}
+
+  async promoteScenarioDraftToRunnable(draft: ScenarioDraft): Promise<L5ScenarioDraftPromotionMaterialization> {
+    const manifest = await this.materializeScenarioDraft(draft)
+    const runnableScenarioRegistry = await this.materializeRunnableScenarioDraft(draft)
+    return { manifest, runnableScenarioRegistry }
+  }
 
   async materializeScenarioDraft(draft: ScenarioDraft): Promise<L5Materialization> {
     const fileName = `${safeFileSegment(draft.scenarioId || draft.id)}.json`
@@ -138,6 +167,29 @@ export class L5MaterializationService {
     })
   }
 
+  private async materializeRunnableScenarioDraft(draft: ScenarioDraft): Promise<L5Materialization> {
+    const registryPath = resolvePromotedScenarioRegistryPath()
+    const scenario = scenarioDraftToAdapterScenario(draft)
+    const scenarios = upsertScenario(readScenarioRegistry(registryPath.absolutePath), scenario)
+    const payload = stableStringify(scenarios)
+
+    return this.writeAndRecord({
+      subjectType: 'scenario_draft',
+      subjectId: draft.id,
+      kind: 'runnable_scenario_registry',
+      directory: 'scenario-drafts',
+      fileName: path.basename(registryPath.absolutePath),
+      content: payload,
+      metadata: {
+        scenarioId: draft.scenarioId,
+        registryPath: registryPath.storagePath,
+        source: 'scenario_draft_promotion',
+      },
+      absolutePath: registryPath.absolutePath,
+      storagePath: registryPath.storagePath,
+    })
+  }
+
   private async writeAndRecord(input: {
     subjectType: L5MaterializationSubjectType
     subjectId: string
@@ -146,9 +198,13 @@ export class L5MaterializationService {
     fileName: string
     content: string
     metadata: Record<string, unknown>
+    absolutePath?: string
+    storagePath?: string
   }): Promise<L5Materialization> {
     new L5LoopGuardService(this.sessionService).assertLoopOpen('materialization')
-    const { absolutePath, storagePath } = this.resolveStoragePath(input.directory, input.fileName)
+    const { absolutePath, storagePath } = input.absolutePath && input.storagePath
+      ? { absolutePath: input.absolutePath, storagePath: input.storagePath }
+      : this.resolveStoragePath(input.directory, input.fileName)
     await mkdir(path.dirname(absolutePath), { recursive: true })
     await writeFile(absolutePath, input.content, 'utf8')
 
@@ -207,6 +263,86 @@ export class L5MaterializationService {
       storagePath,
     }
   }
+}
+
+function scenarioDraftToAdapterScenario(draft: ScenarioDraft): AdapterScenarioModel {
+  const contract = draft.contract as Record<string, unknown>
+  const steps = Array.isArray(contract['steps'])
+    ? contract['steps'].filter((step): step is Record<string, unknown> => Boolean(step) && typeof step === 'object' && !Array.isArray(step))
+    : []
+  const roles = Array.isArray(contract['roles'])
+    ? contract['roles'].filter((role): role is string => typeof role === 'string')
+    : []
+  const requiredArtifacts = Array.isArray(contract['requiredArtifacts'])
+    ? contract['requiredArtifacts'].filter((artifact): artifact is string => typeof artifact === 'string')
+    : []
+
+  return {
+    id: draft.scenarioId,
+    title: typeof contract['name'] === 'string' ? contract['name'] : draft.name,
+    roles,
+    steps: steps.map((step, index) => readString(step['id'], `step_${index + 1}`)),
+    expectedArtifacts: requiredArtifacts,
+    stepDefinitions: steps.map((step, index) => ({
+      id: readString(step['id'], `step_${index + 1}`),
+      roleId: readString(step['agentId'], roles[0] ?? 'domain_reviewer'),
+      capabilityId: readString(step['capabilityId'], readString(step['id'], `step_${index + 1}`)),
+      producesArtifacts: Array.isArray(step['producedArtifacts'])
+        ? step['producedArtifacts'].filter((artifact): artifact is string => typeof artifact === 'string')
+        : [],
+    })),
+    source: {
+      kind: 'scenario_draft',
+      draftId: draft.id,
+      promotedAt: new Date().toISOString(),
+      reviewedBy: draft.reviewedBy ?? null,
+    },
+  }
+}
+
+function resolvePromotedScenarioRegistryPath(): { absolutePath: string; storagePath: string } {
+  const explicit = process.env['PERSONA_QA_PROMOTED_SCENARIOS_FILE']
+  if (explicit) {
+    const absolutePath = path.resolve(explicit)
+    return { absolutePath, storagePath: absolutePath }
+  }
+
+  const generated = process.env['PERSONA_QA_SCENARIOS_FILE']
+  const directory = generated
+    ? path.dirname(path.resolve(generated))
+    : path.resolve(process.cwd(), 'adapter', 'scenarios')
+  const absolutePath = path.join(directory, 'scenarios.promoted.json')
+  return { absolutePath, storagePath: absolutePath }
+}
+
+function readScenarioRegistry(filePath: string): AdapterScenarioModel[] {
+  if (!fs.existsSync(filePath)) return []
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((scenario): scenario is AdapterScenarioModel => (
+      Boolean(scenario)
+      && typeof scenario === 'object'
+      && typeof (scenario as AdapterScenarioModel).id === 'string'
+      && typeof (scenario as AdapterScenarioModel).title === 'string'
+      && Array.isArray((scenario as AdapterScenarioModel).roles)
+      && Array.isArray((scenario as AdapterScenarioModel).steps)
+    ))
+  } catch {
+    return []
+  }
+}
+
+function upsertScenario(scenarios: AdapterScenarioModel[], scenario: AdapterScenarioModel): AdapterScenarioModel[] {
+  return [
+    ...scenarios.filter((existing) => existing.id !== scenario.id),
+    scenario,
+  ].sort((left, right) => left.id.localeCompare(right.id))
+}
+
+function readString(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value : fallback
 }
 
 function serializeMaterializationAudit(audit: MaterializationAuditEvaluation): Record<string, unknown> {
