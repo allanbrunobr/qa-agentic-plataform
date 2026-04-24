@@ -176,6 +176,21 @@ const html = `<!doctype html>
       .metric { background: #10131a; border: 1px solid #2b3242; border-radius: 8px; padding: 12px; }
       .metric-label { color: #98a2b3; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; }
       .metric-value { font-size: 24px; font-weight: 700; }
+      .review-gates { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 16px; }
+      .review-gate { border: 1px solid #2b3242; border-radius: 8px; padding: 12px; background: #10131a; }
+      .review-gate strong { display: block; margin-bottom: 6px; }
+      .review-gate.success { border-color: rgba(52, 211, 153, 0.45); }
+      .review-gate.warning { border-color: rgba(251, 191, 36, 0.45); }
+      .review-gate.blocker { border-color: rgba(248, 113, 113, 0.45); }
+      .review-domain { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; margin-bottom: 16px; }
+      .candidate-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+      .candidate-card { border: 1px solid #2b3242; border-radius: 8px; padding: 12px; background: #10131a; }
+      .candidate-card-title { font-weight: 700; margin-bottom: 8px; }
+      .candidate-meta { color: #98a2b3; font-size: 12px; line-height: 1.5; }
+      .candidate-status { display: inline-block; margin-bottom: 8px; padding: 2px 8px; border-radius: 999px; background: rgba(148, 163, 184, 0.16); color: #cbd5e1; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+      .candidate-status.runnable_candidate { background: rgba(52, 211, 153, 0.16); color: #34d399; }
+      .candidate-status.needs_human_mapping { background: rgba(251, 191, 36, 0.16); color: #fbbf24; }
+      .candidate-status.restricted { background: rgba(248, 113, 113, 0.16); color: #f87171; }
       .status { margin-bottom: 12px; color: #7dd3fc; }
       pre { white-space: pre-wrap; word-break: break-word; background: #0b0e13; border: 1px solid #2b3242; border-radius: 8px; padding: 12px; overflow: auto; }
       .lists { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -456,6 +471,12 @@ const html = `<!doctype html>
         <div id="reviewPanel" class="card panel">
           <h2>Bootstrap Review</h2>
           <div class="summary" id="summary"></div>
+          <div id="reviewGates" class="review-gates"></div>
+          <div id="domainReview" class="review-domain"></div>
+          <div class="lists" style="margin-bottom: 16px;">
+            <div><h3>Candidate Status</h3><ul id="candidateStatus"></ul></div>
+            <div><h3>Host Notes</h3><ul id="hostNotes"></ul></div>
+          </div>
           <div class="lists">
             <div><h3>Roles</h3><ul id="roles"></ul></div>
             <div><h3>Surfaces</h3><ul id="surfaces"></ul></div>
@@ -467,6 +488,10 @@ const html = `<!doctype html>
           <div class="lists" style="margin-top: 16px;">
             <div><h3>Capability Candidates</h3><ul id="capabilities"></ul></div>
             <div><h3>Risks</h3><ul id="risks"></ul></div>
+          </div>
+          <div style="margin-top: 16px;">
+            <h3>Domain Candidate Details</h3>
+            <div id="candidateDetails" class="candidate-grid"></div>
           </div>
           <div style="margin-top: 16px;">
             <h3>Rendered Review</h3>
@@ -620,6 +645,11 @@ const html = `<!doctype html>
       const scenarios = document.getElementById('scenarios')
       const capabilities = document.getElementById('capabilities')
       const risks = document.getElementById('risks')
+      const reviewGates = document.getElementById('reviewGates')
+      const domainReview = document.getElementById('domainReview')
+      const candidateStatus = document.getElementById('candidateStatus')
+      const hostNotes = document.getElementById('hostNotes')
+      const candidateDetails = document.getElementById('candidateDetails')
       const reviewFrame = document.getElementById('reviewFrame')
       const generatedFileSelect = document.getElementById('generatedFileSelect')
       const generatedFileEditor = document.getElementById('generatedFileEditor')
@@ -650,6 +680,14 @@ const html = `<!doctype html>
 
       function setRaw(value) { rawOutput.textContent = JSON.stringify(value, null, 2) }
       function setExecution(value) { executionOutput.textContent = JSON.stringify(value, null, 2) }
+      function escapeHtml(value) {
+        return String(value ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;')
+      }
       function list(target, items) {
         target.innerHTML = ''
         for (const item of items || []) {
@@ -715,9 +753,14 @@ const html = `<!doctype html>
         summary.innerHTML = ''
         const metrics = [
           ['Framework', model.summary.framework],
+          ['Repo', model.summary.repositoryKind || 'unknown'],
+          ['Domain', model.summary.domain || 'unknown'],
           ['Roles', model.summary.rolesDetected],
           ['Surfaces', model.summary.surfacesDetected],
           ['Scenarios', model.summary.scenariosGenerated],
+          ['Evidence', model.summary.evidenceItems || 0],
+          ['Mapping', model.summary.mappingRequired || 0],
+          ['Runnable', model.summary.runnableCandidates || 0],
         ]
         for (const [label, value] of metrics) {
           const el = document.createElement('div')
@@ -725,6 +768,64 @@ const html = `<!doctype html>
           el.innerHTML = '<div class="metric-label">' + label + '</div><div class="metric-value">' + value + '</div>'
           summary.appendChild(el)
         }
+      }
+
+      function renderReviewGates(model) {
+        reviewGates.innerHTML = (model.reviewGates || []).map((gate) =>
+          '<div class="review-gate ' + escapeHtml(gate.severity) + '">' +
+            '<strong>' + escapeHtml(gate.title) + '</strong>' +
+            '<div class="muted">' + escapeHtml(gate.message) + '</div>' +
+          '</div>'
+        ).join('') || '<div class="review-gate"><strong>No review gates</strong><div class="muted">Run discovery to populate review signals.</div></div>'
+      }
+
+      function renderDomainReview(model) {
+        const domain = model.domainReview || {}
+        domainReview.innerHTML =
+          '<div class="metric">' +
+            '<div class="metric-label">Domain</div>' +
+            '<div class="metric-value">' + escapeHtml(domain.label || domain.domain || 'unknown') + '</div>' +
+            '<div class="muted">' + escapeHtml(domain.summary || 'No domain summary available.') + '</div>' +
+          '</div>' +
+          '<div class="metric">' +
+            '<div class="metric-label">Discovery Governance</div>' +
+            '<div>' +
+              '<span class="candidate-status ' + escapeHtml(domain.status || '') + '">' + escapeHtml(domain.status || 'unavailable') + '</span> ' +
+              '<span class="candidate-status ' + escapeHtml(domain.auditStatus || '') + '">' + escapeHtml(domain.auditStatus || 'audit unavailable') + '</span>' +
+            '</div>' +
+            '<div class="muted">confidence ' + Math.round(Number(domain.confidence || 0) * 100) + '% · audit findings ' + ((domain.auditFindings || []).length) + '</div>' +
+          '</div>'
+      }
+
+      function renderCandidateStatus(model) {
+        const counts = model.statusCounts || {}
+        list(candidateStatus, [
+          'runnable candidates: ' + (counts.runnable_candidate || 0),
+          'needs human mapping: ' + (counts.needs_human_mapping || 0),
+          'draft: ' + (counts.draft || 0),
+          'restricted: ' + (counts.restricted || 0),
+        ])
+      }
+
+      function renderCandidateDetails(model) {
+        const sections = [
+          ['Personas', model.candidatePersonas || []],
+          ['Scenarios', model.candidateScenarios || []],
+          ['Capabilities', model.candidateCapabilities || []],
+        ]
+        candidateDetails.innerHTML = sections.map(([title, items]) => {
+          const cards = items.length ? items.map((item) =>
+            '<div class="candidate-card">' +
+              '<span class="candidate-status ' + escapeHtml(item.status) + '">' + escapeHtml(item.status) + '</span>' +
+              '<div class="candidate-card-title">' + escapeHtml(item.title) + '</div>' +
+              '<div class="candidate-meta">id: ' + escapeHtml(item.id) + '</div>' +
+              '<div class="candidate-meta">confidence: ' + Math.round(Number(item.confidence || 0) * 100) + '%</div>' +
+              '<div class="candidate-meta">evidence: ' + escapeHtml((item.evidenceRefs || []).slice(0, 4).join(', ') || 'none') + '</div>' +
+              '<div class="candidate-meta">risks: ' + escapeHtml((item.risks || []).slice(0, 2).join(' | ') || 'none') + '</div>' +
+            '</div>'
+          ).join('') : '<div class="candidate-card"><div class="muted">No ' + escapeHtml(String(title).toLowerCase()) + ' candidates.</div></div>'
+          return '<div><h4>' + escapeHtml(title) + '</h4>' + cards + '</div>'
+        }).join('')
       }
 
       function currentAdapter() {
@@ -862,12 +963,17 @@ const html = `<!doctype html>
       function renderReview(result) {
         const model = result.report || result
         renderSummary(model)
+        renderReviewGates(model)
+        renderDomainReview(model)
+        renderCandidateStatus(model)
         list(roles, (model.roles || []).map((role) => role.id + ' — confidence ' + role.confidence))
         list(surfaces, (model.surfaces || []).map((surface) => surface.id + ' — ' + surface.kind))
         list(personas, (model.personas || []).map((persona) => persona.id + ' — ' + persona.title))
         list(scenarios, (model.scenarios || []).map((scenario) => scenario.id + ' — ' + ((scenario.participatingRoles || scenario.roles || []).join(', '))))
         list(capabilities, model.capabilityCandidates || [])
         list(risks, model.risks || [])
+        list(hostNotes, model.hostNotes || [])
+        renderCandidateDetails(model)
         if (result.html) reviewFrame.srcdoc = result.html
       }
 
