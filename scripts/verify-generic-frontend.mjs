@@ -191,6 +191,20 @@ function verifyGeneratedAdapter() {
   assert(codeGraph.edges.some((edge) => edge.type === 'handles'), 'code graph source file endpoint handler edge missing')
   assert(codeGraph.edges.some((edge) => edge.type === 'makes_http_request'), 'code graph source file HTTP call edge missing')
   assert(codeGraph.edges.some((edge) => edge.type === 'calls'), 'code graph HTTP call to endpoint edge missing')
+  assert(
+    codeGraph.edges.some((edge) => {
+      if (edge.type !== 'supports_capability') return false
+      const capability = codeGraph.nodes.find((node) => node.id === edge.to)
+      return capability?.metadata?.capabilityId === 'submitOrder'
+    }),
+    'code graph submitOrder capability support edge missing',
+  )
+  assert(
+    codeGraph.nodes.some((node) => node.type === 'capability_candidate'
+      && node.metadata?.capabilityId === 'submitOrder'
+      && node.metadata?.graphMapping?.status === 'mapped'),
+    'code graph submitOrder capability mapping metadata missing',
+  )
   assert(personaIds.includes('primary_user'), `primary_user persona missing: ${personaIds.join(', ')}`)
   assert(!personaIds.includes('sales-associate') && !personaIds.includes('fulfillment-agent'), `Reference Store personas leaked into generic adapter: ${personaIds.join(', ')}`)
   assert(scenarioIds.includes('checkout_smoke'), `checkout_smoke scenario missing: ${scenarioIds.join(', ')}`)
@@ -302,6 +316,12 @@ async function verifyRuntimeRun() {
     assert(graphBody.summary.endpointCount >= 1, 'dashboard code graph summary has no endpoints')
     assert(graphBody.summary.httpCallCount >= 1, 'dashboard code graph summary has no HTTP calls')
     assert(graphBody.summary.linkedHttpCallCount >= 1, 'dashboard code graph summary has no linked HTTP calls')
+    assert(graphBody.summary.capabilitySupportEdgeCount >= 1, 'dashboard code graph summary has no capability support edges')
+    assert(graphBody.summary.mappedCapabilityCount >= 1, 'dashboard code graph summary has no mapped capabilities')
+    assert(
+      graphBody.summary.capabilityMappings.some((mapping) => mapping.capabilityId === 'submitOrder' && mapping.mappingStatus === 'mapped'),
+      'dashboard code graph summary does not expose submitOrder as mapped',
+    )
     assert(graphBody.graph.nodes.length >= graphBody.summary.nodeCount, 'dashboard code graph payload is inconsistent')
 
     const response = await fetch(`http://127.0.0.1:${apiPort}/api/p2/runs`, {

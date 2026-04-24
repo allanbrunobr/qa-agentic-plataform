@@ -121,6 +121,30 @@ function toCamelCase(value: string) {
   return normalizeId(value).replace(/_+([a-z0-9])/g, (_, char: string) => char.toUpperCase())
 }
 
+function tokenizeGraphText(value: unknown): Set<string> {
+  if (value === null || value === undefined) return new Set()
+  const raw = Array.isArray(value) ? value.join(' ') : String(value)
+  const expanded = raw
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_/:-]+/g, ' ')
+    .toLowerCase()
+  const stopWords = new Set(['api', 'http', 'https', 'www', 'com', 'the', 'and', 'with', 'primary'])
+  return new Set(expanded
+    .split(/[^a-z0-9]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 1 && !stopWords.has(token))
+    .map((token) => token.endsWith('s') && token.length > 3 ? token.slice(0, -1) : token))
+}
+
+function overlapScore(left: Set<string>, right: Set<string>) {
+  if (left.size === 0 || right.size === 0) return 0
+  let overlap = 0
+  for (const token of left) {
+    if (right.has(token)) overlap += 1
+  }
+  return overlap / Math.min(left.size, right.size)
+}
+
 function addNode(nodes: Map<string, CodeGraphNode>, node: MutableGraphNode) {
   const existing = nodes.get(node.id)
   if (!existing) {
@@ -148,6 +172,18 @@ function addNode(nodes: Map<string, CodeGraphNode>, node: MutableGraphNode) {
     },
   })
   return node.id
+}
+
+function updateNodeMetadata(nodes: Map<string, CodeGraphNode>, id: string, metadata: Record<string, unknown>) {
+  const existing = nodes.get(id)
+  if (!existing) return
+  nodes.set(id, {
+    ...existing,
+    metadata: {
+      ...existing.metadata,
+      ...metadata,
+    },
+  })
 }
 
 function addEdge(edges: Map<string, CodeGraphEdge>, edge: MutableGraphEdge) {
@@ -793,6 +829,124 @@ function addSourceGraph(input: {
   }
 }
 
+function resolveCapabilitySupport(input: {
+  nodes: Map<string, CodeGraphNode>
+  edges: Map<string, CodeGraphEdge>
+}) {
+  const capabilities = [...input.nodes.values()].filter((node) => node.type === 'capability_candidate')
+  const endpoints = [...input.nodes.values()].filter((node) => node.type === 'endpoint')
+  const httpCalls = [...input.nodes.values()].filter((node) => node.type === 'http_call')
+  const callsEndpoint = new Map<string, string[]>()
+
+  for (const edge of input.edges.values()) {
+    if (edge.type !== 'calls') continue
+    const list = callsEndpoint.get(edge.from) ?? []
+    list.push(edge.to)
+    callsEndpoint.set(edge.from, list)
+  }
+
+  for (const capability of capabilities) {
+    const capabilityTokens = tokenizeGraphText([
+      capability.label,
+      capability.metadata['capabilityId'],
+      capability.metadata['purpose'],
+      capability.metadata['kind'],
+      capability.metadata['selectorHints'],
+    ])
+    const capabilityKind = typeof capability.metadata['kind'] === 'string' ? capability.metadata['kind'] : 'unknown'
+
+    const endpointMatches = endpoints
+      .map((endpoint) => ({
+        node: endpoint,
+        score: scoreCapabilityTarget(capabilityTokens, capabilityKind, endpoint),
+      }))
+      .filter((match) => match.score >= 0.34)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+
+    const httpCallMatches = httpCalls
+      .map((call) => {
+        const linkedEndpointIds = callsEndpoint.get(call.id) ?? []
+        const linkedEndpointBoost = endpointMatches.some((match) => linkedEndpointIds.includes(match.node.id)) ? 0.2 : 0
+        return {
+          node: call,
+          score: Math.min(1, scoreCapabilityTarget(capabilityTokens, capabilityKind, call) + linkedEndpointBoost),
+        }
+      })
+      .filter((match) => match.score >= 0.34)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+
+    for (const match of endpointMatches) {
+      addEdge(input.edges, {
+        id: edgeId('supports_capability', match.node.id, capability.id),
+        from: match.node.id,
+        to: capability.id,
+        type: 'supports_capability',
+        confidence: match.score,
+        label: `${match.node.label} supports ${capability.label}`,
+        metadata: {
+          matchedBy: 'capability_token_endpoint',
+          capabilityId: capability.metadata['capabilityId'] ?? capability.label,
+          targetType: 'endpoint',
+          score: Number(match.score.toFixed(3)),
+        },
+      })
+    }
+
+    for (const match of httpCallMatches) {
+      addEdge(input.edges, {
+        id: edgeId('supports_capability', match.node.id, capability.id),
+        from: match.node.id,
+        to: capability.id,
+        type: 'supports_capability',
+        confidence: match.score,
+        label: `${match.node.label} supports ${capability.label}`,
+        metadata: {
+          matchedBy: 'capability_token_http_call',
+          capabilityId: capability.metadata['capabilityId'] ?? capability.label,
+          targetType: 'http_call',
+          score: Number(match.score.toFixed(3)),
+        },
+      })
+    }
+
+    const mappedEndpointIds = endpointMatches.map((match) => match.node.id)
+    const mappedHttpCallIds = httpCallMatches.map((match) => match.node.id)
+    const bestScore = Math.max(0, ...endpointMatches.map((match) => match.score), ...httpCallMatches.map((match) => match.score))
+    updateNodeMetadata(input.nodes, capability.id, {
+      graphMapping: {
+        status: bestScore >= 0.34 ? 'mapped' : 'unmapped',
+        confidence: Number(bestScore.toFixed(3)),
+        endpointIds: mappedEndpointIds,
+        httpCallIds: mappedHttpCallIds,
+        resolver: 'capability_token_graph_v1',
+      },
+    })
+  }
+}
+
+function scoreCapabilityTarget(capabilityTokens: Set<string>, capabilityKind: string, target: CodeGraphNode) {
+  const targetTokens = tokenizeGraphText([
+    target.label,
+    target.metadata['path'],
+    target.metadata['normalizedPath'],
+    target.metadata['url'],
+    target.metadata['method'],
+  ])
+  let score = overlapScore(capabilityTokens, targetTokens)
+  const method = String(target.metadata['method'] ?? '').toUpperCase()
+  if (['form_submit', 'api_call', 'button_click'].includes(capabilityKind) && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    score += 0.18
+  }
+  if (capabilityTokens.has('submit') && method === 'POST') score += 0.18
+  if ((capabilityTokens.has('create') || capabilityTokens.has('add')) && method === 'POST') score += 0.16
+  if ((capabilityTokens.has('update') || capabilityTokens.has('edit')) && ['PUT', 'PATCH'].includes(method)) score += 0.16
+  if ((capabilityTokens.has('delete') || capabilityTokens.has('remove')) && method === 'DELETE') score += 0.16
+  if ((capabilityTokens.has('open') || capabilityTokens.has('view') || capabilityTokens.has('list')) && method === 'GET') score += 0.12
+  return Math.min(1, score)
+}
+
 function addDraftGraph(input: {
   nodes: Map<string, CodeGraphNode>
   edges: Map<string, CodeGraphEdge>
@@ -1012,6 +1166,8 @@ export async function buildCodeGraph(input: BuildCodeGraphInput): Promise<CodeGr
     repositoryNodeId,
     draft: input.draft,
   })
+
+  resolveCapabilitySupport({ nodes, edges })
 
   const graphNodes = [...nodes.values()]
   const graphEdges = [...edges.values()].filter((edge) => nodes.has(edge.from) && nodes.has(edge.to))

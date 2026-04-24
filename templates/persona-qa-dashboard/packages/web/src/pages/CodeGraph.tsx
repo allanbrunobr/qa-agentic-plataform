@@ -152,9 +152,9 @@ export function CodeGraph() {
         <StatCard
           label="Candidates"
           value={summary.candidateNodeCount}
-          sub="personas, cenários e capabilities"
-          trend="neutral"
-          trendValue="review antes de runnable"
+          sub={`${summary.mappedCapabilityCount} capabilities mapeadas`}
+          trend={summary.unmappedCapabilityCount === 0 ? 'up' : 'neutral'}
+          trendValue={`${summary.unmappedCapabilityCount} precisam revisão`}
           icon={<Workflow className="h-4 w-4" />}
           accentColor="var(--warning)"
         />
@@ -210,12 +210,31 @@ export function CodeGraph() {
           title: call.label,
           detail: call.source ? sourceLabel({ source: call.source }) : call.url ?? 'sem source',
         }))} />
-        <ListCard title="Candidate Nodes" items={candidateNodes.map((node) => ({
-          id: node.id,
-          title: node.label,
-          detail: `${NODE_LABELS[node.type] ?? node.type}${node.status ? ` · ${node.status}` : ''}`,
+        <ListCard title="Capability Mapping" items={summary.capabilityMappings.slice(0, 12).map((mapping) => ({
+          id: mapping.id,
+          title: mapping.label,
+          detail: `${mapping.mappingStatus} · ${mapping.sourceCount} source(s) · ${Math.round(mapping.confidence * 100)}%`,
         }))} />
       </div>
+
+      <Card className="p-5">
+        <SectionHeader title="Candidate Nodes" description="Personas, cenários e steps detectados para revisão." />
+        <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {candidateNodes.map((node) => (
+            <div key={node.id} className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
+              <p className="truncate text-xs font-semibold text-[var(--text-primary)]">{node.label}</p>
+              <p className="mt-1 truncate text-[10px] text-[var(--text-muted)]">
+                {NODE_LABELS[node.type] ?? node.type}{node.status ? ` · ${node.status}` : ''}
+              </p>
+            </div>
+          ))}
+          {candidateNodes.length === 0 && (
+            <p className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3 text-xs text-[var(--text-muted)]">
+              Nenhum candidate detectado.
+            </p>
+          )}
+        </div>
+      </Card>
     </div>
   )
 }

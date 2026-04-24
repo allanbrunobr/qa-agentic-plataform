@@ -58,9 +58,15 @@ describe('/api/p2/code-graph', () => {
     assert.equal(body.summary.endpointCount, 1);
     assert.equal(body.summary.httpCallCount, 1);
     assert.equal(body.summary.linkedHttpCallCount, 1);
+    assert.equal(body.summary.capabilitySupportEdgeCount, 1);
+    assert.equal(body.summary.mappedCapabilityCount, 1);
+    assert.equal(body.summary.unmappedCapabilityCount, 0);
     assert.equal(body.summary.nodeTypes.endpoint, 1);
     assert.equal(body.summary.edgeTypes.calls, 1);
+    assert.equal(body.summary.edgeTypes.supports_capability, 1);
     assert.equal(body.summary.endpoints[0].path, '/api/orders');
+    assert.equal(body.summary.capabilityMappings[0].capabilityId, 'submitOrder');
+    assert.equal(body.summary.capabilityMappings[0].mappingStatus, 'mapped');
     assert.equal(body.graph.schemaVersion, 'code-graph/v1');
   });
 
@@ -99,16 +105,27 @@ function codeGraph() {
         source: { filePath: 'src/App.tsx', line: 9 },
         metadata: { method: 'GET', url: '/api/orders', normalizedPath: '/api/orders' },
       },
+      {
+        id: 'capability_candidate:submit_order',
+        type: 'capability_candidate',
+        label: 'submitOrder',
+        status: 'draft',
+        metadata: {
+          capabilityId: 'submitOrder',
+          graphMapping: { status: 'mapped', confidence: 0.8, endpointIds: ['endpoint:get_api_orders'], httpCallIds: [] },
+        },
+      },
     ],
     edges: [
       { id: 'edge:contains', from: 'repository:fixture', to: 'endpoint:get_api_orders', type: 'contains', metadata: {} },
       { id: 'edge:calls', from: 'http_call:get_api_orders', to: 'endpoint:get_api_orders', type: 'calls', metadata: {} },
+      { id: 'edge:supports', from: 'endpoint:get_api_orders', to: 'capability_candidate:submit_order', type: 'supports_capability', confidence: 0.8, metadata: {} },
     ],
     stats: {
-      nodeCount: 3,
-      edgeCount: 2,
+      nodeCount: 4,
+      edgeCount: 3,
       evidenceNodeCount: 2,
-      candidateNodeCount: 0,
+      candidateNodeCount: 1,
     },
   };
 }
