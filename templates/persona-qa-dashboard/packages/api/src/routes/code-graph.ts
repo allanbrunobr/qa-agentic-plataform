@@ -106,6 +106,11 @@ function summarizeCodeGraph(graph: CodeGraph) {
   const nodeTypes = countBy(graph.nodes.map((node) => node.type));
   const edgeTypes = countBy(graph.edges.map((edge) => edge.type));
   const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const httpCallEndpointEdges = graph.edges.filter((edge) => (
+    edge.type === 'calls'
+    && nodeById.get(edge.from)?.type === 'http_call'
+    && nodeById.get(edge.to)?.type === 'endpoint'
+  ));
   const supportEdges = graph.edges.filter((edge) => edge.type === 'supports_capability');
   const supportEdgesByCapability = new Map<string, typeof supportEdges>();
   for (const edge of supportEdges) {
@@ -176,7 +181,7 @@ function summarizeCodeGraph(graph: CodeGraph) {
     candidateNodeCount: graph.stats.candidateNodeCount,
     endpointCount: nodeTypes['endpoint'] ?? 0,
     httpCallCount: nodeTypes['http_call'] ?? 0,
-    linkedHttpCallCount: graph.edges.filter((edge) => edge.type === 'calls').length,
+    linkedHttpCallCount: httpCallEndpointEdges.length,
     capabilitySupportEdgeCount: supportEdges.length,
     mappedCapabilityCount: capabilityMappings.filter((mapping) => mapping.mappingStatus === 'mapped').length,
     unmappedCapabilityCount: capabilityMappings.filter((mapping) => mapping.mappingStatus !== 'mapped').length,

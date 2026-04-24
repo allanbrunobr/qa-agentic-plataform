@@ -33,5 +33,8 @@
     "dev:web": "tsx packages/dashboard-web/src/server.ts",
     "build": "echo 'scaffold only'",
     "dev": "echo 'run npm run dev:api and npm run dev:web in separate terminals'"
+  },
+  "dependencies": {
+    "typescript": "^5.9.3"
   }
 }
