@@ -12,6 +12,7 @@ import { personasRoutes } from './routes/personas.js';
 import { insightsRoutes } from './routes/insights.js';
 import { syncRoutes } from './routes/sync.js';
 import { domainDiscoveryRoutes } from './routes/domain-discovery.js';
+import { codeGraphRoutes } from './routes/code-graph.js';
 import { setLastSync } from './routes/stats.js';
 import { syncDataDir } from './services/data-sync.js';
 import { phase2SessionRoutes } from './phase2/routes/sessions.js';
@@ -53,6 +54,7 @@ async function buildApp() {
   await app.register(insightsRoutes);
   await app.register(syncRoutes);
   await app.register(domainDiscoveryRoutes);
+  await app.register(codeGraphRoutes);
   await app.register(phase2SessionRoutes);
   await app.register(phase2RunnerRoutes);
 

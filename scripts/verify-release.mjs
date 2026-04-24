@@ -177,13 +177,14 @@ const steps = [
       '--test',
       'src/routes/__tests__/personas.test.ts',
       'src/routes/__tests__/domain-discovery.test.ts',
+      'src/routes/__tests__/code-graph.test.ts',
     ],
     cwd: apiRoot,
   },
   {
     name: 'api: L4/L5 release vitest',
     command: 'npm',
-    args: ['exec', '--', 'vitest', 'run', ...apiReleaseTests],
+    args: ['exec', '--', 'vitest', 'run', '--configLoader', 'runner', ...apiReleaseTests],
     cwd: apiRoot,
     env: {
       PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS: '1',

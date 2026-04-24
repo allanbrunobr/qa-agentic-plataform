@@ -7,6 +7,7 @@ import { AgenticRuns } from '@/pages/AgenticRuns'
 import { Personas } from '@/pages/Personas'
 import { Insights } from '@/pages/Insights'
 import { Settings } from '@/pages/Settings'
+import { CodeGraph } from '@/pages/CodeGraph'
 
 const PAGE_TITLES: Record<Page, string> = {
   overview: 'Agentic Overview',
@@ -17,6 +18,7 @@ const PAGE_TITLES: Record<Page, string> = {
   personas: 'Personas',
   'pr-tracking': 'PR Tracking',
   insights: 'Insights',
+  'code-graph': 'Code Graph',
   settings: 'Settings',
 }
 
@@ -41,6 +43,8 @@ export default function App() {
         setActivePage('personas')
       } else if (page === 'insights') {
         setActivePage('insights')
+      } else if (page === 'code-graph') {
+        setActivePage('code-graph')
       } else if (page === 'settings') {
         setActivePage('settings')
       }
@@ -63,6 +67,7 @@ export default function App() {
       case 'agentic-runs': return <AgenticRuns />
       case 'personas': return <Personas />
       case 'insights': return <Insights />
+      case 'code-graph': return <CodeGraph />
       case 'settings': return <Settings />
       default: return <Overview />
     }

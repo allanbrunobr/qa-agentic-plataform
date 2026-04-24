@@ -8,10 +8,11 @@ import {
   ChevronRight,
   Activity,
   BotMessageSquare,
+  Network,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type Page = 'overview' | 'scenarios' | 'findings' | 'runs' | 'agentic-runs' | 'personas' | 'pr-tracking' | 'insights' | 'settings'
+type Page = 'overview' | 'scenarios' | 'findings' | 'runs' | 'agentic-runs' | 'personas' | 'pr-tracking' | 'insights' | 'code-graph' | 'settings'
 
 interface NavItem {
   id: Page
@@ -24,6 +25,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'agentic-runs', label: 'Agentic Runs', icon: BotMessageSquare },
   { id: 'personas', label: 'Personas', icon: Users },
   { id: 'insights', label: 'Insights', icon: Sparkles },
+  { id: 'code-graph', label: 'Code Graph', icon: Network },
 ]
 
 interface SidebarProps {

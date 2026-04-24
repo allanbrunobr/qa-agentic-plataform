@@ -403,6 +403,79 @@ export interface Phase2DomainDiscoveryScenarioDraftResponse {
   warnings: string[]
 }
 
+export interface Phase2CodeGraphNode {
+  id: string
+  type: string
+  label: string
+  status?: string
+  confidence?: number
+  source?: {
+    filePath: string
+    line?: number
+    column?: number
+    endLine?: number
+  }
+  metadata: Record<string, unknown>
+}
+
+export interface Phase2CodeGraphEdge {
+  id: string
+  from: string
+  to: string
+  type: string
+  label?: string
+  confidence?: number
+  metadata: Record<string, unknown>
+}
+
+export interface Phase2CodeGraphResponse {
+  available: boolean
+  filePath: string | null
+  summary: {
+    targetId: string
+    repositoryKind: string
+    generatedAt: string
+    nodeCount: number
+    edgeCount: number
+    evidenceNodeCount: number
+    candidateNodeCount: number
+    endpointCount: number
+    httpCallCount: number
+    linkedHttpCallCount: number
+    nodeTypes: Record<string, number>
+    edgeTypes: Record<string, number>
+    endpoints: Array<{
+      id: string
+      label: string
+      source: Phase2CodeGraphNode['source'] | null
+      method: string | null
+      path: string | null
+    }>
+    httpCalls: Array<{
+      id: string
+      label: string
+      source: Phase2CodeGraphNode['source'] | null
+      method: string | null
+      url: string | null
+      normalizedPath: string | null
+    }>
+  } | null
+  graph: {
+    schemaVersion: 'code-graph/v1'
+    targetId: string
+    repositoryKind: string
+    generatedAt: string
+    nodes: Phase2CodeGraphNode[]
+    edges: Phase2CodeGraphEdge[]
+    stats: {
+      nodeCount: number
+      edgeCount: number
+      evidenceNodeCount: number
+      candidateNodeCount: number
+    }
+  } | null
+}
+
 export interface Phase2LearningProposal {
   id: string
   recommendationId: string
@@ -787,6 +860,8 @@ export const api = {
   getPhase2Maturity: () => fetchJSON<Phase2MaturityStatus>(`${API_BASE}/api/p2/maturity`),
   getPhase2DomainDiscovery: () =>
     fetchJSON<Phase2DomainDiscoveryResponse>(`${API_BASE}/api/p2/domain-discovery`),
+  getPhase2CodeGraph: () =>
+    fetchJSON<Phase2CodeGraphResponse>(`${API_BASE}/api/p2/code-graph`),
   createPhase2DomainDiscoveryScenarioDraft: (scenarioId: string) =>
     fetchJSON<Phase2DomainDiscoveryScenarioDraftResponse>(
       `${API_BASE}/api/p2/domain-discovery/scenarios/${encodeURIComponent(scenarioId)}/drafts`,
