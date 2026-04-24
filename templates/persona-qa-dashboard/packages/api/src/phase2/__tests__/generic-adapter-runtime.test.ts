@@ -91,6 +91,35 @@ describe('generic generated adapter runtime', () => {
       }))
     }
   })
+
+  it('registers generated frontend tools that can drive a browser page context', async () => {
+    const registry = new ToolRegistry()
+    registerGeneratedAdapterTools(registry)
+    const page = createFakePage()
+    const policy = {
+      browserAccess: true,
+      allowedTools: ['openPrimaryRoute', 'fillCustomerEmail', 'addCartItem', 'submitOrder', 'verifyPrimaryFeedback'],
+    }
+
+    const openResult = await registry.execute('openPrimaryRoute', {}, policy, { page })
+    const fillResult = await registry.execute('fillCustomerEmail', {}, policy, { page })
+    const cartResult = await registry.execute('addCartItem', {}, policy, { page })
+    const submitResult = await registry.execute('submitOrder', {}, policy, { page })
+    const verifyResult = await registry.execute('verifyPrimaryFeedback', {}, policy, { page })
+
+    expect(openResult.ok).toBe(true)
+    expect(fillResult.ok).toBe(true)
+    expect(cartResult.ok).toBe(true)
+    expect(submitResult.ok).toBe(true)
+    expect(verifyResult.ok).toBe(true)
+    expect(page.filledEmail).toBe('agentic.qa@example.com')
+    expect(page.clicks).toEqual(expect.arrayContaining(['Add item to cart', 'Submit order']))
+    if (verifyResult.ok) {
+      expect(verifyResult.output).toEqual(expect.objectContaining({
+        primaryFeedbackVisible: true,
+      }))
+    }
+  })
 })
 
 function restoreEnv(key: keyof typeof ORIGINAL_ENV, value: string | undefined): void {
@@ -98,5 +127,71 @@ function restoreEnv(key: keyof typeof ORIGINAL_ENV, value: string | undefined): 
     delete process.env[key]
   } else {
     process.env[key] = value
+  }
+}
+
+function createFakePage() {
+  const state = {
+    currentUrl: 'about:blank',
+    filledEmail: '',
+    clicks: [] as string[],
+    goto: async (url: string) => {
+      state.currentUrl = url
+    },
+    url: () => state.currentUrl,
+    getByLabel: () => locator({
+      fill: async (value: string) => {
+        state.filledEmail = value
+      },
+    }),
+    getByPlaceholder: () => locator({
+      fill: async (value: string) => {
+        state.filledEmail = value
+      },
+    }),
+    getByRole: (_role: string, options?: Record<string, unknown>) => locator({
+      text: String(options?.name instanceof RegExp ? options.name.source : options?.name ?? 'button'),
+      click: async () => {
+        const name = options?.name instanceof RegExp
+          ? options.name.test('Add item to cart')
+            ? 'Add item to cart'
+            : 'Submit order'
+          : String(options?.name ?? 'button')
+        state.clicks.push(name)
+      },
+    }),
+    getByText: (text: string | RegExp) => locator({
+      text: typeof text === 'string' ? text : 'Order submitted successfully',
+      click: async () => {
+        state.clicks.push(typeof text === 'string' ? text : 'button')
+      },
+    }),
+    locator: (selector: string) => locator({
+      text: selector === 'body' ? 'Generic Storefront Order submitted successfully' : selector,
+      fill: async (value: string) => {
+        state.filledEmail = value
+      },
+      click: async () => {
+        state.clicks.push(selector)
+      },
+    }),
+    screenshot: async () => new Uint8Array([1, 2, 3]),
+  }
+
+  return state
+}
+
+function locator(options: {
+  text?: string
+  fill?: (value: string) => Promise<void>
+  click?: () => Promise<void>
+}) {
+  return {
+    first: () => locator(options),
+    count: async () => 1,
+    isVisible: async () => true,
+    textContent: async () => options.text ?? 'visible text',
+    fill: options.fill,
+    click: options.click,
   }
 }

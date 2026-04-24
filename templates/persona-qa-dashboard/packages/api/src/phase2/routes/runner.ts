@@ -79,8 +79,9 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
       })
     }
 
-    const useDeterministicRuntime = isGeneratedNonFrontendRuntime()
-    const runtimeSettings = useDeterministicRuntime ? null : loadRuntimeSettings()
+    const useGeneratedNonFrontendRuntime = isGeneratedNonFrontendRuntime()
+    const useDeterministicProvider = useGeneratedNonFrontendRuntime || process.env.AGENTIC_QA_FORCE_DETERMINISTIC_RUNTIME === '1'
+    const runtimeSettings = useDeterministicProvider ? null : loadRuntimeSettings()
 
     if (runtimeSettings) {
       const providerValidation = await validateProviderCredentials(runtimeSettings.provider)
@@ -109,7 +110,7 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
     const uniqueSuffix = Date.now().toString().slice(-6)
     const customerName = parsed.data.customer_name ?? `Maria Agentic ${uniqueSuffix}`
 
-    const runtime = useDeterministicRuntime
+    const runtime = useDeterministicProvider
       ? createPhase2Runtime({ deterministic: true })
       : createPhase2Runtime({ providerName: runtimeSettings!.provider })
     const session = runtime.sessionService.createSession(scenario.id)
@@ -119,7 +120,7 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
       let page: { close(): Promise<void> } | null = null
 
       try {
-        if (useDeterministicRuntime) {
+        if (useGeneratedNonFrontendRuntime) {
           await runtime.orchestrator.executeRunInSession(session.id, scenario, {
             targetRepoPath: resolveGeneratedTargetRepoPath(),
             runtimeMode: 'generated_non_browser',

@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -24,6 +24,9 @@ const verificationEnv = {
     ? `${preferredNodeBin}${path.delimiter}${process.env.PATH ?? ''}`
     : process.env.PATH,
 }
+const targetPort = 3900 + Math.floor(Math.random() * 300)
+const apiPort = 4300 + Math.floor(Math.random() * 300)
+const webPort = 5300 + Math.floor(Math.random() * 300)
 
 function log(message) {
   process.stdout.write(`[verify-generic-frontend] ${message}\n`)
@@ -162,13 +165,187 @@ function verifyGeneratedAdapter() {
   assert(contractsIndex.some((entry) => entry.scenarioId === 'checkout_smoke'), 'checkout_smoke workflow contract missing')
 }
 
+function writeRuntimeHtml() {
+  writeFile('index.html', `<!doctype html>
+<html lang="en">
+  <body>
+    <main>
+      <h1>Generic Storefront</h1>
+      <label>
+        Customer email
+        <input id="customer-email" placeholder="customer@example.com" />
+      </label>
+      <button id="add-item">Add item to cart</button>
+      <p id="cart-count">Cart items: 0</p>
+      <button id="submit-order" disabled>Submit order</button>
+      <output id="feedback"></output>
+    </main>
+    <script>
+      let items = 0
+      const email = document.querySelector('#customer-email')
+      const addItem = document.querySelector('#add-item')
+      const submit = document.querySelector('#submit-order')
+      const count = document.querySelector('#cart-count')
+      const feedback = document.querySelector('#feedback')
+      function refresh() {
+        submit.disabled = !email.value || items === 0
+      }
+      email.addEventListener('input', refresh)
+      addItem.addEventListener('click', () => {
+        items += 1
+        count.textContent = 'Cart items: ' + items
+        refresh()
+      })
+      submit.addEventListener('click', () => {
+        feedback.textContent = 'Order submitted successfully'
+      })
+    </script>
+  </body>
+</html>
+`)
+}
+
+function startStaticTargetServer() {
+  const script = `
+import http from 'node:http'
+import fs from 'node:fs'
+import path from 'node:path'
+const root = process.argv[1]
+const port = Number(process.argv[2])
+const server = http.createServer((request, response) => {
+  const file = path.join(root, request.url === '/' ? 'index.html' : request.url.slice(1))
+  fs.readFile(file, (error, data) => {
+    if (error) {
+      response.writeHead(404)
+      response.end('not found')
+      return
+    }
+    response.writeHead(200, { 'content-type': file.endsWith('.html') ? 'text/html' : 'text/plain' })
+    response.end(data)
+  })
+})
+server.listen(port, '127.0.0.1', () => console.log('target-ready'))
+process.on('SIGTERM', () => server.close(() => process.exit(0)))
+`
+  const child = spawn(nodePath, ['--input-type=module', '-e', script, fixtureRoot, String(targetPort)], {
+    env: verificationEnv,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  return waitForProcessReady(child, `http://127.0.0.1:${targetPort}/`, 'target')
+}
+
+function startDashboard() {
+  const launcher = path.join(fixtureRoot, '.agentic-qa', 'scripts', 'start-local-dashboard.generated.sh')
+  const child = spawn(launcher, ['--api-port', String(apiPort), '--web-port', String(webPort)], {
+    cwd: path.join(fixtureRoot, '.agentic-qa'),
+    detached: true,
+    env: {
+      ...verificationEnv,
+      PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${targetPort}`,
+      AGENTIC_QA_FORCE_DETERMINISTIC_RUNTIME: '1',
+      HEADLESS: 'true',
+      LOG_LEVEL: 'error',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  return waitForHttpReady(child, `http://127.0.0.1:${apiPort}/health`, 'dashboard')
+}
+
+async function verifyRuntimeRun() {
+  writeRuntimeHtml()
+  let targetServer
+  let dashboard
+  try {
+    targetServer = await startStaticTargetServer()
+    dashboard = await startDashboard()
+
+    const response = await fetch(`http://127.0.0.1:${apiPort}/api/p2/runs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ scenario_id: 'checkout_smoke' }),
+    })
+    const responseText = await response.text()
+    assert(response.status === 202, `runtime run start failed with status ${response.status}: ${responseText}`)
+    const started = JSON.parse(responseText)
+    const sessionId = started.session_id
+    assert(typeof sessionId === 'string' && sessionId.length > 0, 'runtime run did not return a session id')
+
+    const session = await pollSession(sessionId)
+    assert(session.status === 'complete', `runtime run did not complete: ${session.status} ${session.lastError ?? ''}`)
+    assert(session.artifacts?.customerEmail, 'runtime run did not produce customerEmail')
+    assert(session.artifacts?.cartItemId, 'runtime run did not produce cartItemId')
+    assert(session.artifacts?.orderSubmitted === true, 'runtime run did not produce orderSubmitted=true')
+    log(`PASS generic frontend runtime smoke session=${sessionId}`)
+  } finally {
+    stopProcessGroup(dashboard)
+    stopProcess(targetServer)
+  }
+}
+
+async function pollSession(sessionId) {
+  const deadline = Date.now() + 90_000
+  while (Date.now() < deadline) {
+    const response = await fetch(`http://127.0.0.1:${apiPort}/api/p2/sessions/${sessionId}`)
+    if (response.ok) {
+      const session = await response.json()
+      if (session.status === 'complete' || session.status === 'failed') return session
+    }
+    await sleep(1_000)
+  }
+
+  throw new Error(`runtime run timed out waiting for session ${sessionId}`)
+}
+
+async function waitForProcessReady(child, url, label) {
+  await waitForHttp(url, 15_000, label)
+  return child
+}
+
+async function waitForHttpReady(child, url, label) {
+  await waitForHttp(url, 120_000, label)
+  return child
+}
+
+async function waitForHttp(url, timeoutMs, label) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url)
+      if (response.ok) return
+    } catch {
+      // keep polling
+    }
+    await sleep(500)
+  }
+  throw new Error(`${label} did not become ready at ${url}`)
+}
+
+function stopProcess(child) {
+  if (!child?.pid) return
+  child.kill('SIGTERM')
+}
+
+function stopProcessGroup(child) {
+  if (!child?.pid) return
+  try {
+    process.kill(-child.pid, 'SIGTERM')
+  } catch {
+    child.kill('SIGTERM')
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 try {
   createFixture()
   log(`fixture=${fixtureRoot}`)
   runCli('install-local')
   runCli('discover-local')
   verifyGeneratedAdapter()
-  log('PASS generic frontend install/discovery verification')
+  await verifyRuntimeRun()
+  log('PASS generic frontend install/discovery/runtime verification')
 } catch (error) {
   process.stderr.write(`[verify-generic-frontend] FAIL ${error instanceof Error ? error.stack ?? error.message : String(error)}\n`)
   process.exitCode = 1

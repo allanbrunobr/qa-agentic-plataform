@@ -45,8 +45,8 @@ export function createPhase2Runtime(options: Phase2RuntimeOptions = {}) {
   const toolRegistry = new ToolRegistry()
 
   registerWorkflowTools(toolRegistry)
-  registerGeneratedAdapterTools(toolRegistry)
   registerEvidenceTools(toolRegistry, sessionService)
+  registerGeneratedAdapterTools(toolRegistry)
 
   const profiles = listProfiles()
   const primaryPersona = profiles.find((profile) => profile.role !== 'orchestrator')

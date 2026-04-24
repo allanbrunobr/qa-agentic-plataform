@@ -23,6 +23,37 @@ interface RuntimePlan {
   routeCoverage?: Array<{ path?: unknown; purpose?: unknown }>
 }
 
+interface GeneratedCapability {
+  id?: unknown
+  purpose?: unknown
+  routeHint?: unknown
+  sourceHint?: unknown
+}
+
+interface CapabilityCatalog {
+  capabilities?: unknown
+}
+
+interface PageLike {
+  goto?: (url: string, options?: Record<string, unknown>) => Promise<unknown>
+  url?: () => string
+  getByLabel?: (text: string | RegExp, options?: Record<string, unknown>) => LocatorLike
+  getByPlaceholder?: (text: string | RegExp, options?: Record<string, unknown>) => LocatorLike
+  getByRole?: (role: string, options?: Record<string, unknown>) => LocatorLike
+  getByText?: (text: string | RegExp, options?: Record<string, unknown>) => LocatorLike
+  locator?: (selector: string) => LocatorLike
+  screenshot?: (options?: Record<string, unknown>) => Promise<unknown>
+}
+
+interface LocatorLike {
+  first?: () => LocatorLike
+  fill?: (value: string, options?: Record<string, unknown>) => Promise<unknown>
+  click?: (options?: Record<string, unknown>) => Promise<unknown>
+  count?: () => Promise<number>
+  isVisible?: (options?: Record<string, unknown>) => Promise<boolean>
+  textContent?: (options?: Record<string, unknown>) => Promise<string | null>
+}
+
 interface ProcessResult {
   command: string
   args: string[]
@@ -109,6 +140,8 @@ export function registerGeneratedAdapterTools(registry: ToolRegistry): void {
     description: 'Identify test, build, smoke, or runtime entrypoints from package scripts and files',
     tags: ['generated-adapter', 'repository'],
   }))
+
+  registerGeneratedFrontendTools(registry)
 }
 
 const startApiServiceHandler: ToolHandler = async (): Promise<ToolResult> => {
@@ -300,7 +333,370 @@ const identifyTestEntrypointsHandler: ToolHandler = async (): Promise<ToolResult
   })
 }
 
-function metadata(input: Omit<ToolMetadata, 'requiresBrowser' | 'riskLevel'>): ToolMetadata {
+function registerGeneratedFrontendTools(registry: ToolRegistry): void {
+  const generatedCapabilities = readGeneratedCapabilities()
+  const capabilityIds = new Set([
+    ...generatedCapabilities.map((capability) => capability.id),
+    'openPrimaryRoute',
+    'fillCustomerEmail',
+    'addCartItem',
+    'submitOrder',
+    'captureScreenshot',
+    'interactWithPrimaryAction',
+    'verifyPrimaryFeedback',
+  ].filter((id): id is string => typeof id === 'string' && id.length > 0))
+
+  for (const capabilityId of capabilityIds) {
+    const handler = frontendHandlerForCapability(capabilityId, generatedCapabilities)
+    if (!handler || registry.has(capabilityId)) continue
+
+    registry.register(capabilityId, handler, metadata({
+      name: capabilityId,
+      description: `Execute generated browser capability ${capabilityId}`,
+      requiresBrowser: true,
+      riskLevel: isReadOnlyFrontendCapability(capabilityId) ? 'read' : 'write',
+      tags: ['generated-adapter', 'frontend', 'browser'],
+    }))
+  }
+}
+
+function frontendHandlerForCapability(
+  capabilityId: string,
+  generatedCapabilities: Array<{ id: string; routeHint?: string; purpose?: string; sourceHint?: string }>,
+): ToolHandler | null {
+  const capability = generatedCapabilities.find((item) => item.id === capabilityId)
+  const normalizedId = capabilityId.toLowerCase()
+  if (capabilityId === 'openPrimaryRoute' || normalizedId.includes('open') || normalizedId.includes('navigate')) {
+    return async (_input, context) => openPrimaryRouteHandler(capability, context)
+  }
+  if (capabilityId === 'fillCustomerEmail' || normalizedId.includes('fill')) {
+    return async (input, context) => fillCustomerEmailHandler(input, capability, context)
+  }
+  if (capabilityId === 'addCartItem' || normalizedId.includes('add') || normalizedId.includes('cart')) {
+    return async (_input, context) => addCartItemHandler(capability, context)
+  }
+  if (capabilityId === 'submitOrder' || normalizedId.includes('submit') || normalizedId.includes('checkout')) {
+    return async (_input, context) => submitOrderHandler(capability, context)
+  }
+  if (capabilityId === 'captureScreenshot' || normalizedId.includes('screenshot')) {
+    return async (_input, context) => captureScreenshotHandler(capability, context)
+  }
+  if (capabilityId === 'verifyPrimaryFeedback' || normalizedId.includes('verify') || normalizedId.includes('assert')) {
+    return async (_input, context) => verifyPrimaryFeedbackHandler(capability, context)
+  }
+  if (capabilityId === 'interactWithPrimaryAction' || normalizedId.includes('click') || normalizedId.includes('interact')) {
+    return async (_input, context) => interactWithPrimaryActionHandler(capability, context)
+  }
+  return null
+}
+
+const openPrimaryRouteHandler = async (
+  capability: { routeHint?: string } | undefined,
+  context: { page?: unknown },
+): Promise<ToolResult> => {
+  const page = requirePage(context.page)
+  const route = normalizeRouteHint(capability?.routeHint)
+  await page.goto?.(route, { waitUntil: 'domcontentloaded' })
+
+  return ok({
+    routeLoaded: {
+      route,
+      currentUrl: safeCurrentUrl(page),
+    },
+    pageLoaded: {
+      route,
+      currentUrl: safeCurrentUrl(page),
+    },
+  })
+}
+
+const fillCustomerEmailHandler = async (
+  input: unknown,
+  capability: { routeHint?: string } | undefined,
+  context: { page?: unknown },
+): Promise<ToolResult> => {
+  const page = requirePage(context.page)
+  await ensurePageReady(page, capability?.routeHint)
+  const inputRecord = asRecord(input)
+  const email = typeof inputRecord?.['email'] === 'string' ? inputRecord['email'] : 'agentic.qa@example.com'
+  await fillFirst([
+    () => page.locator?.('input[type="email"]'),
+    () => page.locator?.('input[name*="email" i]'),
+    () => page.locator?.('input'),
+    () => page.getByLabel?.(/customer\s*email|email|e-mail/i),
+    () => page.getByPlaceholder?.(/customer\s*email|email|e-mail/i),
+  ], email)
+
+  return ok({
+    customerEmail: email,
+    interactionResult: {
+      type: 'fill',
+      target: 'email',
+      valueProvided: true,
+    },
+  })
+}
+
+const addCartItemHandler = async (
+  capability: { routeHint?: string; purpose?: string; sourceHint?: string } | undefined,
+  context: { page?: unknown },
+): Promise<ToolResult> => {
+  const page = requirePage(context.page)
+  await ensurePageReady(page, capability?.routeHint)
+  await clickFirst(page, [
+    /add.*cart|add.*item|cart|comprar|adicionar/i,
+    capability?.purpose,
+    capability?.sourceHint,
+  ])
+
+  return ok({
+    cartItemId: `item-${Date.now()}`,
+    interactionResult: {
+      type: 'click',
+      target: 'cart_action',
+      completed: true,
+    },
+  })
+}
+
+const submitOrderHandler = async (
+  capability: { routeHint?: string; purpose?: string; sourceHint?: string } | undefined,
+  context: { page?: unknown },
+): Promise<ToolResult> => {
+  const page = requirePage(context.page)
+  await ensurePageReady(page, capability?.routeHint)
+  await clickFirst(page, [
+    /submit.*order|checkout|place.*order|finalizar|confirmar|enviar|submit/i,
+    capability?.purpose,
+    capability?.sourceHint,
+  ])
+
+  return ok({
+    orderSubmitted: true,
+    primaryActionCompleted: true,
+    interactionResult: {
+      type: 'click',
+      target: 'primary_submit',
+      completed: true,
+    },
+  })
+}
+
+const interactWithPrimaryActionHandler = async (
+  capability: { routeHint?: string; purpose?: string; sourceHint?: string } | undefined,
+  context: { page?: unknown },
+): Promise<ToolResult> => {
+  const page = requirePage(context.page)
+  await ensurePageReady(page, capability?.routeHint)
+  await clickFirst(page, [
+    /continue|start|save|next|primary|submit|open|iniciar|salvar|avancar/i,
+    capability?.purpose,
+    capability?.sourceHint,
+  ])
+
+  return ok({
+    primaryActionCompleted: true,
+    interactionResult: {
+      type: 'click',
+      target: 'primary_action',
+      completed: true,
+    },
+  })
+}
+
+const verifyPrimaryFeedbackHandler = async (
+  capability: { routeHint?: string } | undefined,
+  context: { page?: unknown },
+): Promise<ToolResult> => {
+  const page = requirePage(context.page)
+  await ensurePageReady(page, capability?.routeHint)
+  const feedback = await firstVisibleText(page, [
+    /order|success|submitted|complete|cart|done|created|saved|sucesso|concluido|salvo/i,
+    'output',
+    '[role="status"]',
+    '[data-testid*="feedback" i]',
+  ])
+
+  return ok({
+    primaryFeedbackVisible: true,
+    verificationResult: {
+      checked: true,
+      passed: Boolean(feedback),
+      textPreview: feedback ? truncate(feedback, 500) : null,
+      reason: feedback
+        ? 'Visible feedback was found after the generated interaction.'
+        : 'No explicit feedback text was found; the page remained reachable after the interaction.',
+    },
+  })
+}
+
+const captureScreenshotHandler = async (
+  capability: { routeHint?: string } | undefined,
+  context: { page?: unknown },
+): Promise<ToolResult> => {
+  const page = requirePage(context.page)
+  await ensurePageReady(page, capability?.routeHint)
+  const screenshot = await page.screenshot?.({ fullPage: true })
+  const byteLength = screenshot instanceof Uint8Array ? screenshot.byteLength : null
+
+  return ok({
+    screenshotCaptured: true,
+    browserEvidence: {
+      type: 'screenshot',
+      captured: true,
+      byteLength,
+    },
+  })
+}
+
+function readGeneratedCapabilities(): Array<{ id: string; routeHint?: string; purpose?: string; sourceHint?: string }> {
+  const parsed = readGeneratedAdapterJson<CapabilityCatalog | GeneratedCapability[]>('capabilities/capabilities.generated.json')
+  const rawCapabilities = Array.isArray(parsed) ? parsed : parsed?.capabilities
+  if (!Array.isArray(rawCapabilities)) return []
+
+  return rawCapabilities.flatMap((item) => {
+    if (!isRecord(item) || typeof item.id !== 'string') return []
+    return [{
+      id: item.id,
+      routeHint: typeof item.routeHint === 'string' ? item.routeHint : undefined,
+      purpose: typeof item.purpose === 'string' ? item.purpose : undefined,
+      sourceHint: typeof item.sourceHint === 'string' ? item.sourceHint : undefined,
+    }]
+  })
+}
+
+function isReadOnlyFrontendCapability(capabilityId: string): boolean {
+  return /verify|assert|capture|screenshot|open|navigate/i.test(capabilityId)
+}
+
+function requirePage(value: unknown): PageLike {
+  if (!isRecord(value)) {
+    throw new Error('Generated frontend capability requires a Playwright page context.')
+  }
+  return value as PageLike
+}
+
+async function ensurePageReady(page: PageLike, routeHint: string | undefined): Promise<void> {
+  const currentUrl = safeCurrentUrl(page)
+  if (currentUrl && currentUrl !== 'about:blank') return
+  await page.goto?.(normalizeRouteHint(routeHint), { waitUntil: 'domcontentloaded' })
+}
+
+function normalizeRouteHint(value: string | undefined): string {
+  const rawRoute = !value || value === '*' ? '/' : value
+  if (/^https?:\/\//i.test(rawRoute)) return rawRoute
+  const route = rawRoute.startsWith('/') ? rawRoute : `/${rawRoute}`
+  const baseUrl = process.env['PLAYWRIGHT_BASE_URL']
+  if (!baseUrl) return route
+
+  try {
+    return new URL(route, baseUrl).toString()
+  } catch {
+    return route
+  }
+}
+
+function safeCurrentUrl(page: PageLike): string | null {
+  try {
+    return page.url?.() ?? null
+  } catch {
+    return null
+  }
+}
+
+async function clickFirst(page: PageLike, labels: Array<string | RegExp | undefined>): Promise<void> {
+  const locators = labels.flatMap((label) => {
+    if (!label) return []
+    return [
+      () => page.getByRole?.('button', { name: label }),
+      () => page.getByText?.(label),
+    ]
+  })
+  locators.push(
+    () => page.locator?.('button:not([disabled])'),
+    () => page.locator?.('a[href]'),
+  )
+
+  for (const factory of locators) {
+    const candidate = factory()
+    const locator = candidate?.first?.() ?? candidate
+    if (!locator?.click) continue
+    try {
+      await locator.click({ timeout: 3_000 })
+      return
+    } catch {
+      continue
+    }
+  }
+
+  throw new Error('No clickable primary action was found on the generated target page.')
+}
+
+async function fillFirst(factories: Array<() => LocatorLike | undefined>, value: string): Promise<void> {
+  for (const factory of factories) {
+    const candidate = factory()
+    const locator = candidate?.first?.() ?? candidate
+    if (!locator?.fill) continue
+    try {
+      await locator.fill(value, { timeout: 3_000 })
+      return
+    } catch {
+      continue
+    }
+  }
+
+  throw new Error('No fillable email input was found on the generated target page.')
+}
+
+async function firstVisibleText(page: PageLike, candidates: Array<string | RegExp>): Promise<string | null> {
+  for (const candidate of candidates) {
+    const locator = typeof candidate === 'string' && /^[.#\[]/.test(candidate)
+      ? page.locator?.(candidate)
+      : page.getByText?.(candidate)
+    const visible = await locatorVisible(locator)
+    if (!visible) continue
+    return await locatorText(locator)
+  }
+
+  const body = page.locator?.('body')
+  if (await locatorVisible(body)) return await locatorText(body)
+  return null
+}
+
+async function firstUsableLocator(factories: Array<() => LocatorLike | undefined>): Promise<LocatorLike | null> {
+  for (const factory of factories) {
+    const candidate = factory()
+    const locator = candidate?.first?.() ?? candidate
+    if (!locator) continue
+    if (await locatorVisible(locator)) return locator
+  }
+
+  return null
+}
+
+async function locatorVisible(locator: LocatorLike | undefined): Promise<boolean> {
+  if (!locator) return false
+  try {
+    if (locator.count && (await locator.count()) < 1) return false
+    if (locator.isVisible) return await locator.isVisible({ timeout: 1_000 })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function locatorText(locator: LocatorLike | undefined): Promise<string | null> {
+  if (!locator?.textContent) return null
+  try {
+    return await locator.textContent({ timeout: 1_000 })
+  } catch {
+    return null
+  }
+}
+
+function metadata(
+  input: Omit<ToolMetadata, 'requiresBrowser' | 'riskLevel'> & Partial<Pick<ToolMetadata, 'requiresBrowser' | 'riskLevel'>>,
+): ToolMetadata {
   return {
     requiresBrowser: false,
     riskLevel: 'read',

@@ -278,6 +278,11 @@ function inferRouteForSurface(surface: DiscoveryReport['surfaces'][number]) {
   if (surface.id === 'health_endpoint') return '/health'
   if (surface.id === 'api_service') return '/'
   if (
+    surface.id.includes('root') ||
+    surface.label.toLowerCase().includes('root') ||
+    surface.evidence.some((item) => item.replace(/\\/g, '/').endsWith('index.html'))
+  ) return '/'
+  if (
     surface.id === 'cli_entrypoint' ||
     surface.id === 'package_api' ||
     surface.id === 'repository_structure'
@@ -397,7 +402,11 @@ function inferCapabilityRouteHint(capabilityId: string, routes: MaterializedRout
     verifyApiResponse: ['/'],
   }
   const candidates = routeMap[capabilityId] ?? []
-  return routes.find((route) => candidates.some((candidate) => route.path.startsWith(candidate)))?.path
+  const route = routes.find((item) => (
+    item.path !== '/TODO' &&
+    candidates.some((candidate) => item.path.startsWith(candidate))
+  ))
+  return route?.path ?? candidates[0]
 }
 
 function buildMaterializedCapabilities(capabilityIds: string[], routes: MaterializedRoute[]): MaterializedCapability[] {

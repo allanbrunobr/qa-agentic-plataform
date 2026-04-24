@@ -7,6 +7,13 @@ import type {
 } from '../types/agent-types.js'
 
 const STEP_TOOL_MAP: Record<string, string> = {
+  open_primary_route: 'openPrimaryRoute',
+  fill_customer_email: 'fillCustomerEmail',
+  add_cart_item: 'addCartItem',
+  submit_order: 'submitOrder',
+  capture_screenshot: 'captureScreenshot',
+  interact_with_primary_action: 'interactWithPrimaryAction',
+  verify_primary_feedback: 'verifyPrimaryFeedback',
   start_api_service: 'startApiService',
   call_health_endpoint: 'callHealthEndpoint',
   call_primary_endpoint: 'callPrimaryEndpoint',
@@ -90,6 +97,17 @@ function selectToolByProducedArtifact(step: StepEnvelope | undefined, tools: Too
   const artifactNames = new Set(artifacts.filter((artifact): artifact is string => typeof artifact === 'string'))
   const candidates: Record<string, string> = {
     serviceStarted: 'startApiService',
+    routeLoaded: 'openPrimaryRoute',
+    pageLoaded: 'openPrimaryRoute',
+    customerEmail: 'fillCustomerEmail',
+    cartItemId: 'addCartItem',
+    orderSubmitted: 'submitOrder',
+    primaryActionCompleted: 'interactWithPrimaryAction',
+    primaryFeedbackVisible: 'verifyPrimaryFeedback',
+    screenshotCaptured: 'captureScreenshot',
+    browserEvidence: 'captureScreenshot',
+    interactionResult: 'interactWithPrimaryAction',
+    verificationResult: 'verifyPrimaryFeedback',
     apiResponse: 'callHealthEndpoint',
     apiContractVerified: 'verifyApiResponse',
     cliHelpOutput: 'runCliHelp',
