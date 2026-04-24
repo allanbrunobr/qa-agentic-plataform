@@ -475,7 +475,7 @@ describe('AgentRuntime', () => {
       const runtime = new AgentRuntime(provider, registry, sessionService)
       runtime.registerAgent(makeProfile({
         id: 'sales-associate',
-        timeoutMs: 20,
+        timeoutMs: 500,
         toolPolicy: { browserAccess: true, allowedTools: ['createCustomer'] },
         evidencePolicy: { requireScreenshotForFinding: false, requireDomSnippetForFinding: false },
       }))

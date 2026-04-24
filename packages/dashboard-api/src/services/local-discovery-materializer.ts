@@ -847,10 +847,11 @@ export async function materializeLocalDiscovery(input: {
   const hostId = inferTargetId(input.repoPath)
   const normalizedReport = normalizeReport(input.report)
   const normalizedDraft = buildNormalizedDraft(normalizedReport, input.draft)
-  const codeGraph = buildCodeGraph({
+  const codeGraph = await buildCodeGraph({
     targetId: hostId,
     report: normalizedReport,
     draft: normalizedDraft,
+    repoPath: input.repoPath,
   })
   const routes = buildMaterializedRoutes(normalizedReport)
   const auth = await detectAuth(input.repoPath, normalizedReport)

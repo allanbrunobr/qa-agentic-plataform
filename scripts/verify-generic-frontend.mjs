@@ -97,6 +97,15 @@ function App() {
   const [items, setItems] = useState(0)
   const [message, setMessage] = useState('')
 
+  async function submitOrder() {
+    await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, items }),
+    })
+    setMessage('Order submitted successfully')
+  }
+
   return (
     <main>
       <h1>Generic Storefront</h1>
@@ -106,7 +115,7 @@ function App() {
       </label>
       <button onClick={() => setItems((value) => value + 1)}>Add item to cart</button>
       <p>Cart items: {items}</p>
-      <button disabled={!email || items === 0} onClick={() => setMessage('Order submitted successfully')}>
+      <button disabled={!email || items === 0} onClick={() => void submitOrder()}>
         Submit order
       </button>
       <output>{message}</output>
@@ -115,6 +124,16 @@ function App() {
 }
 
 createRoot(document.getElementById('root')!).render(<App />)
+`)
+  writeFile('src/server.ts', `type Request = { body?: unknown }
+type Response = { status: (code: number) => Response; json: (body: unknown) => void }
+type App = { post: (path: string, handler: (request: Request, response: Response) => void) => void }
+
+export function registerOrderRoutes(app: App) {
+  app.post('/api/orders', (_request, response) => {
+    response.status(201).json({ ok: true })
+  })
+}
 `)
   writeFile('src/styles.css', 'body { font-family: system-ui, sans-serif; margin: 2rem; } main { display: grid; gap: 1rem; max-width: 32rem; }\n')
 }
@@ -164,8 +183,14 @@ function verifyGeneratedAdapter() {
   assert(codeGraph.nodes.some((node) => node.type === 'persona_candidate'), 'code graph persona candidate missing')
   assert(codeGraph.nodes.some((node) => node.type === 'scenario_candidate'), 'code graph scenario candidate missing')
   assert(codeGraph.nodes.some((node) => node.type === 'capability_candidate'), 'code graph capability candidate missing')
+  assert(codeGraph.nodes.some((node) => node.type === 'source_file' && node.label === 'src/server.ts'), 'code graph source file evidence missing')
+  assert(codeGraph.nodes.some((node) => node.type === 'endpoint' && node.metadata?.method === 'POST' && node.metadata?.path === '/api/orders'), 'code graph endpoint evidence missing')
+  assert(codeGraph.nodes.some((node) => node.type === 'http_call' && node.metadata?.method === 'POST' && node.metadata?.normalizedPath === '/api/orders'), 'code graph HTTP call evidence missing')
   assert(codeGraph.edges.some((edge) => edge.type === 'has_evidence'), 'code graph evidence edges missing')
   assert(codeGraph.edges.some((edge) => edge.type === 'requires_capability'), 'code graph capability dependency edges missing')
+  assert(codeGraph.edges.some((edge) => edge.type === 'handles'), 'code graph source file endpoint handler edge missing')
+  assert(codeGraph.edges.some((edge) => edge.type === 'makes_http_request'), 'code graph source file HTTP call edge missing')
+  assert(codeGraph.edges.some((edge) => edge.type === 'calls'), 'code graph HTTP call to endpoint edge missing')
   assert(personaIds.includes('primary_user'), `primary_user persona missing: ${personaIds.join(', ')}`)
   assert(!personaIds.includes('sales-associate') && !personaIds.includes('fulfillment-agent'), `Reference Store personas leaked into generic adapter: ${personaIds.join(', ')}`)
   assert(scenarioIds.includes('checkout_smoke'), `checkout_smoke scenario missing: ${scenarioIds.join(', ')}`)
@@ -268,6 +293,16 @@ async function verifyRuntimeRun() {
   try {
     targetServer = await startStaticTargetServer()
     dashboard = await startDashboard()
+
+    const graphResponse = await fetch(`http://127.0.0.1:${apiPort}/api/p2/code-graph`)
+    const graphText = await graphResponse.text()
+    assert(graphResponse.status === 200, `code graph endpoint failed with status ${graphResponse.status}: ${graphText}`)
+    const graphBody = JSON.parse(graphText)
+    assert(graphBody.available === true, 'dashboard code graph endpoint did not expose generated graph')
+    assert(graphBody.summary.endpointCount >= 1, 'dashboard code graph summary has no endpoints')
+    assert(graphBody.summary.httpCallCount >= 1, 'dashboard code graph summary has no HTTP calls')
+    assert(graphBody.summary.linkedHttpCallCount >= 1, 'dashboard code graph summary has no linked HTTP calls')
+    assert(graphBody.graph.nodes.length >= graphBody.summary.nodeCount, 'dashboard code graph payload is inconsistent')
 
     const response = await fetch(`http://127.0.0.1:${apiPort}/api/p2/runs`, {
       method: 'POST',

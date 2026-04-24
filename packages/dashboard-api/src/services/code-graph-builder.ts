@@ -1,3 +1,5 @@
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
 import type {
   BootstrapDraft,
   DiscoveryReport,
@@ -27,6 +29,7 @@ interface BuildCodeGraphInput {
   targetId: string
   report: DiscoveryReport
   draft: BootstrapDraft
+  repoPath?: string
 }
 
 type MutableGraphNode = Omit<CodeGraphNode, 'metadata'> & {
@@ -35,6 +38,36 @@ type MutableGraphNode = Omit<CodeGraphNode, 'metadata'> & {
 
 type MutableGraphEdge = Omit<CodeGraphEdge, 'metadata'> & {
   metadata?: Record<string, unknown>
+}
+
+interface SourceGraphFile {
+  relativePath: string
+  content: string
+}
+
+interface EndpointEvidence {
+  id: string
+  method: string
+  routePath: string
+  source: SourceLocation
+  label: string
+  framework: string
+}
+
+interface HttpCallEvidence {
+  id: string
+  method: string
+  url: string
+  normalizedPath: string | null
+  source: SourceLocation
+  label: string
+  client: string
+}
+
+interface SourceGraphEvidence {
+  files: SourceGraphFile[]
+  endpoints: EndpointEvidence[]
+  httpCalls: HttpCallEvidence[]
 }
 
 const EVIDENCE_KIND_TO_NODE_TYPE: Record<FrontendEvidenceKind, CodeGraphNodeType> = {
@@ -51,6 +84,25 @@ const EVIDENCE_KIND_TO_NODE_TYPE: Record<FrontendEvidenceKind, CodeGraphNodeType
 
 function normalizeId(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unknown'
+}
+
+function normalizePath(value: string) {
+  return value.split(path.sep).join('/')
+}
+
+function lineForIndex(content: string, index: number) {
+  return content.slice(0, index).split('\n').length
+}
+
+function uniqueById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>()
+  const unique: T[] = []
+  for (const item of items) {
+    if (seen.has(item.id)) continue
+    seen.add(item.id)
+    unique.push(item)
+  }
+  return unique
 }
 
 function graphId(...segments: string[]) {
@@ -131,6 +183,200 @@ function evidenceSource(item: Record<string, unknown>): SourceLocation | undefin
   const source = item.source
   if (!source || typeof source !== 'object' || Array.isArray(source)) return undefined
   return source as SourceLocation
+}
+
+async function scanSourceGraph(repoPath: string | undefined): Promise<SourceGraphEvidence> {
+  if (!repoPath) return { files: [], endpoints: [], httpCalls: [] }
+  const files = await listSourceGraphFiles(repoPath)
+  const endpoints: EndpointEvidence[] = []
+  const httpCalls: HttpCallEvidence[] = []
+
+  for (const file of files) {
+    endpoints.push(...collectEndpointEvidence(file))
+    httpCalls.push(...collectHttpCallEvidence(file))
+  }
+
+  return {
+    files,
+    endpoints: uniqueById(endpoints).slice(0, 80),
+    httpCalls: uniqueById(httpCalls).slice(0, 80),
+  }
+}
+
+async function listSourceGraphFiles(repoPath: string): Promise<SourceGraphFile[]> {
+  const results: SourceGraphFile[] = []
+  const ignoredDirs = new Set([
+    '.agentic-qa',
+    '.git',
+    '.next',
+    'coverage',
+    'dist',
+    'build',
+    'node_modules',
+    'playwright-report',
+  ])
+  const extensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue', '.svelte'])
+
+  async function walk(currentDir: string): Promise<void> {
+    if (results.length >= 350) return
+    let entries: Array<{ name: string; isDirectory(): boolean; isFile(): boolean }>
+    try {
+      entries = await fs.readdir(currentDir, { withFileTypes: true })
+    } catch {
+      return
+    }
+
+    entries.sort((a, b) => a.name.localeCompare(b.name))
+    for (const entry of entries) {
+      if (results.length >= 350) return
+      if (entry.name.startsWith('.env')) continue
+      const absolutePath = path.join(currentDir, entry.name)
+      if (entry.isDirectory()) {
+        if (!ignoredDirs.has(entry.name)) await walk(absolutePath)
+        continue
+      }
+      if (!entry.isFile() || !extensions.has(path.extname(entry.name))) continue
+      let stat
+      try {
+        stat = await fs.stat(absolutePath)
+      } catch {
+        continue
+      }
+      if (stat.size > 160_000) continue
+      try {
+        const content = await fs.readFile(absolutePath, 'utf8')
+        results.push({
+          relativePath: normalizePath(path.relative(repoPath, absolutePath)),
+          content,
+        })
+      } catch {
+        // Skip unreadable files.
+      }
+    }
+  }
+
+  await walk(repoPath)
+  return results
+}
+
+function collectEndpointEvidence(file: SourceGraphFile): EndpointEvidence[] {
+  const endpoints: EndpointEvidence[] = []
+  const expressLike = /\b(?:app|router)\.(get|post|put|patch|delete)\s*\(\s*["'`]([^"'`]+)["'`]/gi
+  const fastifyLike = /\b(?:fastify|app)\.(get|post|put|patch|delete)\s*\(\s*["'`]([^"'`]+)["'`]/gi
+  const routeExport = /\bexport\s+async\s+function\s+(GET|POST|PUT|PATCH|DELETE)\b/g
+
+  for (const match of file.content.matchAll(expressLike)) {
+    endpoints.push(endpointFromMatch(file, match, match[1] ?? 'get', match[2] ?? '/', 'express'))
+  }
+  for (const match of file.content.matchAll(fastifyLike)) {
+    endpoints.push(endpointFromMatch(file, match, match[1] ?? 'get', match[2] ?? '/', 'fastify'))
+  }
+  for (const match of file.content.matchAll(routeExport)) {
+    const routePath = inferApiRouteFromFile(file.relativePath)
+    if (!routePath) continue
+    endpoints.push(endpointFromMatch(file, match, match[1] ?? 'GET', routePath, 'next_api_route'))
+  }
+
+  return endpoints
+}
+
+function endpointFromMatch(
+  file: SourceGraphFile,
+  match: RegExpMatchArray,
+  method: string,
+  routePath: string,
+  framework: string,
+): EndpointEvidence {
+  const normalizedMethod = method.toUpperCase()
+  const normalizedPath = normalizeEndpointPath(routePath)
+  const line = lineForIndex(file.content, match.index ?? 0)
+  return {
+    id: graphId('endpoint', normalizedMethod, normalizedPath, file.relativePath, String(line)),
+    method: normalizedMethod,
+    routePath: normalizedPath,
+    source: { filePath: file.relativePath, line },
+    label: `${normalizedMethod} ${normalizedPath}`,
+    framework,
+  }
+}
+
+function collectHttpCallEvidence(file: SourceGraphFile): HttpCallEvidence[] {
+  const calls: HttpCallEvidence[] = []
+  const fetchCall = /\bfetch\s*\(\s*["'`]([^"'`]+)["'`]\s*(?:,\s*\{([\s\S]{0,300}?)\})?/g
+  const axiosCall = /\baxios\.(get|post|put|patch|delete)\s*\(\s*["'`]([^"'`]+)["'`]/gi
+
+  for (const match of file.content.matchAll(fetchCall)) {
+    const url = match[1] ?? ''
+    if (!url) continue
+    const methodMatch = (match[2] ?? '').match(/\bmethod\s*:\s*["'`]([A-Z]+)["'`]/i)
+    const method = (methodMatch?.[1] ?? 'GET').toUpperCase()
+    calls.push(httpCallFromMatch(file, match, method, url, 'fetch'))
+  }
+  for (const match of file.content.matchAll(axiosCall)) {
+    const method = (match[1] ?? 'get').toUpperCase()
+    const url = match[2] ?? ''
+    if (!url) continue
+    calls.push(httpCallFromMatch(file, match, method, url, 'axios'))
+  }
+
+  return calls
+}
+
+function httpCallFromMatch(
+  file: SourceGraphFile,
+  match: RegExpMatchArray,
+  method: string,
+  url: string,
+  client: string,
+): HttpCallEvidence {
+  const line = lineForIndex(file.content, match.index ?? 0)
+  const normalizedPath = normalizeHttpCallPath(url)
+  return {
+    id: graphId('http_call', method, normalizedPath ?? url, file.relativePath, String(line)),
+    method,
+    url: sanitizeGraphText(url, 240),
+    normalizedPath,
+    source: { filePath: file.relativePath, line },
+    label: `${method} ${normalizedPath ?? url}`,
+    client,
+  }
+}
+
+function inferApiRouteFromFile(relativePath: string): string | null {
+  const normalized = normalizePath(relativePath)
+  const appRouteMatch = normalized.match(/^(?:src\/)?app\/api\/(.+)\/route\.(?:t|j)s$/)
+  if (appRouteMatch?.[1]) return normalizeEndpointPath('/api/' + appRouteMatch[1])
+  const pagesRouteMatch = normalized.match(/^(?:src\/)?pages\/api\/(.+)\.(?:t|j)s$/)
+  if (pagesRouteMatch?.[1]) return normalizeEndpointPath('/api/' + pagesRouteMatch[1].replace(/\/index$/, ''))
+  return null
+}
+
+function normalizeEndpointPath(value: string) {
+  const cleaned = value.trim().replace(/\\/g, '/').replace(/\/+/g, '/')
+  const withSlash = cleaned.startsWith('/') ? cleaned : '/' + cleaned
+  return withSlash.replace(/\[([^\]]+)\]/g, ':$1').replace(/\/$/, '') || '/'
+}
+
+function normalizeHttpCallPath(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.includes('${')) return null
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed)
+      return normalizeEndpointPath(parsed.pathname)
+    } catch {
+      return null
+    }
+  }
+  if (trimmed.startsWith('/')) return normalizeEndpointPath(trimmed)
+  return null
+}
+
+function sanitizeGraphText(value: string, max: number) {
+  return value
+    .replace(/\b(api[_-]?key|token|secret|password)\b\s*[:=]\s*["']?[^"'\s]+/gi, '$1=[REDACTED]')
+    .replace(/\bsk-[A-Za-z0-9_-]{12,}\b/g, '[REDACTED_KEY]')
+    .slice(0, max)
 }
 
 function flattenSurfaceEvidence(surfaceMap: FrontendSurfaceMap): Array<{
@@ -440,6 +686,113 @@ function addDomainDiscoveryGraph(input: {
   }
 }
 
+function addSourceGraph(input: {
+  nodes: Map<string, CodeGraphNode>
+  edges: Map<string, CodeGraphEdge>
+  repositoryNodeId: string
+  sourceGraph: SourceGraphEvidence
+}) {
+  const fileNodeByPath = new Map<string, string>()
+  const endpointNodeByPath = new Map<string, string>()
+  const sourceFiles = new Set<string>()
+
+  for (const endpoint of input.sourceGraph.endpoints) sourceFiles.add(endpoint.source.filePath)
+  for (const call of input.sourceGraph.httpCalls) sourceFiles.add(call.source.filePath)
+
+  for (const file of input.sourceGraph.files) {
+    if (!sourceFiles.has(file.relativePath)) continue
+    const fileNodeId = addNode(input.nodes, {
+      id: graphId('source_file', file.relativePath),
+      type: 'source_file',
+      label: file.relativePath,
+      source: { filePath: file.relativePath },
+      metadata: { filePath: file.relativePath },
+    })
+    fileNodeByPath.set(file.relativePath, fileNodeId)
+    addEdge(input.edges, {
+      id: edgeId('contains', input.repositoryNodeId, fileNodeId),
+      from: input.repositoryNodeId,
+      to: fileNodeId,
+      type: 'contains',
+    })
+  }
+
+  for (const endpoint of input.sourceGraph.endpoints) {
+    const endpointNodeId = addNode(input.nodes, {
+      id: endpoint.id,
+      type: 'endpoint',
+      label: endpoint.label,
+      source: endpoint.source,
+      metadata: {
+        method: endpoint.method,
+        path: endpoint.routePath,
+        framework: endpoint.framework,
+      },
+    })
+    endpointNodeByPath.set(`${endpoint.method} ${endpoint.routePath}`, endpointNodeId)
+    endpointNodeByPath.set(`ANY ${endpoint.routePath}`, endpointNodeId)
+    addEdge(input.edges, {
+      id: edgeId('contains', input.repositoryNodeId, endpointNodeId),
+      from: input.repositoryNodeId,
+      to: endpointNodeId,
+      type: 'contains',
+    })
+    const fileNodeId = fileNodeByPath.get(endpoint.source.filePath)
+    if (fileNodeId) {
+      addEdge(input.edges, {
+        id: edgeId('handles', fileNodeId, endpointNodeId),
+        from: fileNodeId,
+        to: endpointNodeId,
+        type: 'handles',
+      })
+    }
+  }
+
+  for (const call of input.sourceGraph.httpCalls) {
+    const callNodeId = addNode(input.nodes, {
+      id: call.id,
+      type: 'http_call',
+      label: call.label,
+      source: call.source,
+      metadata: {
+        method: call.method,
+        url: call.url,
+        normalizedPath: call.normalizedPath,
+        client: call.client,
+      },
+    })
+    addEdge(input.edges, {
+      id: edgeId('contains', input.repositoryNodeId, callNodeId),
+      from: input.repositoryNodeId,
+      to: callNodeId,
+      type: 'contains',
+    })
+    const fileNodeId = fileNodeByPath.get(call.source.filePath)
+    if (fileNodeId) {
+      addEdge(input.edges, {
+        id: edgeId('makes_http_request', fileNodeId, callNodeId),
+        from: fileNodeId,
+        to: callNodeId,
+        type: 'makes_http_request',
+      })
+    }
+    if (call.normalizedPath) {
+      const endpointNodeId = endpointNodeByPath.get(`${call.method} ${call.normalizedPath}`)
+        ?? endpointNodeByPath.get(`ANY ${call.normalizedPath}`)
+      if (endpointNodeId) {
+        addEdge(input.edges, {
+          id: edgeId('calls', callNodeId, endpointNodeId),
+          from: callNodeId,
+          to: endpointNodeId,
+          type: 'calls',
+          confidence: 0.9,
+          metadata: { matchedBy: 'method_path' },
+        })
+      }
+    }
+  }
+}
+
 function addDraftGraph(input: {
   nodes: Map<string, CodeGraphNode>
   edges: Map<string, CodeGraphEdge>
@@ -579,11 +932,12 @@ function addDraftScenario(
   }
 }
 
-export function buildCodeGraph(input: BuildCodeGraphInput): CodeGraph {
+export async function buildCodeGraph(input: BuildCodeGraphInput): Promise<CodeGraph> {
   const nodes = new Map<string, CodeGraphNode>()
   const edges = new Map<string, CodeGraphEdge>()
   const repositoryNodeId = graphId('repository', input.targetId)
   const repositoryKind = input.report.repository?.kind ?? 'unknown'
+  const sourceGraph = await scanSourceGraph(input.repoPath)
 
   addNode(nodes, {
     id: repositoryNodeId,
@@ -645,6 +999,13 @@ export function buildCodeGraph(input: BuildCodeGraphInput): CodeGraph {
     })
   }
 
+  addSourceGraph({
+    nodes,
+    edges,
+    repositoryNodeId,
+    sourceGraph,
+  })
+
   addDraftGraph({
     nodes,
     edges,
@@ -666,6 +1027,7 @@ export function buildCodeGraph(input: BuildCodeGraphInput): CodeGraph {
       edgeCount: graphEdges.length,
       evidenceNodeCount: graphNodes.filter((node) => [
         'surface',
+        'source_file',
         'route',
         'component',
         'form',

@@ -6,6 +6,7 @@ export const CODE_GRAPH_SCHEMA_VERSION = 'code-graph/v1'
 export const CodeGraphNodeTypeSchema = z.enum([
   'repository',
   'domain',
+  'source_file',
   'surface',
   'route',
   'component',
