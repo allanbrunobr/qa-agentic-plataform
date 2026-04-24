@@ -1151,6 +1151,174 @@ describe('Phase 2 Session Routes', () => {
       }));
     });
 
+    it('should report scenario draft promotion readiness blockers', async () => {
+      const draft = sessionService.createScenarioDraft({
+        scenarioId: 'domain_commerce_readiness_blocked',
+        name: 'Domain draft: Readiness blocked',
+        description: 'Generated from domain discovery with partial graph support',
+        contract: {
+          id: 'domain_commerce_readiness_blocked',
+          name: 'Readiness blocked',
+          steps: [],
+          domainDiscovery: {
+            sourceDomain: 'commerce',
+            sourceScenarioId: 'place_order',
+            mappingRequired: true,
+            graphReadiness: {
+              status: 'partially_mapped',
+              confidence: 0.55,
+              requiredCapabilityCount: 2,
+              mappedCapabilityCount: 1,
+              mappedCapabilityIds: ['submitOrder'],
+              missingCapabilityIds: ['fillCustomerEmail'],
+              supportSourceTypes: ['endpoint', 'http_call'],
+            },
+            mappingReview: {
+              selectorsMapped: true,
+              authMapped: true,
+              testDataMapped: true,
+              assertionsMapped: true,
+              reviewedBy: 'qa_lead',
+              reviewedAt: new Date().toISOString(),
+              notes: 'Manual mapping completed, but graph remains partial.',
+            },
+          },
+        },
+        gapType: 'domain_discovery_mapping',
+      });
+
+      const readiness = await app.inject({
+        method: 'GET',
+        url: `/api/p2/scenarios/drafts/${draft.id}/promotion-readiness?actor=qa_lead`,
+      });
+
+      expect(readiness.statusCode).toBe(200);
+      expect(readiness.json()).toEqual(expect.objectContaining({
+        draftId: draft.id,
+        scenarioId: 'domain_commerce_readiness_blocked',
+        status: 'pending',
+        actor: 'qa_lead',
+        readyForApproval: false,
+        readyForPromotion: false,
+        graphReadiness: expect.objectContaining({
+          status: 'partially_mapped',
+          missingCapabilityIds: ['fillCustomerEmail'],
+        }),
+        mappingReview: expect.objectContaining({
+          selectorsMapped: true,
+          reviewedBy: 'qa_lead',
+        }),
+        actions: expect.objectContaining({
+          approve: expect.objectContaining({
+            allowed: false,
+            verdict: 'blocked',
+            reason: expect.stringContaining('graph readiness must be fully_mapped'),
+          }),
+          promote: expect.objectContaining({
+            allowed: false,
+            reason: 'Scenario draft must be approved before promotion',
+          }),
+        }),
+      }));
+      expect(readiness.json().requirements).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: 'graph_readiness_fully_mapped',
+          status: 'blocked',
+          blocking: true,
+          evidence: expect.objectContaining({
+            missingCapabilityIds: ['fillCustomerEmail'],
+          }),
+        }),
+        expect.objectContaining({
+          id: 'domain_mapping_review_complete',
+          status: 'passed',
+          blocking: false,
+        }),
+      ]));
+      expect(readiness.json().nextSteps).toEqual(expect.arrayContaining([
+        expect.stringContaining('missing capabilities: fillCustomerEmail'),
+      ]));
+    });
+
+    it('should report scenario draft ready for promotion after graph, mapping, and approval gates pass', async () => {
+      const draft = sessionService.createScenarioDraft({
+        scenarioId: 'domain_commerce_readiness_ready',
+        name: 'Domain draft: Readiness ready',
+        description: 'Generated from domain discovery with full graph support',
+        contract: {
+          id: 'domain_commerce_readiness_ready',
+          name: 'Readiness ready',
+          steps: [],
+          domainDiscovery: {
+            sourceDomain: 'commerce',
+            sourceScenarioId: 'place_order',
+            mappingRequired: true,
+            graphReadiness: {
+              status: 'fully_mapped',
+              confidence: 0.88,
+              requiredCapabilityCount: 2,
+              mappedCapabilityCount: 2,
+              mappedCapabilityIds: ['fillCustomerEmail', 'submitOrder'],
+              missingCapabilityIds: [],
+              supportSourceTypes: ['component', 'http_call'],
+            },
+            mappingReview: {
+              selectorsMapped: true,
+              authMapped: true,
+              testDataMapped: true,
+              assertionsMapped: true,
+              reviewedBy: 'qa_lead',
+              reviewedAt: new Date().toISOString(),
+              notes: 'Fully mapped against graph evidence.',
+            },
+          },
+        },
+        gapType: 'domain_discovery_mapping',
+      });
+
+      const initialReadiness = await app.inject({
+        method: 'GET',
+        url: `/api/p2/scenarios/drafts/${draft.id}/promotion-readiness?actor=qa_lead`,
+      });
+      expect(initialReadiness.statusCode).toBe(200);
+      expect(initialReadiness.json()).toEqual(expect.objectContaining({
+        readyForApproval: true,
+        readyForPromotion: false,
+      }));
+
+      const approved = await app.inject({
+        method: 'PATCH',
+        url: `/api/p2/scenarios/drafts/${draft.id}`,
+        payload: {
+          status: 'approved',
+          reviewedBy: 'qa_lead',
+        },
+      });
+      expect(approved.statusCode).toBe(200);
+
+      const readiness = await app.inject({
+        method: 'GET',
+        url: `/api/p2/scenarios/drafts/${draft.id}/promotion-readiness?actor=qa_lead`,
+      });
+
+      expect(readiness.statusCode).toBe(200);
+      expect(readiness.json()).toEqual(expect.objectContaining({
+        readyForApproval: true,
+        readyForPromotion: true,
+        actions: expect.objectContaining({
+          approve: expect.objectContaining({ allowed: true }),
+          promote: expect.objectContaining({ allowed: true }),
+        }),
+        nextSteps: [],
+      }));
+      expect(readiness.json().requirements).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'graph_readiness_fully_mapped', status: 'passed', blocking: false }),
+        expect.objectContaining({ id: 'domain_mapping_review_complete', status: 'passed', blocking: false }),
+        expect.objectContaining({ id: 'approved_status_before_promotion', status: 'passed', blocking: false }),
+        expect.objectContaining({ id: 'approval_governance_evidence', status: 'passed', blocking: false }),
+      ]));
+    });
+
     it('should materialize applied learning proposals', async () => {
       const proposal = sessionService.createLearningProposal({
         recommendationId: 'route-learning-apply',

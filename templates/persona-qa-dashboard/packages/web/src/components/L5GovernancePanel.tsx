@@ -165,7 +165,12 @@ export function L5GovernancePanel({
                 status={draft.status}
                 pending={actionPendingId === `draft:${draft.id}` || actionPendingId === `draft-mapping:${draft.id}`}
                 testId={`l5-draft-${draft.id}`}
-                extra={requiresDraftMappingReview(draft) ? <MappingReviewSummary draft={draft} /> : undefined}
+                extra={(requiresDraftMappingReview(draft) || getDraftGraphReadiness(draft)) ? (
+                  <>
+                    {requiresDraftMappingReview(draft) && <MappingReviewSummary draft={draft} />}
+                    <GraphReadinessSummary draft={draft} />
+                  </>
+                ) : undefined}
                 actions={[
                   requiresDraftMappingReview(draft) && !isDraftMappingReviewComplete(draft) && onConfirmDraftMapping
                     ? { label: 'Confirm mapping', onClick: () => onConfirmDraftMapping(draft.id), tone: 'success' as const }
@@ -320,6 +325,51 @@ function MappingReviewSummary({ draft }: { draft: Phase2ScenarioDraft }) {
   )
 }
 
+function GraphReadinessSummary({ draft }: { draft: Phase2ScenarioDraft }) {
+  const readiness = getDraftGraphReadiness(draft)
+  if (!readiness) return null
+
+  const status = typeof readiness['status'] === 'string' ? readiness['status'] : 'unmapped'
+  const missingCapabilityIds = Array.isArray(readiness['missingCapabilityIds'])
+    ? readiness['missingCapabilityIds'].filter((item): item is string => typeof item === 'string')
+    : []
+  const mappedCapabilityCount = typeof readiness['mappedCapabilityCount'] === 'number'
+    ? readiness['mappedCapabilityCount']
+    : 0
+  const requiredCapabilityCount = typeof readiness['requiredCapabilityCount'] === 'number'
+    ? readiness['requiredCapabilityCount']
+    : 0
+  const ready = status === 'fully_mapped' && requiredCapabilityCount > 0 && mappedCapabilityCount === requiredCapabilityCount
+
+  return (
+    <div className={cn(
+      'mt-3 rounded-md border p-2',
+      ready ? 'border-emerald-500/20 bg-emerald-500/10' : 'border-red-500/20 bg-red-500/10',
+    )}>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <p className={cn(
+          'text-[10px] font-semibold uppercase tracking-wide',
+          ready ? 'text-emerald-300' : 'text-red-300',
+        )}>
+          Graph readiness
+        </p>
+        <span className={cn(
+          'rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase',
+          ready
+            ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+            : 'border-red-500/20 bg-red-500/10 text-red-300',
+        )}>
+          {status.replace(/_/g, ' ')}
+        </span>
+      </div>
+      <p className="text-[10px] text-[var(--text-muted)]">
+        {mappedCapabilityCount}/{requiredCapabilityCount} capabilities mapped
+        {missingCapabilityIds.length > 0 ? `; missing ${missingCapabilityIds.join(', ')}` : ''}
+      </p>
+    </div>
+  )
+}
+
 function MetricTile({
   icon,
   label,
@@ -455,6 +505,13 @@ function getDraftMappingReview(draft: Phase2ScenarioDraft) {
 
 function getDomainDiscovery(draft: Phase2ScenarioDraft): Record<string, unknown> | null {
   const candidate = draft.contract['domainDiscovery']
+  return candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+    ? candidate as Record<string, unknown>
+    : null
+}
+
+function getDraftGraphReadiness(draft: Phase2ScenarioDraft): Record<string, unknown> | null {
+  const candidate = getDomainDiscovery(draft)?.['graphReadiness']
   return candidate && typeof candidate === 'object' && !Array.isArray(candidate)
     ? candidate as Record<string, unknown>
     : null

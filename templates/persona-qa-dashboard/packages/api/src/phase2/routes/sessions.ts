@@ -20,6 +20,7 @@ import { LearningPlaybookService } from '../services/learning-playbook-service.j
 import { buildMaturityStatus } from '../services/maturity-service.js';
 import { MetaOrchestrator } from '../services/meta-orchestrator.js';
 import { ProfileTuningService } from '../services/profile-tuning-service.js';
+import { ScenarioDraftPromotionReadinessService } from '../services/scenario-draft-promotion-readiness-service.js';
 import {
   applyScenarioDraftMappingReview,
   getScenarioDraftMappingReview,
@@ -504,6 +505,20 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
       }
 
       return reply.status(201).send(coverage.createDraftFromGap(gap));
+    },
+  );
+
+  app.get<{ Params: { id: string }; Querystring: { actor?: string } }>(
+    '/api/p2/scenarios/drafts/:id/promotion-readiness',
+    async (request, reply) => {
+      const service = getSessionService();
+      const draft = service.getScenarioDraft(request.params.id);
+      if (!draft) return reply.status(404).send({ error: 'Scenario draft not found' });
+
+      const actor = typeof request.query.actor === 'string' && request.query.actor.trim()
+        ? request.query.actor.trim()
+        : draft.reviewedBy;
+      return reply.send(new ScenarioDraftPromotionReadinessService(service).buildReport(draft, actor));
     },
   );
 
