@@ -129,6 +129,42 @@ describe('L5GovernancePanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
     expect(onApproveDraft).toHaveBeenCalledWith('domain-draft-1')
   })
+
+  it('surfaces graph readiness blockers for domain scenario drafts', () => {
+    render(
+      <L5GovernancePanel
+        healingActions={[]}
+        governanceDecisions={[]}
+        learningProposals={[]}
+        scenarioDrafts={[domainScenarioDraft({
+          id: 'domain-draft-graph',
+          contract: {
+            domainDiscovery: {
+              mappingRequired: true,
+              graphReadiness: {
+                status: 'partially_mapped',
+                requiredCapabilityCount: 2,
+                mappedCapabilityCount: 1,
+                mappedCapabilityIds: ['submitOrder'],
+                missingCapabilityIds: ['fillCustomerEmail'],
+              },
+              mappingReview: {
+                selectorsMapped: true,
+                authMapped: true,
+                testDataMapped: true,
+                assertionsMapped: true,
+                reviewedBy: 'qa_lead',
+              },
+            },
+          },
+        })]}
+      />,
+    )
+
+    expect(screen.getByText('Graph readiness')).toBeInTheDocument()
+    expect(screen.getByText('partially mapped')).toBeInTheDocument()
+    expect(screen.getByText(/1\/2 capabilities mapped; missing fillCustomerEmail/)).toBeInTheDocument()
+  })
 })
 
 function healingAction(overrides: Partial<Phase2HealingAction> = {}): Phase2HealingAction {

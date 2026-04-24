@@ -584,6 +584,42 @@ export interface Phase2ScenarioDraftMappingReviewResponse {
   complete: boolean
 }
 
+export type Phase2ScenarioDraftPromotionRequirementStatus = 'passed' | 'blocked' | 'warning' | 'not_applicable'
+
+export interface Phase2ScenarioDraftPromotionRequirement {
+  id: string
+  label: string
+  status: Phase2ScenarioDraftPromotionRequirementStatus
+  blocking: boolean
+  detail: string
+  evidence?: Record<string, unknown>
+}
+
+export interface Phase2ScenarioDraftPromotionActionReadiness {
+  action: 'approve' | 'promote'
+  allowed: boolean
+  verdict: Phase2GovernanceVerdict
+  reason: string
+  requirements: string[]
+}
+
+export interface Phase2ScenarioDraftPromotionReadiness {
+  draftId: string
+  scenarioId: string
+  status: Phase2ScenarioDraftStatus
+  actor: string
+  readyForApproval: boolean
+  readyForPromotion: boolean
+  graphReadiness: Record<string, unknown> | null
+  mappingReview: Phase2ScenarioDraftMappingReview | null
+  requirements: Phase2ScenarioDraftPromotionRequirement[]
+  actions: {
+    approve: Phase2ScenarioDraftPromotionActionReadiness
+    promote: Phase2ScenarioDraftPromotionActionReadiness
+  }
+  nextSteps: string[]
+}
+
 export interface Phase2ClosedLoopRun {
   id: string
   status: Phase2ClosedLoopRunStatus
@@ -1053,6 +1089,10 @@ export const api = {
     fetchJSON<Phase2ScenarioDraft[]>(`${API_BASE}/api/p2/scenarios/drafts?${new URLSearchParams(compactParams({
       status: params?.status,
       limit: params?.limit ? String(params.limit) : undefined,
+    }))}`),
+  getPhase2ScenarioDraftPromotionReadiness: (id: string, params?: { actor?: string }) =>
+    fetchJSON<Phase2ScenarioDraftPromotionReadiness>(`${API_BASE}/api/p2/scenarios/drafts/${id}/promotion-readiness?${new URLSearchParams(compactParams({
+      actor: params?.actor,
     }))}`),
   approvePhase2LearningProposal: (id: string) =>
     fetchJSON<Phase2LearningProposal>(`${API_BASE}/api/p2/learning/proposals/${id}/approve`, { method: 'POST' }),
