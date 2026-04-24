@@ -614,8 +614,12 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
         request.body?.reviewedBy,
       );
       if (!draft) return reply.status(404).send({ error: 'Scenario draft not found' });
-      const materialization = await new L5MaterializationService(service).materializeScenarioDraft(draft);
-      return reply.send({ ...draft, materialization });
+      const materialization = await new L5MaterializationService(service).promoteScenarioDraftToRunnable(draft);
+      return reply.send({
+        ...draft,
+        materialization: materialization.manifest,
+        runnableScenarioRegistry: materialization.runnableScenarioRegistry,
+      });
     },
   );
 

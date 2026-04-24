@@ -41,6 +41,16 @@ function getGeneratedScenariosCandidates(): string[] {
   ].filter((candidate): candidate is string => Boolean(candidate))
 }
 
+function getPromotedScenariosCandidates(): string[] {
+  const generated = process.env['PERSONA_QA_SCENARIOS_FILE']
+  return [
+    process.env['PERSONA_QA_PROMOTED_SCENARIOS_FILE'],
+    generated ? path.join(path.dirname(path.resolve(generated)), 'scenarios.promoted.json') : undefined,
+    path.resolve(process.cwd(), 'adapter', 'scenarios', 'scenarios.promoted.json'),
+    path.resolve(process.cwd(), '..', '..', 'adapter', 'scenarios', 'scenarios.promoted.json'),
+  ].filter((candidate): candidate is string => Boolean(candidate))
+}
+
 function humanize(value: string): string {
   return value
     .replace(/[_-]+/g, ' ')
@@ -51,8 +61,8 @@ function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))]
 }
 
-function readGeneratedScenarioModels(): AdapterScenarioModel[] {
-  for (const candidate of getGeneratedScenariosCandidates()) {
+function readScenarioModels(candidates: string[]): AdapterScenarioModel[] {
+  for (const candidate of candidates) {
     if (!fs.existsSync(candidate)) continue
 
     try {
@@ -75,6 +85,14 @@ function readGeneratedScenarioModels(): AdapterScenarioModel[] {
   }
 
   return []
+}
+
+function readGeneratedScenarioModels(): AdapterScenarioModel[] {
+  return readScenarioModels(getGeneratedScenariosCandidates())
+}
+
+function readPromotedScenarioModels(): AdapterScenarioModel[] {
+  return readScenarioModels(getPromotedScenariosCandidates())
 }
 
 function scenarioStepDefinitions(model: AdapterScenarioModel): AdapterScenarioStepModel[] {
@@ -130,7 +148,7 @@ function toScenarioContract(model: AdapterScenarioModel): ScenarioContract {
 }
 
 function generatedScenarioMap(): Record<string, ScenarioContract> {
-  return Object.fromEntries(readGeneratedScenarioModels().map((scenario) => {
+  return Object.fromEntries([...readGeneratedScenarioModels(), ...readPromotedScenarioModels()].map((scenario) => {
     const contract = toScenarioContract(scenario)
     return [contract.id, contract]
   }))

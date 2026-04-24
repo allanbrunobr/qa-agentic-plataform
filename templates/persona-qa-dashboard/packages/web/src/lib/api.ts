@@ -584,6 +584,11 @@ export interface Phase2ScenarioDraftMappingReviewResponse {
   complete: boolean
 }
 
+export interface Phase2ScenarioDraftPromotionResponse extends Phase2ScenarioDraft {
+  materialization: Phase2L5Materialization
+  runnableScenarioRegistry: Phase2L5Materialization
+}
+
 export type Phase2ScenarioDraftPromotionRequirementStatus = 'passed' | 'blocked' | 'warning' | 'not_applicable'
 
 export interface Phase2ScenarioDraftPromotionRequirement {
@@ -1121,7 +1126,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   promotePhase2ScenarioDraft: (id: string, payload?: { reviewedBy?: string }) =>
-    fetchJSON<Phase2ScenarioDraft>(`${API_BASE}/api/p2/scenarios/drafts/${id}/promote`, {
+    fetchJSON<Phase2ScenarioDraftPromotionResponse>(`${API_BASE}/api/p2/scenarios/drafts/${id}/promote`, {
       method: 'POST',
       body: JSON.stringify(payload ?? {}),
     }),

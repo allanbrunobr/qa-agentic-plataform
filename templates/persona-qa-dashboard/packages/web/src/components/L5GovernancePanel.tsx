@@ -21,6 +21,7 @@ interface L5GovernancePanelProps {
   onRejectProposal?: (proposalId: string) => void
   onConfirmDraftMapping?: (draftId: string) => void
   onApproveDraft?: (draftId: string) => void
+  onPromoteDraft?: (draftId: string) => void
   onRejectDraft?: (draftId: string) => void
 }
 
@@ -54,6 +55,7 @@ export function L5GovernancePanel({
   onRejectProposal,
   onConfirmDraftMapping,
   onApproveDraft,
+  onPromoteDraft,
   onRejectDraft,
 }: L5GovernancePanelProps) {
   const appliedHealing = healingActions.filter((action) => action.status === 'applied').length
@@ -61,7 +63,7 @@ export function L5GovernancePanel({
   const proposedHealing = healingActions.filter((action) => action.status === 'proposed').length
   const pendingReviews = [
     ...learningProposals.filter((proposal) => proposal.status === 'proposed'),
-    ...scenarioDrafts.filter((draft) => draft.status === 'pending'),
+    ...scenarioDrafts.filter((draft) => draft.status === 'pending' || draft.status === 'approved'),
     ...healingActions.filter((action) => action.status === 'proposed'),
   ].length
   const blockedDecisions = governanceDecisions.filter((decision) => decision.verdict === 'blocked').length
@@ -75,7 +77,7 @@ export function L5GovernancePanel({
   const reviewableProposals = learningProposals.filter((proposal) => (
     proposal.status === 'proposed' || proposal.status === 'approved'
   ))
-  const reviewableDrafts = scenarioDrafts.filter((draft) => draft.status === 'pending')
+  const reviewableDrafts = scenarioDrafts.filter((draft) => draft.status === 'pending' || draft.status === 'approved')
 
   const activity = buildActivity({
     healingActions,
@@ -163,7 +165,7 @@ export function L5GovernancePanel({
                 title={draft.name}
                 description={draft.description ?? `Coverage gap: ${draft.gapType}`}
                 status={draft.status}
-                pending={actionPendingId === `draft:${draft.id}` || actionPendingId === `draft-mapping:${draft.id}`}
+                pending={actionPendingId === `draft:${draft.id}` || actionPendingId === `draft-mapping:${draft.id}` || actionPendingId === `draft-promote:${draft.id}`}
                 testId={`l5-draft-${draft.id}`}
                 extra={(requiresDraftMappingReview(draft) || getDraftGraphReadiness(draft)) ? (
                   <>
@@ -176,7 +178,11 @@ export function L5GovernancePanel({
                     ? { label: 'Confirm mapping', onClick: () => onConfirmDraftMapping(draft.id), tone: 'success' as const }
                     : null,
                   (!requiresDraftMappingReview(draft) || isDraftMappingReviewComplete(draft)) && onApproveDraft
+                  && draft.status === 'pending'
                     ? { label: 'Approve', onClick: () => onApproveDraft(draft.id), tone: 'success' as const }
+                    : null,
+                  draft.status === 'approved' && onPromoteDraft
+                    ? { label: 'Promote', onClick: () => onPromoteDraft(draft.id), tone: 'success' as const }
                     : null,
                   onRejectDraft ? { label: 'Reject', onClick: () => onRejectDraft(draft.id), tone: 'danger' as const } : null,
                 ].filter((action): action is ReviewAction => Boolean(action))}

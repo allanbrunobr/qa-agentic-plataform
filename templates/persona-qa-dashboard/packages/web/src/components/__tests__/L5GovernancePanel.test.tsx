@@ -58,22 +58,29 @@ describe('L5GovernancePanel', () => {
   it('invokes review action callbacks', () => {
     const onApproveProposal = vi.fn()
     const onRejectDraft = vi.fn()
+    const onPromoteDraft = vi.fn()
 
     render(
       <L5GovernancePanel
         healingActions={[]}
         governanceDecisions={[]}
         learningProposals={[learningProposal({ id: 'proposal-2', status: 'proposed' })]}
-        scenarioDrafts={[scenarioDraft({ id: 'draft-1', status: 'pending' })]}
+        scenarioDrafts={[
+          scenarioDraft({ id: 'draft-1', status: 'pending' }),
+          scenarioDraft({ id: 'draft-2', status: 'approved', name: 'Approved coverage' }),
+        ]}
         onApproveProposal={onApproveProposal}
+        onPromoteDraft={onPromoteDraft}
         onRejectDraft={onRejectDraft}
       />,
     )
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Approve' })[0]!)
-    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Promote' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Reject' })[0]!)
 
     expect(onApproveProposal).toHaveBeenCalledWith('proposal-2')
+    expect(onPromoteDraft).toHaveBeenCalledWith('draft-2')
     expect(onRejectDraft).toHaveBeenCalledWith('draft-1')
   })
 
