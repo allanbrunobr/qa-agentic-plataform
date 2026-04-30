@@ -391,7 +391,7 @@ function frontendHandlerForCapability(
 }
 
 const openPrimaryRouteHandler = async (
-  capability: { routeHint?: string } | undefined,
+  capability: { id?: string; routeHint?: string } | undefined,
   context: { page?: unknown },
 ): Promise<ToolResult> => {
   const page = requirePage(context.page)
@@ -399,6 +399,10 @@ const openPrimaryRouteHandler = async (
   await page.goto?.(route, { waitUntil: 'domcontentloaded' })
 
   return ok({
+    commandResult: buildCommandResult('navigate', capability, {
+      route,
+      currentUrl: safeCurrentUrl(page),
+    }),
     routeLoaded: {
       route,
       currentUrl: safeCurrentUrl(page),
@@ -412,7 +416,7 @@ const openPrimaryRouteHandler = async (
 
 const fillCustomerEmailHandler = async (
   input: unknown,
-  capability: { routeHint?: string } | undefined,
+  capability: { id?: string; routeHint?: string } | undefined,
   context: { page?: unknown },
 ): Promise<ToolResult> => {
   const page = requirePage(context.page)
@@ -428,6 +432,10 @@ const fillCustomerEmailHandler = async (
   ], email)
 
   return ok({
+    commandResult: buildCommandResult('fill', capability, {
+      target: 'email',
+      valueProvided: true,
+    }),
     customerEmail: email,
     interactionResult: {
       type: 'fill',
@@ -438,7 +446,7 @@ const fillCustomerEmailHandler = async (
 }
 
 const addCartItemHandler = async (
-  capability: { routeHint?: string; purpose?: string; sourceHint?: string } | undefined,
+  capability: { id?: string; routeHint?: string; purpose?: string; sourceHint?: string } | undefined,
   context: { page?: unknown },
 ): Promise<ToolResult> => {
   const page = requirePage(context.page)
@@ -450,6 +458,10 @@ const addCartItemHandler = async (
   ])
 
   return ok({
+    commandResult: buildCommandResult('click', capability, {
+      target: 'cart_action',
+      completed: true,
+    }),
     cartItemId: `item-${Date.now()}`,
     interactionResult: {
       type: 'click',
@@ -460,7 +472,7 @@ const addCartItemHandler = async (
 }
 
 const submitOrderHandler = async (
-  capability: { routeHint?: string; purpose?: string; sourceHint?: string } | undefined,
+  capability: { id?: string; routeHint?: string; purpose?: string; sourceHint?: string } | undefined,
   context: { page?: unknown },
 ): Promise<ToolResult> => {
   const page = requirePage(context.page)
@@ -472,6 +484,10 @@ const submitOrderHandler = async (
   ])
 
   return ok({
+    commandResult: buildCommandResult('click', capability, {
+      target: 'primary_submit',
+      completed: true,
+    }),
     orderSubmitted: true,
     primaryActionCompleted: true,
     interactionResult: {
@@ -483,7 +499,7 @@ const submitOrderHandler = async (
 }
 
 const interactWithPrimaryActionHandler = async (
-  capability: { routeHint?: string; purpose?: string; sourceHint?: string } | undefined,
+  capability: { id?: string; routeHint?: string; purpose?: string; sourceHint?: string } | undefined,
   context: { page?: unknown },
 ): Promise<ToolResult> => {
   const page = requirePage(context.page)
@@ -495,6 +511,10 @@ const interactWithPrimaryActionHandler = async (
   ])
 
   return ok({
+    commandResult: buildCommandResult('click', capability, {
+      target: capability?.id ?? 'primary_action',
+      completed: true,
+    }),
     primaryActionCompleted: true,
     interactionResult: {
       type: 'click',
@@ -563,6 +583,19 @@ function readGeneratedCapabilities(): Array<{ id: string; routeHint?: string; pu
       sourceHint: typeof item.sourceHint === 'string' ? item.sourceHint : undefined,
     }]
   })
+}
+
+function buildCommandResult(
+  action: 'navigate' | 'fill' | 'click',
+  capability: { id?: string } | undefined,
+  details: Record<string, unknown>,
+) {
+  return {
+    action,
+    capabilityId: capability?.id ?? null,
+    completed: true,
+    ...details,
+  }
 }
 
 function isReadOnlyFrontendCapability(capabilityId: string): boolean {
@@ -743,10 +776,19 @@ function detectHealthEndpointPath(): string {
 
 function detectPrimaryEndpointPath(): string {
   const runtimePlan = readGeneratedAdapterJson<RuntimePlan>('runtime/runtime-plan.generated.json')
-  const route = runtimePlan?.routeCoverage?.find((item) => (
-    typeof item.path === 'string' && item.path.length > 0
+  const routeCoverage = runtimePlan?.routeCoverage ?? []
+  const preferredRoute = routeCoverage.find((item) => (
+    typeof item.path === 'string'
+      && item.path.length > 0
+      && item.path !== '/'
+      && !/health|heartbeat|readiness|liveness|ready|live/i.test(item.path)
   ))
-  return typeof route?.path === 'string' ? route.path : '/'
+  if (typeof preferredRoute?.path === 'string') return preferredRoute.path
+
+  const nonRootRoute = routeCoverage.find((item) => (
+    typeof item.path === 'string' && item.path.length > 0 && item.path !== '/'
+  ))
+  return typeof nonRootRoute?.path === 'string' ? nonRootRoute.path : '/'
 }
 
 async function callEndpoint(endpointPath: string): Promise<Record<string, unknown>> {

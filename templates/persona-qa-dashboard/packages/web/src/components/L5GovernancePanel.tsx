@@ -7,6 +7,8 @@ import type {
   Phase2HealingAction,
   Phase2LearningProposal,
   Phase2ScenarioDraft,
+  Phase2ScenarioDraftGraphReadiness,
+  Phase2ScenarioDraftPromotionReadiness,
 } from '@/lib/api'
 
 interface L5GovernancePanelProps {
@@ -14,6 +16,7 @@ interface L5GovernancePanelProps {
   governanceDecisions: Phase2GovernanceDecision[]
   learningProposals: Phase2LearningProposal[]
   scenarioDrafts: Phase2ScenarioDraft[]
+  draftReadinessById?: Record<string, Phase2ScenarioDraftPromotionReadiness | undefined>
   loading?: boolean
   actionPendingId?: string | null
   onApproveProposal?: (proposalId: string) => void
@@ -48,6 +51,7 @@ export function L5GovernancePanel({
   governanceDecisions,
   learningProposals,
   scenarioDrafts,
+  draftReadinessById = {},
   loading = false,
   actionPendingId = null,
   onApproveProposal,
@@ -77,7 +81,14 @@ export function L5GovernancePanel({
   const reviewableProposals = learningProposals.filter((proposal) => (
     proposal.status === 'proposed' || proposal.status === 'approved'
   ))
-  const reviewableDrafts = scenarioDrafts.filter((draft) => draft.status === 'pending' || draft.status === 'approved')
+  const reviewableDrafts = scenarioDrafts
+    .filter((draft) => draft.status === 'pending' || draft.status === 'approved')
+    .sort((left, right) => compareDraftReviewPriority(
+      left,
+      right,
+      draftReadinessById[left.id],
+      draftReadinessById[right.id],
+    ))
 
   const activity = buildActivity({
     healingActions,
@@ -159,6 +170,23 @@ export function L5GovernancePanel({
             ))}
 
             {reviewableDrafts.slice(0, 4).map((draft) => (
+              (() => {
+                const readiness = draftReadinessById[draft.id]
+                const recommendation = readiness?.recommendation
+                const recommendationAction = recommendation?.action
+                const mappingReviewPending = requiresDraftMappingReview(draft) && !isDraftMappingReviewComplete(draft)
+                const confirmMappingAction = mappingReviewPending ? onConfirmDraftMapping : undefined
+                const approveAction = draft.status === 'pending'
+                  && (!requiresDraftMappingReview(draft) || isDraftMappingReviewComplete(draft))
+                  && recommendationAction !== 'review'
+                  ? onApproveDraft
+                  : undefined
+                const promoteAction = draft.status === 'approved'
+                  && recommendationAction === 'promote'
+                  ? onPromoteDraft
+                  : undefined
+
+                return (
               <ReviewItem
                 key={draft.id}
                 label="Scenario draft"
@@ -169,24 +197,26 @@ export function L5GovernancePanel({
                 testId={`l5-draft-${draft.id}`}
                 extra={(requiresDraftMappingReview(draft) || getDraftGraphReadiness(draft)) ? (
                   <>
+                    {readiness && <DraftReadinessSummary readiness={readiness} />}
                     {requiresDraftMappingReview(draft) && <MappingReviewSummary draft={draft} />}
                     <GraphReadinessSummary draft={draft} />
                   </>
                 ) : undefined}
                 actions={[
-                  requiresDraftMappingReview(draft) && !isDraftMappingReviewComplete(draft) && onConfirmDraftMapping
-                    ? { label: 'Confirm mapping', onClick: () => onConfirmDraftMapping(draft.id), tone: 'success' as const }
+                  confirmMappingAction
+                    ? { label: 'Confirm mapping', onClick: () => confirmMappingAction(draft.id), tone: 'success' as const }
                     : null,
-                  (!requiresDraftMappingReview(draft) || isDraftMappingReviewComplete(draft)) && onApproveDraft
-                  && draft.status === 'pending'
-                    ? { label: 'Approve', onClick: () => onApproveDraft(draft.id), tone: 'success' as const }
+                  approveAction
+                    ? { label: 'Approve', onClick: () => approveAction(draft.id), tone: 'success' as const }
                     : null,
-                  draft.status === 'approved' && onPromoteDraft
-                    ? { label: 'Promote', onClick: () => onPromoteDraft(draft.id), tone: 'success' as const }
+                  promoteAction
+                    ? { label: 'Promote', onClick: () => promoteAction(draft.id), tone: 'success' as const }
                     : null,
                   onRejectDraft ? { label: 'Reject', onClick: () => onRejectDraft(draft.id), tone: 'danger' as const } : null,
                 ].filter((action): action is ReviewAction => Boolean(action))}
               />
+                )
+              })()
             ))}
           </div>
         </div>
@@ -335,16 +365,18 @@ function GraphReadinessSummary({ draft }: { draft: Phase2ScenarioDraft }) {
   const readiness = getDraftGraphReadiness(draft)
   if (!readiness) return null
 
-  const status = typeof readiness['status'] === 'string' ? readiness['status'] : 'unmapped'
-  const missingCapabilityIds = Array.isArray(readiness['missingCapabilityIds'])
-    ? readiness['missingCapabilityIds'].filter((item): item is string => typeof item === 'string')
-    : []
-  const mappedCapabilityCount = typeof readiness['mappedCapabilityCount'] === 'number'
-    ? readiness['mappedCapabilityCount']
-    : 0
-  const requiredCapabilityCount = typeof readiness['requiredCapabilityCount'] === 'number'
-    ? readiness['requiredCapabilityCount']
-    : 0
+  const status = readiness.status || 'unmapped'
+  const missingCapabilityIds = readiness.missingCapabilityIds ?? []
+  const mappedCapabilityCount = readiness.mappedCapabilityCount ?? 0
+  const requiredCapabilityCount = readiness.requiredCapabilityCount ?? 0
+  const confidence = typeof readiness.confidence === 'number' ? readiness.confidence : 0
+  const supportTypes = readiness.supportSourceTypes ?? []
+  const supportCounts = [
+    ['handlers', readiness.supportHandlerCount ?? 0] as const,
+    ['endpoints', readiness.supportEndpointCount ?? 0] as const,
+    ['http', readiness.supportHttpCallCount ?? 0] as const,
+    ['data', readiness.supportDataAccessCount ?? 0] as const,
+  ].filter(([, count]) => count > 0)
   const ready = status === 'fully_mapped' && requiredCapabilityCount > 0 && mappedCapabilityCount === requiredCapabilityCount
 
   return (
@@ -367,11 +399,69 @@ function GraphReadinessSummary({ draft }: { draft: Phase2ScenarioDraft }) {
         )}>
           {status.replace(/_/g, ' ')}
         </span>
+        <span className="rounded-md border border-[var(--border)] px-2 py-0.5 text-[10px] font-semibold uppercase text-[var(--text-muted)]">
+          confidence {confidence.toFixed(2)}
+        </span>
       </div>
       <p className="text-[10px] text-[var(--text-muted)]">
         {mappedCapabilityCount}/{requiredCapabilityCount} capabilities mapped
         {missingCapabilityIds.length > 0 ? `; missing ${missingCapabilityIds.join(', ')}` : ''}
       </p>
+      {(supportCounts.length > 0 || supportTypes.length > 0) && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {supportCounts.map(([label, count]) => (
+            <span
+              key={String(label)}
+              className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-cyan-300"
+            >
+              {label} {count}
+            </span>
+          ))}
+          {supportCounts.length === 0 && supportTypes.map((type) => (
+            <span
+              key={type}
+              className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-cyan-300"
+            >
+              {type.replace(/_/g, ' ')}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DraftReadinessSummary({ readiness }: { readiness: Phase2ScenarioDraftPromotionReadiness }) {
+  const recommendation = readiness.recommendation
+  const tone = recommendation.action === 'promote'
+    ? 'border-cyan-500/20 bg-cyan-500/10 text-cyan-300'
+    : recommendation.action === 'approve'
+      ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+      : 'border-amber-500/20 bg-amber-500/10 text-amber-300'
+
+  return (
+    <div className="mt-3 rounded-md border border-[var(--border)] bg-[var(--bg-hover)] p-2">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+          Promotion readiness
+        </p>
+        <span className={cn('rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase', tone)}>
+          {recommendation.priority}
+        </span>
+        <span className={cn('rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase', tone)}>
+          {recommendation.action.replace(/_/g, ' ')}
+        </span>
+      </div>
+      <p className="text-[10px] leading-relaxed text-[var(--text-secondary)]">
+        {recommendation.summary}
+      </p>
+      {!readiness.readyForPromotion && readiness.nextSteps.length > 0 && (
+        <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-[var(--text-muted)]">
+          {readiness.nextSteps.slice(0, 3).map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
@@ -516,9 +606,38 @@ function getDomainDiscovery(draft: Phase2ScenarioDraft): Record<string, unknown>
     : null
 }
 
-function getDraftGraphReadiness(draft: Phase2ScenarioDraft): Record<string, unknown> | null {
+function getDraftGraphReadiness(draft: Phase2ScenarioDraft): Phase2ScenarioDraftGraphReadiness | null {
   const candidate = getDomainDiscovery(draft)?.['graphReadiness']
   return candidate && typeof candidate === 'object' && !Array.isArray(candidate)
-    ? candidate as Record<string, unknown>
+    ? candidate as Phase2ScenarioDraftGraphReadiness
     : null
+}
+
+function compareDraftReviewPriority(
+  left: Phase2ScenarioDraft,
+  right: Phase2ScenarioDraft,
+  leftReadiness?: Phase2ScenarioDraftPromotionReadiness,
+  rightReadiness?: Phase2ScenarioDraftPromotionReadiness,
+) {
+  const leftRank = recommendationRank(leftReadiness?.recommendation.priority)
+  const rightRank = recommendationRank(rightReadiness?.recommendation.priority)
+  if (leftRank !== rightRank) return leftRank - rightRank
+  const leftActionRank = actionRank(leftReadiness?.recommendation.action)
+  const rightActionRank = actionRank(rightReadiness?.recommendation.action)
+  if (leftActionRank !== rightActionRank) return leftActionRank - rightActionRank
+  return left.name.localeCompare(right.name)
+}
+
+function recommendationRank(priority?: Phase2ScenarioDraftPromotionReadiness['recommendation']['priority']) {
+  if (priority === 'critical') return 0
+  if (priority === 'high') return 1
+  if (priority === 'normal') return 2
+  return 3
+}
+
+function actionRank(action?: Phase2ScenarioDraftPromotionReadiness['recommendation']['action']) {
+  if (action === 'promote') return 0
+  if (action === 'approve') return 1
+  if (action === 'review') return 2
+  return 3
 }

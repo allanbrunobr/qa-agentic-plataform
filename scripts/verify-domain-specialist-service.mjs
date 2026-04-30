@@ -144,6 +144,71 @@ try {
     assert(educationBundle.scenarios.some((scenario) => scenario.id === 'manage_course_access'), 'course access scenario should be generated')
     assert(findMissingEvidenceRefs(educationBundle.surfaceMap, refsFromBundle(educationBundle)).length === 0, 'education bundle should not reference missing evidence')
 
+    const retailSurface = FrontendSurfaceMapSchema.parse({
+      targetId: 'retail-fixture',
+      buttons: [
+        { id: 'button_start_fulfillment', kind: 'button', source, buttonText: 'Iniciar Pedido', extractedText: 'Iniciar Pedido' },
+        { id: 'button_generate_report', kind: 'button', source, buttonText: 'Gerar Relatório', extractedText: 'Gerar Relatório' },
+        { id: 'button_end_fulfillment', kind: 'button', source, buttonText: 'Encerrar Pedido', extractedText: 'Encerrar Pedido' },
+        { id: 'button_new_fulfillment', kind: 'button', source, buttonText: 'Nova Pedido', extractedText: 'Nova Pedido' },
+        { id: 'button_copy_intake', kind: 'button', source, buttonText: 'Copiar Intake', extractedText: 'Copiar Intake' },
+        { id: 'button_copy_notes', kind: 'button', source, buttonText: 'Copy Notes note to clipboard', extractedText: 'Copy Notes note to clipboard' },
+        { id: 'button_settings', kind: 'button', source, buttonText: 'Settings', extractedText: 'Settings' },
+      ],
+      texts: [
+        { id: 'text_intake', kind: 'text', source, textRole: 'heading', extractedText: 'Intake Estruturada' },
+        { id: 'text_report', kind: 'text', source, textRole: 'heading', extractedText: 'Relatório Fulfillment Agent' },
+        { id: 'text_notes', kind: 'text', source, textRole: 'heading', extractedText: 'Notes note' },
+        { id: 'text_medications', kind: 'text', source, textRole: 'label', extractedText: 'Medicamentos em Uso' },
+      ],
+      components: [
+        { id: 'component_intake_panel', kind: 'component', source, componentName: 'Intake', extractedText: 'Intake' },
+        { id: 'component_dispatch_report_modal', kind: 'component', source, componentName: 'DispatchReportModal', extractedText: 'DispatchReportModal' },
+      ],
+      frameworks: [
+        { id: 'framework_vite', kind: 'framework', source: { filePath: 'package.json' }, frameworkName: 'vite', extractedText: 'vite' },
+        { id: 'framework_react', kind: 'framework', source: { filePath: 'package.json' }, frameworkName: 'react', extractedText: 'react' },
+      ],
+      tests: [
+        { id: 'test_fulfillment', kind: 'test', source: { filePath: 'tests/fulfillment.spec.ts' }, testName: 'conduct fulfillment and review report', tool: 'playwright', extractedText: 'conduct fulfillment and review report' },
+      ],
+    })
+
+    const retailBundle = inferDomainDiscoveryBundle(retailSurface)
+    assert(retailBundle.domain.domain === 'retail', 'retail domain should be inferred')
+    assert(retailBundle.personas.some((persona) => persona.id === 'operator'), 'operator persona should be generated')
+    assert(retailBundle.personas.some((persona) => persona.id === 'operational_reviewer'), 'operational reviewer persona should be generated')
+
+    const fulfillmentscenario = retailBundle.scenarios.find((scenario) => scenario.id === 'conduct_fulfillment')
+    assert(fulfillmentscenario, 'fulfillment scenario should be generated')
+    assert(
+      fulfillmentscenario.steps.map((step) => step.capabilityId).join(',') === [
+        'click_iniciar_pedido',
+        'click_gerar_relat_rio',
+        'click_encerrar_pedido',
+        'assert_retail_visible_state',
+      ].join(','),
+      'fulfillment scenario should order start -> generate report -> end -> assert',
+    )
+
+    const reviewScenario = retailBundle.scenarios.find((scenario) => scenario.id === 'review_dispatch_report')
+    assert(reviewScenario, 'dispatch report review scenario should be generated')
+    assert(
+      reviewScenario.steps.map((step) => step.capabilityId).join(',') === [
+        'click_gerar_relat_rio',
+        'click_copiar_intake',
+        'click_copy_notes_note_to_clipboard',
+        'assert_retail_visible_state',
+      ].join(','),
+      'review scenario should prefer report/review actions over fulfillment restart actions',
+    )
+
+    assert(
+      !retailBundle.capabilities.some((capability) => capability.id === 'click_settings'),
+      'utility controls should not be promoted into retail capabilities',
+    )
+    assert(findMissingEvidenceRefs(retailBundle.surfaceMap, refsFromBundle(retailBundle)).length === 0, 'retail bundle should not reference missing evidence')
+
     const unknownSurface = FrontendSurfaceMapSchema.parse({
       targetId: 'unknown-fixture',
       routes: [

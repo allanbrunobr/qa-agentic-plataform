@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto'
 import { L5LoopGuardService } from './l5-loop-guard-service.js'
+import {
+  getScenarioDraftGraphReadiness,
+  hasScenarioDraftGraphStructuralEvidence,
+  isScenarioDraftMappingReviewComplete,
+  requiresDomainMappingReview,
+} from './scenario-draft-mapping-review.js'
 import type {
   GovernanceDecision,
   GovernanceSubjectType,
@@ -33,6 +39,7 @@ export interface L5AuditBundleReplayPlan {
 export type L5KnowledgePromotionType = 'learning_overlay' | 'scenario_contract' | 'healing_policy'
 export type L5KnowledgePromotionStatus = 'requires_review' | 'approved' | 'materialized' | 'blocked' | 'rejected'
 export type L5KnowledgePromotionNextAction = 'approve' | 'apply' | 'promote' | 'review' | 'none'
+export type L5KnowledgePromotionPriority = 'critical' | 'high' | 'normal' | 'low'
 
 export interface L5KnowledgePromotionCandidate {
   id: string
@@ -45,6 +52,7 @@ export interface L5KnowledgePromotionCandidate {
   title: string
   target: string
   reason: string
+  priority: L5KnowledgePromotionPriority
   approvalRequired: boolean
   materializationReady: boolean
   nextAction: L5KnowledgePromotionNextAction
@@ -173,10 +181,19 @@ export class L5AuditBundleService {
   }
 
   private collectScenarioDrafts(refs: SubjectRef[]): ScenarioDraft[] {
-    return refs
+    const drafts = refs
       .filter((ref) => ref.subjectType === 'scenario_draft')
       .map((ref) => this.sessionService.getScenarioDraft(ref.subjectId))
       .filter((draft): draft is ScenarioDraft => Boolean(draft))
+
+    const byId = new Map(drafts.map((draft) => [draft.id, draft]))
+    for (const draft of this.sessionService.listScenarioDrafts({ limit: 200 })) {
+      if (!byId.has(draft.id)) byId.set(draft.id, draft)
+    }
+
+    return Array.from(byId.values()).sort((left, right) => (
+      new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+    ))
   }
 
   private collectMaterializations(refs: SubjectRef[], materializationIds: Set<string>): L5Materialization[] {
@@ -283,7 +300,7 @@ function buildPromotionPlan(
     ...related.learningProposals.map((proposal) => learningPromotionCandidate(run, proposal, related)),
     ...related.scenarioDrafts.map((draft) => scenarioPromotionCandidate(run, draft, related)),
     ...related.healingActions.map((action) => healingPromotionCandidate(run, action, related)),
-  ].sort((left, right) => promotionRank(left.status) - promotionRank(right.status))
+  ].sort(comparePromotionCandidates)
 
   return {
     candidates,
@@ -327,6 +344,7 @@ function learningPromotionCandidate(
     title: `${proposal.type.replace(/_/g, ' ')} for ${proposal.stepId}`,
     target: proposal.target ?? (proposal.agentId ? `agent:${proposal.agentId}` : 'agent:*'),
     reason: stringValue(proposal.recommendation['reason'], 'Learning proposal is available for governed promotion.'),
+    priority: defaultPromotionPriority(status),
     approvalRequired: status !== 'materialized',
     materializationReady: proposal.status === 'approved' || proposal.status === 'applied',
     nextAction: learningNextAction(proposal.status, Boolean(materialization)),
@@ -354,6 +372,17 @@ function scenarioPromotionCandidate(
       : draft.status === 'approved' || draft.status === 'promoted'
         ? 'approved'
         : 'requires_review'
+  const graphReadiness = getScenarioDraftGraphReadiness(draft)
+  const structuralReady = graphReadiness ? hasScenarioDraftGraphStructuralEvidence(graphReadiness) : false
+  const mappingReady = !requiresDomainMappingReview(draft) || isScenarioDraftMappingReviewComplete(draft)
+  const structurallyPromotable = graphReadiness?.status === 'fully_mapped' && structuralReady && mappingReady
+  const priority = classifyScenarioDraftPromotionPriority({
+    draftStatus: draft.status,
+    candidateStatus: status,
+    graphReadinessStatus: graphReadiness?.status,
+    structuralReady,
+    mappingReady,
+  })
   const version = promotionVersion({
     subjectType: 'scenario_draft',
     subjectId: draft.id,
@@ -361,6 +390,14 @@ function scenarioPromotionCandidate(
     gapType: draft.gapType,
     materializationChecksum: materialization?.checksum,
   })
+  const graphReason = graphReadiness
+    ? ` Graph ${graphReadiness.status} @ ${graphReadiness.confidence.toFixed(2)}.`
+    : ''
+  const structureReason = structurallyPromotable
+    ? ' Structural evidence is promotion-ready.'
+    : graphReadiness && !structuralReady
+      ? ' Structural evidence is still shallow.'
+      : ''
 
   return {
     id: candidateId('scenario_draft', draft.id, version),
@@ -372,7 +409,8 @@ function scenarioPromotionCandidate(
     version,
     title: draft.name,
     target: `scenario:${draft.scenarioId}`,
-    reason: draft.description ?? `Scenario draft generated from ${draft.gapType}.`,
+    reason: `${draft.description ?? `Scenario draft generated from ${draft.gapType}.`}${graphReason}${structureReason}`.trim(),
+    priority,
     approvalRequired: status !== 'materialized',
     materializationReady: draft.status === 'approved' || draft.status === 'promoted',
     nextAction: scenarioNextAction(draft.status, Boolean(materialization)),
@@ -382,6 +420,19 @@ function scenarioPromotionCandidate(
       reviewedBy: draft.reviewedBy,
       governanceEvidence: countGovernanceEvidence(related.governanceDecisions, 'scenario_draft', draft.id),
       materializationId: materialization?.id,
+      graphReadinessStatus: graphReadiness?.status,
+      graphConfidence: graphReadiness?.confidence,
+      graphStructuralReady: structuralReady,
+      graphMappedCapabilityCount: graphReadiness?.mappedCapabilityCount,
+      graphRequiredCapabilityCount: graphReadiness?.requiredCapabilityCount,
+      graphSupportCounts: graphReadiness ? {
+        handlers: graphReadiness.supportHandlerCount,
+        endpoints: graphReadiness.supportEndpointCount,
+        http: graphReadiness.supportHttpCallCount,
+        data: graphReadiness.supportDataAccessCount,
+      } : undefined,
+      mappingReady,
+      structurallyPromotable,
     },
   }
 }
@@ -419,6 +470,7 @@ function healingPromotionCandidate(
     title: action.type.replace(/_/g, ' '),
     target: action.target,
     reason: action.reason,
+    priority: defaultPromotionPriority(status),
     approvalRequired: status !== 'materialized',
     materializationReady: action.status === 'applied',
     nextAction: healingNextAction(action.status),
@@ -485,6 +537,42 @@ function candidateId(subjectType: GovernanceSubjectType, subjectId: string, vers
 
 function promotionVersion(value: Record<string, unknown>): string {
   return checksum(value)
+}
+
+function defaultPromotionPriority(status: L5KnowledgePromotionStatus): L5KnowledgePromotionPriority {
+  if (status === 'approved') return 'high'
+  if (status === 'requires_review') return 'normal'
+  return 'low'
+}
+
+export function classifyScenarioDraftPromotionPriority(input: {
+  draftStatus: ScenarioDraft['status']
+  candidateStatus: L5KnowledgePromotionStatus
+  graphReadinessStatus?: string
+  structuralReady: boolean
+  mappingReady: boolean
+}): L5KnowledgePromotionPriority {
+  if (input.candidateStatus === 'materialized' || input.candidateStatus === 'rejected') return 'low'
+  if (input.draftStatus === 'approved' && input.graphReadinessStatus === 'fully_mapped' && input.structuralReady && input.mappingReady) return 'critical'
+  if ((input.draftStatus === 'pending' || input.draftStatus === 'revised') && input.graphReadinessStatus === 'fully_mapped' && input.structuralReady && input.mappingReady) return 'high'
+  if (input.graphReadinessStatus === 'partially_mapped' || (input.graphReadinessStatus === 'fully_mapped' && !input.structuralReady)) return 'normal'
+  if (input.candidateStatus === 'approved') return 'high'
+  return 'low'
+}
+
+export function comparePromotionCandidates(left: L5KnowledgePromotionCandidate, right: L5KnowledgePromotionCandidate): number {
+  const statusDelta = promotionRank(left.status) - promotionRank(right.status)
+  if (statusDelta !== 0) return statusDelta
+  const priorityDelta = promotionPriorityRank(left.priority) - promotionPriorityRank(right.priority)
+  if (priorityDelta !== 0) return priorityDelta
+  return left.title.localeCompare(right.title)
+}
+
+function promotionPriorityRank(priority: L5KnowledgePromotionPriority): number {
+  if (priority === 'critical') return 0
+  if (priority === 'high') return 1
+  if (priority === 'normal') return 2
+  return 3
 }
 
 function promotionRank(status: L5KnowledgePromotionStatus): number {

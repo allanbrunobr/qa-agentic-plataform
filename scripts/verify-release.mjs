@@ -14,7 +14,9 @@ const tsxLoader = path.join(dashboardRoot, 'node_modules/tsx/dist/loader.mjs')
 const preferredNodeBin = process.env.AGENTIC_RELEASE_NODE_BIN
   ?? path.join(process.env.HOME ?? '', '.nvm/versions/node/v22.13.1/bin')
 const preferredNodePath = path.join(preferredNodeBin, 'node')
+const preferredNpmCliPath = path.join(preferredNodeBin, 'lib/node_modules/npm/bin/npm-cli.js')
 const releaseNodePath = fs.existsSync(preferredNodePath) ? preferredNodePath : process.execPath
+const releaseNpmCliPath = fs.existsSync(preferredNpmCliPath) ? preferredNpmCliPath : null
 const releasePath = fs.existsSync(preferredNodePath)
   ? `${preferredNodeBin}${path.delimiter}${process.env.PATH ?? ''}`
   : process.env.PATH
@@ -30,6 +32,7 @@ const apiReleaseTests = [
   'src/phase2/__tests__/evidence-tools.test.ts',
   'src/phase2/__tests__/l5-services.test.ts',
   'src/phase2/__tests__/l5-soak.test.ts',
+  'src/phase2/__tests__/scenario-draft-promotion-readiness-service.test.ts',
   'src/phase2/__tests__/governance-policy-service.test.ts',
   'src/phase2/__tests__/independent-auditor-service.test.ts',
   'src/phase2/__tests__/sessions-routes.test.ts',
@@ -121,51 +124,74 @@ const steps = [
   },
   {
     name: 'domain discovery contract verification',
-    command: 'npm',
-    args: ['run', 'verify:domain-discovery-contracts'],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'run', 'verify:domain-discovery-contracts']
+      : ['run', 'verify:domain-discovery-contracts'],
     cwd: repoRoot,
     env: releaseEnv,
   },
   {
     name: 'static frontend scanner verification',
-    command: 'npm',
-    args: ['run', 'verify:static-frontend-scanner'],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'run', 'verify:static-frontend-scanner']
+      : ['run', 'verify:static-frontend-scanner'],
     cwd: repoRoot,
     env: releaseEnv,
   },
   {
     name: 'domain fixture matrix verification',
-    command: 'npm',
-    args: ['run', 'verify:domain-fixture-matrix'],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'run', 'verify:domain-fixture-matrix']
+      : ['run', 'verify:domain-fixture-matrix'],
     cwd: repoRoot,
     env: releaseEnv,
   },
   {
     name: 'domain specialist service verification',
-    command: 'npm',
-    args: ['run', 'verify:domain-specialist-service'],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'run', 'verify:domain-specialist-service']
+      : ['run', 'verify:domain-specialist-service'],
     cwd: repoRoot,
     env: releaseEnv,
   },
   {
     name: 'generic frontend install/discovery smoke',
-    command: 'npm',
-    args: ['run', 'verify:generic-frontend'],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'run', 'verify:generic-frontend']
+      : ['run', 'verify:generic-frontend'],
     cwd: repoRoot,
     env: releaseEnv,
   },
   {
     name: 'generic repository type install/discovery smoke',
-    command: 'npm',
-    args: ['run', 'verify:generic-repository-types'],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'run', 'verify:generic-repository-types']
+      : ['run', 'verify:generic-repository-types'],
     cwd: repoRoot,
     env: releaseEnv,
   },
   {
     name: 'generic repository deterministic runtime smoke',
-    command: 'npm',
-    args: ['run', 'verify:generic-runtime-execution'],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'run', 'verify:generic-runtime-execution']
+      : ['run', 'verify:generic-runtime-execution'],
     cwd: repoRoot,
+    env: releaseEnv,
+  },
+  {
+    name: 'api: rebuild native sqlite binding',
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'rebuild', 'better-sqlite3']
+      : ['rebuild', 'better-sqlite3'],
+    cwd: dashboardRoot,
     env: releaseEnv,
   },
   {
@@ -183,8 +209,10 @@ const steps = [
   },
   {
     name: 'api: L4/L5 release vitest',
-    command: 'npm',
-    args: ['exec', '--', 'vitest', 'run', '--configLoader', 'runner', ...apiReleaseTests],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'exec', '--', 'vitest', 'run', '--configLoader', 'runner', ...apiReleaseTests]
+      : ['exec', '--', 'vitest', 'run', '--configLoader', 'runner', ...apiReleaseTests],
     cwd: apiRoot,
     env: {
       PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS: '1',
@@ -192,20 +220,26 @@ const steps = [
   },
   {
     name: 'web: release vitest',
-    command: 'npm',
-    args: ['exec', '--', 'vitest', 'run', ...webReleaseTests],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'exec', '--', 'vitest', 'run', ...webReleaseTests]
+      : ['exec', '--', 'vitest', 'run', ...webReleaseTests],
     cwd: webRoot,
   },
   {
     name: 'web: build',
-    command: 'npm',
-    args: ['run', 'build'],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'run', 'build']
+      : ['run', 'build'],
     cwd: webRoot,
   },
   {
     name: 'clean-room install/runtime/dashboard smoke',
-    command: 'npm',
-    args: ['run', 'verify:install-local:reference-store'],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'run', 'verify:install-local:reference-store']
+      : ['run', 'verify:install-local:reference-store'],
     cwd: repoRoot,
     env: releaseEnv,
   },

@@ -21,6 +21,12 @@ interface ScannedFile {
   content: string
 }
 
+export interface ResolvedFrontendScanRoot {
+  appRoot: string
+  packageJson: PackageJson | null
+  packageJsonRelativePath: string
+}
+
 export interface StaticFrontendScannerOptions {
   targetId?: string
   maxFiles?: number
@@ -61,9 +67,10 @@ export async function scanStaticFrontend(
   repoPath: string,
   options: StaticFrontendScannerOptions = {},
 ): Promise<FrontendSurfaceMap> {
-  const packageJson = await readPackageJson(repoPath)
+  const resolvedRoot = await resolvePreferredFrontendScanRoot(repoPath)
+  const packageJson = resolvedRoot.packageJson
   const targetId = normalizeId(options.targetId ?? packageJson?.name ?? path.basename(repoPath) ?? 'frontend-target')
-  const files = await listScanFiles(repoPath, {
+  const files = await listScanFiles(repoPath, resolvedRoot.appRoot, {
     maxFiles: options.maxFiles ?? DEFAULT_MAX_FILES,
     maxBytesPerFile: options.maxBytesPerFile ?? DEFAULT_MAX_BYTES_PER_FILE,
   })
@@ -85,8 +92,8 @@ export async function scanStaticFrontend(
       ...collectDocSnippets(docsFiles),
     ],
     navigation: collectNavigation(sourceFiles),
-    packages: collectPackageEvidence(packageJson),
-    frameworks: collectFrameworkEvidence(packageJson, sourceFiles),
+    packages: collectPackageEvidence(packageJson, resolvedRoot.packageJsonRelativePath),
+    frameworks: collectFrameworkEvidence(packageJson, sourceFiles, resolvedRoot.packageJsonRelativePath),
     tests: collectTestEvidence(testFiles),
   }
 
@@ -102,8 +109,38 @@ async function readPackageJson(repoPath: string): Promise<PackageJson | null> {
   }
 }
 
+export async function resolvePreferredFrontendScanRoot(repoPath: string): Promise<ResolvedFrontendScanRoot> {
+  const candidateDirs = await listFrontendRootCandidates(repoPath)
+  const scored = await Promise.all(candidateDirs.map(async (appRoot) => {
+    const packageJson = await readPackageJson(appRoot)
+    const score = await scoreFrontendRoot(repoPath, appRoot, packageJson)
+    return {
+      appRoot,
+      packageJson,
+      packageJsonRelativePath: normalizePath(path.relative(repoPath, path.join(appRoot, 'package.json')) || 'package.json'),
+      score,
+    }
+  }))
+
+  const best = scored.sort((left, right) => right.score - left.score)[0]
+  if (best) {
+    return {
+      appRoot: best.appRoot,
+      packageJson: best.packageJson,
+      packageJsonRelativePath: best.packageJsonRelativePath,
+    }
+  }
+
+  return {
+    appRoot: repoPath,
+    packageJson: await readPackageJson(repoPath),
+    packageJsonRelativePath: 'package.json',
+  }
+}
+
 async function listScanFiles(
   repoPath: string,
+  scanRoot: string,
   options: { maxFiles: number; maxBytesPerFile: number },
 ): Promise<ScannedFile[]> {
   const results: ScannedFile[] = []
@@ -134,7 +171,7 @@ async function listScanFiles(
     }
   }
 
-  await walk(repoPath)
+  await walk(scanRoot)
   return results
 }
 
@@ -146,26 +183,26 @@ async function safeReadDir(dirPath: string) {
   }
 }
 
-function collectPackageEvidence(packageJson: PackageJson | null) {
+function collectPackageEvidence(packageJson: PackageJson | null, packageJsonRelativePath: string) {
   const deps = collectDependencies(packageJson)
   return deps.slice(0, MAX_SURFACE_EVIDENCE_ITEMS_PER_KIND).map(([packageName, versionRange]) => ({
     id: makeId('pkg', packageName),
     kind: 'package' as const,
-    source: { filePath: 'package.json' },
+    source: { filePath: packageJsonRelativePath },
     packageName,
     versionRange,
     extractedText: packageName,
   }))
 }
 
-function collectFrameworkEvidence(packageJson: PackageJson | null, files: ScannedFile[]) {
+function collectFrameworkEvidence(packageJson: PackageJson | null, files: ScannedFile[], packageJsonRelativePath: string) {
   const deps = new Map(collectDependencies(packageJson))
   const frameworks = new Map<string, { sourcePath: string; extractedText: string }>()
 
   for (const framework of FRAMEWORK_PACKAGES) {
     if (deps.has(framework.packageName)) {
       frameworks.set(framework.frameworkName, {
-        sourcePath: 'package.json',
+        sourcePath: packageJsonRelativePath,
         extractedText: framework.packageName,
       })
     }
@@ -198,6 +235,7 @@ function collectRoutes(files: ScannedFile[]) {
   const routes: Array<Record<string, unknown>> = []
 
   for (const file of files) {
+    const scanContent = prepareScanContent(file.content)
     const nextAppRoute = inferNextAppRoute(file.relativePath)
     if (nextAppRoute) {
       routes.push({
@@ -222,7 +260,7 @@ function collectRoutes(files: ScannedFile[]) {
       })
     }
 
-    for (const match of file.content.matchAll(/<Route\b[^>]*\bpath=["']([^"']+)["']/g)) {
+    for (const match of scanContent.matchAll(/<Route\b[^>]*\bpath=["']([^"']+)["']/g)) {
       const routePath = match[1] ?? '/'
       routes.push({
         id: makeId('route', routePath),
@@ -252,6 +290,7 @@ function collectRoutes(files: ScannedFile[]) {
 function collectComponents(files: ScannedFile[]) {
   const components: Array<Record<string, unknown>> = []
   for (const file of files) {
+    const scanContent = prepareScanContent(file.content)
     const fileComponentName = inferComponentNameFromPath(file.relativePath)
     if (fileComponentName) {
       components.push({
@@ -263,10 +302,10 @@ function collectComponents(files: ScannedFile[]) {
       })
     }
 
-    for (const match of file.content.matchAll(/(?:export\s+default\s+)?function\s+([A-Z][A-Za-z0-9_]*)\s*\(/g)) {
+    for (const match of scanContent.matchAll(/(?:export\s+default\s+)?function\s+([A-Z][A-Za-z0-9_]*)\s*\(/g)) {
       addComponent(components, file, match[1], match.index ?? 0)
     }
-    for (const match of file.content.matchAll(/(?:export\s+)?const\s+([A-Z][A-Za-z0-9_]*)\s*=/g)) {
+    for (const match of scanContent.matchAll(/(?:export\s+)?const\s+([A-Z][A-Za-z0-9_]*)\s*=/g)) {
       addComponent(components, file, match[1], match.index ?? 0)
     }
   }
@@ -276,7 +315,8 @@ function collectComponents(files: ScannedFile[]) {
 function collectForms(files: ScannedFile[]) {
   const forms: Array<Record<string, unknown>> = []
   for (const file of files) {
-    for (const match of file.content.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/gi)) {
+    const scanContent = prepareScanContent(file.content)
+    for (const match of scanContent.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/gi)) {
       const attrs = match[1] ?? ''
       const body = match[2] ?? ''
       const actionName = extractAttribute(attrs, 'onSubmit')?.replace(/[{}]/g, '').trim()
@@ -298,11 +338,12 @@ function collectForms(files: ScannedFile[]) {
 function collectButtons(files: ScannedFile[]) {
   const buttons: Array<Record<string, unknown>> = []
   for (const file of files) {
-    for (const match of file.content.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gi)) {
+    const scanContent = prepareScanContent(file.content)
+    for (const match of scanContent.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gi)) {
       const attrs = match[1] ?? ''
       const body = match[2] ?? ''
-      const text = sanitizeText(extractAttribute(attrs, 'aria-label') ?? body)
-      if (!text) continue
+      const text = extractButtonText(attrs, body)
+      if (!text || !shouldKeepButtonText(text)) continue
       const line = lineForIndex(file.content, match.index ?? 0)
       buttons.push({
         id: makeId('button', file.relativePath, line, text),
@@ -313,9 +354,15 @@ function collectButtons(files: ScannedFile[]) {
       })
     }
 
-    for (const match of file.content.matchAll(/<input\b([^>]*\btype=["']submit["'][^>]*)>/gi)) {
+    for (const match of scanContent.matchAll(/<input\b([^>]*\btype=["']submit["'][^>]*)>/gi)) {
       const attrs = match[1] ?? ''
-      const text = sanitizeText(extractAttribute(attrs, 'value') ?? 'Submit')
+      const text = extractPreferredUiText([
+        extractAttribute(attrs, 'aria-label'),
+        extractAttribute(attrs, 'title'),
+        extractAttribute(attrs, 'value'),
+        'Submit',
+      ])
+      if (!text || !shouldKeepButtonText(text)) continue
       const line = lineForIndex(file.content, match.index ?? 0)
       buttons.push({
         id: makeId('button', file.relativePath, line, text),
@@ -332,10 +379,11 @@ function collectButtons(files: ScannedFile[]) {
 function collectTexts(files: ScannedFile[]) {
   const texts: Array<Record<string, unknown>> = []
   for (const file of files) {
-    for (const match of file.content.matchAll(/<(h[1-3]|label)\b[^>]*>([\s\S]*?)<\/\1>/gi)) {
+    const scanContent = prepareScanContent(file.content)
+    for (const match of scanContent.matchAll(/<(h[1-3]|label)\b[^>]*>([\s\S]*?)<\/\1>/gi)) {
       const tag = (match[1] ?? '').toLowerCase()
       const text = sanitizeText(match[2] ?? '')
-      if (!text) continue
+      if (!text || !shouldKeepVisibleText(text)) continue
       const line = lineForIndex(file.content, match.index ?? 0)
       texts.push({
         id: makeId('text', file.relativePath, line, text),
@@ -369,10 +417,11 @@ function collectDocSnippets(files: ScannedFile[]) {
 function collectNavigation(files: ScannedFile[]) {
   const navigation: Array<Record<string, unknown>> = []
   for (const file of files) {
-    for (const match of file.content.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
+    const scanContent = prepareScanContent(file.content)
+    for (const match of scanContent.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
       addNavigation(navigation, file, match[1], match[2], match.index ?? 0)
     }
-    for (const match of file.content.matchAll(/<Link\b([^>]*)>([\s\S]*?)<\/Link>/gi)) {
+    for (const match of scanContent.matchAll(/<Link\b([^>]*)>([\s\S]*?)<\/Link>/gi)) {
       addNavigation(navigation, file, match[1], match[2], match.index ?? 0)
     }
   }
@@ -382,7 +431,8 @@ function collectNavigation(files: ScannedFile[]) {
 function collectTestEvidence(files: ScannedFile[]) {
   const tests: Array<Record<string, unknown>> = []
   for (const file of files) {
-    for (const match of file.content.matchAll(/\b(?:test|it|describe)\s*\(\s*["'`]([^"'`]{1,240})["'`]/g)) {
+    const scanContent = prepareScanContent(file.content)
+    for (const match of scanContent.matchAll(/\b(?:test|it|describe)\s*\(\s*["'`]([^"'`]{1,240})["'`]/g)) {
       const testName = sanitizeText(match[1] ?? '')
       if (!testName) continue
       const line = lineForIndex(file.content, match.index ?? 0)
@@ -400,7 +450,7 @@ function collectTestEvidence(files: ScannedFile[]) {
 }
 
 function addComponent(components: Array<Record<string, unknown>>, file: ScannedFile, name: string | undefined, index: number) {
-  if (!name) return
+  if (!name || !shouldKeepComponentName(name, file.relativePath)) return
   components.push({
     id: makeId('component', name),
     kind: 'component',
@@ -460,8 +510,10 @@ function normalizeRoutePath(value: string) {
 }
 
 function inferComponentNameFromPath(relativePath: string): string | null {
+  if (!isLikelyUiComponentFile(relativePath)) return null
   const base = path.basename(relativePath, path.extname(relativePath))
   if (!/^[A-Z][A-Za-z0-9_]*$/.test(base)) return null
+  if (!shouldKeepComponentName(base, relativePath)) return null
   return base
 }
 
@@ -475,16 +527,197 @@ function extractFieldLabels(body: string) {
   const labels = new Set<string>()
   for (const match of body.matchAll(/<(input|select|textarea)\b([^>]*)>/gi)) {
     const attrs = match[2] ?? ''
-    const label = extractAttribute(attrs, 'name')
-      ?? extractAttribute(attrs, 'placeholder')
-      ?? extractAttribute(attrs, 'aria-label')
+    const label = extractFieldLabel([
+      extractAttribute(attrs, 'aria-label'),
+      extractAttribute(attrs, 'placeholder'),
+      extractAttribute(attrs, 'name'),
+    ])
     if (label) labels.add(sanitizeText(label))
   }
   for (const match of body.matchAll(/<label\b[^>]*>([\s\S]*?)<\/label>/gi)) {
-    const label = sanitizeText(match[1] ?? '')
+    const label = extractFieldLabel([match[1] ?? ''])
     if (label) labels.add(label)
   }
   return Array.from(labels).filter(Boolean).slice(0, 40)
+}
+
+function extractButtonText(attrs: string, body: string) {
+  return extractPreferredUiText([
+    extractAttribute(attrs, 'aria-label'),
+    extractAttribute(attrs, 'title'),
+    extractAttribute(attrs, 'value'),
+    body,
+  ])
+}
+
+function extractPreferredUiText(values: Array<string | null | undefined>) {
+  const candidates = values.flatMap((value) => extractUiTextCandidates(value))
+  const ranked = Array.from(new Set(candidates))
+    .map((candidate) => ({ candidate, score: scoreUiText(candidate) }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score || left.candidate.length - right.candidate.length)
+
+  return ranked[0]?.candidate ?? null
+}
+
+function extractFieldLabel(values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const candidate = sanitizeText(value ?? '')
+    if (candidate && shouldKeepVisibleText(candidate)) return candidate
+  }
+  return null
+}
+
+function extractUiTextCandidates(value: string | null | undefined): string[] {
+  if (!value) return []
+  const raw = value.replace(/\r/g, ' ')
+  const candidates = new Set<string>()
+
+  const direct = sanitizeText(raw)
+  if (direct) candidates.add(direct)
+
+  for (const match of raw.matchAll(/["'`]([^"'`\n]{2,120})["'`]/g)) {
+    const candidate = sanitizeText(match[1] ?? '')
+    if (candidate) candidates.add(candidate)
+  }
+
+  const expressionNormalized = raw
+    .replace(/\{[^}]*\}/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+
+  for (const match of expressionNormalized.matchAll(/[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ0-9'’()+/-]*(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ0-9'’()+/-]*){0,5}/g)) {
+    const candidate = sanitizeText(match[0] ?? '')
+    if (candidate) candidates.add(candidate)
+  }
+
+  return Array.from(candidates)
+}
+
+function scoreUiText(value: string) {
+  const normalized = value.toLowerCase()
+  if (!normalized) return -100
+  if (/[={}]/.test(value) || /\bclass(name)?\b|\bonclick\b|\bonchange\b|\bonsubmit\b|=>/.test(normalized)) return -100
+  if (/\b[a-zA-Z_][A-Za-z0-9_]*\([^)]*\)/.test(value)) return -100
+  if (looksLikeCodeOnlyLabel(value)) return -100
+  if (looksLikeUtilityClassLabel(normalized)) return -100
+
+  let score = 0
+
+  if (/[A-Za-zÀ-ÖØ-öø-ÿ]/.test(value)) score += 2
+  if (value.length >= 3 && value.length <= 48) score += 2
+  if (/\s/.test(value)) score += 1
+  if (/^[A-ZÀ-Ö]/.test(value)) score += 1
+  if (/[À-ÖØ-öø-ÿ]/.test(value)) score += 1
+
+  const codeTokens = [
+    'classname',
+    'hover',
+    'transition',
+    'justify',
+    'items',
+    'center',
+    'rounded',
+    'disabled',
+    'onclick',
+    'onsubmit',
+    'setactive',
+    'setisopen',
+    'idx',
+    'ml',
+    'mr',
+    'px',
+    'py',
+    'gap',
+    'true',
+    'false',
+  ]
+
+  for (const token of codeTokens) {
+    if (normalized.includes(token)) score -= 4
+  }
+
+  if (/^[a-z0-9_:-]+$/.test(normalized)) score -= 2
+  if (value.split(/\s+/).length > 6) score -= 3
+
+  return score
+}
+
+function prepareScanContent(content: string) {
+  return content
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, preserveMatchShape)
+    .replace(/\/\*[\s\S]*?\*\//g, preserveMatchShape)
+    .replace(/<!--[\s\S]*?-->/g, preserveMatchShape)
+}
+
+function preserveMatchShape(match: string) {
+  return match.replace(/[^\n]/g, ' ')
+}
+
+function looksLikeUtilityClassLabel(value: string) {
+  if (!value) return false
+  if (/^(?:[a-z]+-\d+(?:\.\d+)?\s*)+$/.test(value)) return true
+  if (/^(?:[a-z]+-[a-z0-9/.[\]]+\s*){2,}$/.test(value)) return true
+
+  const tokens = value.split(/\s+/).filter(Boolean)
+  if (tokens.length === 0) return false
+  const utilityTokenCount = tokens.filter((token) => /^(?:w|h|p|px|py|m|mx|my|mt|mb|ml|mr|gap|rounded|text|bg|border|shadow|flex|items|justify|hover|transition|slate|gray|red|green|blue|amber|primary|secondary)-/.test(token) || /^(?:italic|underline|uppercase|lowercase|hidden|block|inline|truncate)$/.test(token)).length
+  return utilityTokenCount >= Math.max(2, tokens.length - 1)
+}
+
+function looksLikeUtilityTokenSequence(value: string) {
+  const tokens = value.split(/\s+/).filter(Boolean)
+  if (tokens.length < 2) return false
+  const utilityLike = tokens.filter((token) => /^(?:hover:|focus:|active:|disabled:)?(?:text|bg|font|tracking|leading|rounded|border|shadow|flex|items|justify|gap|space|w|h|min-w|min-h|max-w|max-h|px|py|pt|pb|pl|pr|mx|my|mt|mb|ml|mr)-/.test(token) || /^(?:uppercase|lowercase|truncate|whitespace-nowrap)$/.test(token)).length
+  return utilityLike >= Math.max(2, tokens.length - 1)
+}
+
+function isLikelyUiComponentFile(relativePath: string) {
+  const normalized = relativePath.toLowerCase()
+  if (!/\.(tsx|jsx|vue|svelte|html)$/.test(normalized)) return false
+  if (/(^|\/)(services?|hooks?|config|utils?|lib|store|types?|constants?)\//.test(normalized)) return false
+  return true
+}
+
+function shouldKeepComponentName(name: string, relativePath: string) {
+  if (!isLikelyUiComponentFile(relativePath)) return false
+  if (/^[A-Z0-9_]{3,}$/.test(name)) return false
+  const normalized = name.toLowerCase()
+  if (/(class|contextclass)$/.test(normalized)) return false
+  if (/(^|_)(default|min|max|api|base|url|key|prefix|version|threshold|delay|class|context|manager|service|handler|processor|config|state)(_|$)/.test(normalized)) {
+    return false
+  }
+  return true
+}
+
+function shouldKeepButtonText(text: string) {
+  if (!shouldKeepVisibleText(text)) return false
+  const normalized = text.toLowerCase()
+  if (looksLikeUtilityTokenSequence(normalized)) return false
+  if (/\b(settings|reload page|try again|selecionar idioma|language|download|print|imprimir|dismiss|close|cancel|entendido)\b/.test(normalized)) {
+    return false
+  }
+  return true
+}
+
+function shouldKeepVisibleText(text: string) {
+  if (text.length < 2) return false
+  if (looksLikeCodeOnlyLabel(text)) return false
+  const normalized = text.toLowerCase()
+  if (looksLikeUtilityClassLabel(normalized)) return false
+  if (/\b(?:isopen|setisopen|onclick|onchange|onsubmit|classname|text-lg|text-sm|text-xl)\b/.test(normalized)) return false
+  return true
+}
+
+function looksLikeCodeOnlyLabel(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return true
+  if (/^[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*\)?$/.test(trimmed)) return true
+  if (/[_$.]/.test(trimmed)) return true
+  if (/[(){}[\]=><]/.test(trimmed) && !/[À-ÖØ-öø-ÿ]/.test(trimmed)) return true
+  if (/^[a-z0-9-:]+$/.test(trimmed) && !/\s/.test(trimmed) && trimmed === trimmed.toLowerCase() && trimmed.length >= 4) {
+    return true
+  }
+  return false
 }
 
 function sanitizeText(value: string) {
@@ -563,4 +796,66 @@ function inferTestTool(relativePath: string, content: string) {
 
 function firstMatchingPath(files: ScannedFile[], extension: string) {
   return files.find((file) => file.relativePath.endsWith(extension))?.relativePath ?? extension
+}
+
+async function listFrontendRootCandidates(repoPath: string): Promise<string[]> {
+  const directCandidates = ['.', 'frontend', 'web', 'client', 'ui', 'app'].map((entry) => path.join(repoPath, entry))
+  const appsDir = path.join(repoPath, 'apps')
+  const appEntries = await safeReadDir(appsDir)
+  const nestedApps = appEntries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(appsDir, entry.name))
+
+  const uniqueCandidates = Array.from(new Set([...directCandidates, ...nestedApps]))
+  const existing: string[] = []
+
+  for (const candidate of uniqueCandidates) {
+    try {
+      const stat = await fs.stat(candidate)
+      if (stat.isDirectory()) existing.push(candidate)
+    } catch {
+      // ignore missing candidate
+    }
+  }
+
+  return existing
+}
+
+async function scoreFrontendRoot(repoPath: string, appRoot: string, packageJson: PackageJson | null): Promise<number> {
+  let score = appRoot === repoPath ? 0 : 20
+  const deps = new Set(collectDependencies(packageJson).map(([name]) => name))
+  const relativeRoot = normalizePath(path.relative(repoPath, appRoot) || '.')
+
+  if (['frontend', 'web', 'client', 'ui'].some((segment) => relativeRoot === segment || relativeRoot.startsWith(`${segment}/`))) {
+    score += 30
+  }
+
+  if (['vite', 'react', 'next', 'vue', 'svelte', '@angular/core', '@angular/cli'].some((dep) => deps.has(dep))) {
+    score += 60
+  }
+
+  if (Object.keys(packageJson?.scripts ?? {}).some((scriptName) => ['dev', 'build', 'start', 'preview'].includes(scriptName))) {
+    score += 10
+  }
+
+  if (await exists(path.join(appRoot, 'index.html'))) score += 25
+  if (await exists(path.join(appRoot, 'src', 'main.tsx'))) score += 25
+  if (await exists(path.join(appRoot, 'src', 'main.jsx'))) score += 25
+  if (await exists(path.join(appRoot, 'src', 'App.tsx'))) score += 20
+  if (await exists(path.join(appRoot, 'src', 'App.jsx'))) score += 20
+  if (await exists(path.join(appRoot, 'vite.config.ts'))) score += 25
+  if (await exists(path.join(appRoot, 'vite.config.js'))) score += 25
+  if (await exists(path.join(appRoot, 'pages'))) score += 10
+  if (await exists(path.join(appRoot, 'app'))) score += 10
+
+  return score
+}
+
+async function exists(targetPath: string): Promise<boolean> {
+  try {
+    await fs.access(targetPath)
+    return true
+  } catch {
+    return false
+  }
 }

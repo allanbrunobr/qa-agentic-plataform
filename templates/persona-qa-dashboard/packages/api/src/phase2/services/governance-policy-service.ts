@@ -14,6 +14,7 @@ import {
   GRAPH_READINESS_REQUIREMENTS,
   getScenarioDraftGraphReadiness,
   getScenarioDraftMappingReview,
+  hasScenarioDraftGraphStructuralEvidence,
   isScenarioDraftGraphReady,
   isScenarioDraftMappingReviewComplete,
   requiresGraphReadinessGate,
@@ -255,12 +256,15 @@ export class GovernancePolicyService {
       && !isScenarioDraftGraphReady(draft)
     ) {
       const readiness = getScenarioDraftGraphReadiness(draft)
+      const reason = readiness?.status === 'fully_mapped' && readiness && !hasScenarioDraftGraphStructuralEvidence(readiness)
+        ? `Scenario draft graph readiness lacks structural evidence depth before ${governanceAction}; handlers=${readiness.supportHandlerCount}, endpoints=${readiness.supportEndpointCount}, http=${readiness.supportHttpCallCount}, data=${readiness.supportDataAccessCount}`
+        : `Scenario draft graph readiness must be fully_mapped before ${governanceAction}; current status is ${readiness?.status ?? 'unknown'}`
       return this.withIndependentAudit({
         subjectType: 'scenario_draft',
         subjectId: draft.id,
         action: governanceAction,
         verdict: 'blocked',
-        reason: `Scenario draft graph readiness must be fully_mapped before ${governanceAction}; current status is ${readiness?.status ?? 'unknown'}`,
+        reason,
         actor,
         requirements: GRAPH_READINESS_REQUIREMENTS,
         metadata,

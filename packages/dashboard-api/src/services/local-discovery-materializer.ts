@@ -6,6 +6,12 @@ import type {
   GeneratedPersonaDraft,
   GeneratedScenarioDraft,
 } from '../../../host-sdk/src/contracts.ts'
+import type { CodeGraph, CodeGraphEdge, CodeGraphNode } from '../../../host-sdk/src/code-graph-contracts.ts'
+import type {
+  DomainDiscoveryBundle,
+  PersonaCandidate,
+  ScenarioCandidate,
+} from '../../../host-sdk/src/domain-discovery-contracts.ts'
 import { buildCodeGraph } from './code-graph-builder.ts'
 
 type NormalizedStep = string
@@ -43,6 +49,23 @@ interface MaterializedCapability {
   purpose: string
   sourceHint: string
   routeHint?: string
+  graphHint?: {
+    status: 'mapped' | 'ui_handler_linked' | 'unmapped'
+    confidence: number
+    resolver?: string
+    handlers: string[]
+    endpoints: string[]
+    httpCalls: string[]
+    handlerIds: string[]
+    endpointIds: string[]
+    httpCallIds: string[]
+  }
+}
+
+interface MaterializedDiscoveryArtifacts {
+  capabilities: MaterializedCapability[]
+  personas: MaterializedPersona[]
+  scenarios: MaterializedScenario[]
 }
 
 interface RuntimePlan {
@@ -61,6 +84,15 @@ interface RuntimePlan {
     capabilityId: string
     routeHint?: string
     implementationStatus: 'stub'
+    graphStatus?: string
+    graphConfidence?: number
+    graphResolver?: string
+    handlerHints?: string[]
+    endpointHints?: string[]
+    httpCallHints?: string[]
+    handlerNodeIds?: string[]
+    endpointNodeIds?: string[]
+    httpCallNodeIds?: string[]
   }>
   scenarioCoverage: Array<{
     scenarioId: string
@@ -112,6 +144,9 @@ function legacyStoreFallbackEnabled() {
 
 function extractRoutePathFromEvidence(evidence: string) {
   const normalized = evidence.replace(/\\/g, '/')
+  const methodRouteMatch = normalized.match(/\b(?:GET|POST|PUT|PATCH|DELETE)\s+(\/[A-Za-z0-9/_:-]*)/)
+  if (methodRouteMatch?.[1]) return methodRouteMatch[1]
+  if (/^\/[A-Za-z0-9/_:-]*$/.test(normalized.trim())) return normalized.trim()
   const marker = '/src/app/'
   const markerIndex = normalized.indexOf(marker)
   if (markerIndex === -1) return null
@@ -154,9 +189,22 @@ function inferProducedArtifacts(stepId: NormalizedStep) {
   if (stepId.includes('call') || stepId.includes('request') || stepId.includes('endpoint')) return ['response']
   if (stepId.includes('inspect') || stepId.includes('identify') || stepId.includes('discover')) return ['inspectionResult']
   if (stepId.includes('run') || stepId.includes('command') || stepId.includes('cli')) return ['commandResult']
-  if (stepId.includes('open') || stepId.includes('navigate') || stepId.includes('visit')) return ['pageLoaded']
-  if (stepId.includes('fill') || stepId.includes('add') || stepId.includes('submit') || stepId.includes('interact')) {
-    return ['interactionResult']
+  if (
+    stepId.includes('open') ||
+    stepId.includes('navigate') ||
+    stepId.includes('visit') ||
+    stepId.includes('fill') ||
+    stepId.includes('add') ||
+    stepId.includes('submit') ||
+    stepId.includes('interact') ||
+    stepId.includes('click') ||
+    stepId.includes('select') ||
+    stepId.includes('start') ||
+    stepId.includes('save') ||
+    stepId.includes('create') ||
+    stepId.includes('update')
+  ) {
+    return ['commandResult']
   }
   return [`${toCamelCase(normalizeId(stepId))}Result`]
 }
@@ -335,6 +383,18 @@ async function copyDirRecursiveIfExists(sourceDir: string, targetDir: string): P
   return copied
 }
 
+async function removeGeneratedFilesIfExists(directory: string) {
+  try {
+    const entries = await fs.readdir(directory, { withFileTypes: true })
+    await Promise.all(entries.map(async (entry) => {
+      if (!entry.isFile() || !entry.name.includes('.generated.')) return
+      await fs.rm(path.join(directory, entry.name), { force: true })
+    }))
+  } catch {
+    return
+  }
+}
+
 async function detectAuth(repoPath: string, report: DiscoveryReport) {
   if (report.repository && report.repository.kind !== 'frontend') {
     return {
@@ -399,8 +459,8 @@ function inferCapabilityRouteHint(capabilityId: string, routes: MaterializedRout
     verifyPrimaryFeedback: ['/'],
     startApiService: ['/'],
     callHealthEndpoint: ['/health', '/ready', '/live'],
-    callPrimaryEndpoint: ['/'],
-    verifyApiResponse: ['/'],
+    callPrimaryEndpoint: ['/api', '/v1', '/v2', '/graphql', '/'],
+    verifyApiResponse: ['/api', '/health', '/ready', '/live', '/'],
   }
   const candidates = routeMap[capabilityId] ?? []
   const route = routes.find((item) => (
@@ -439,12 +499,474 @@ function buildMaterializedCapabilities(capabilityIds: string[], routes: Material
   }))
 }
 
+function buildMaterializedArtifactsFromDomainBundle(
+  bundle: DomainDiscoveryBundle,
+  routes: MaterializedRoute[],
+): MaterializedDiscoveryArtifacts | null {
+  if (bundle.personas.length === 0 || bundle.scenarios.length === 0 || bundle.capabilities.length === 0) return null
+
+  const capabilities: MaterializedCapability[] = bundle.capabilities.map((capability) => ({
+    id: normalizeId(capability.id),
+    purpose: capability.purpose,
+    sourceHint: capability.kind,
+    routeHint: inferCapabilityRouteHint(normalizeId(capability.id), routes),
+  }))
+
+  const personas: MaterializedPersona[] = bundle.personas.map((persona) => ({
+    id: normalizeId(persona.id),
+    title: persona.title,
+    goal: persona.rationale,
+    allowedCapabilities: persona.allowedCapabilityIds.map(normalizeId),
+  }))
+
+  const scenarioPersonaMap = new Map(personas.map((persona) => [persona.id, persona]))
+  const scenarios: MaterializedScenario[] = bundle.scenarios.map((scenario) =>
+    materializeDomainScenario(scenario, bundle.personas, scenarioPersonaMap),
+  )
+
+  return { capabilities, personas, scenarios }
+}
+
+function applyCapabilityGraphHints(capabilities: MaterializedCapability[], codeGraph: CodeGraph): MaterializedCapability[] {
+  const hintByCapabilityId = buildCapabilityGraphHintMap(codeGraph)
+  return capabilities.map((capability) => ({
+    ...capability,
+    graphHint: hintByCapabilityId.get(capability.id) ?? undefined,
+    routeHint: inferCapabilityRouteHintFromGraph(capability, hintByCapabilityId.get(capability.id)),
+  }))
+}
+
+function buildCapabilityGraphHintMap(codeGraph: CodeGraph) {
+  const nodeById = new Map(codeGraph.nodes.map((node) => [node.id, node]))
+  const edgeByType = new Map<string, CodeGraphEdge[]>()
+  for (const edge of codeGraph.edges) {
+    const list = edgeByType.get(edge.type) ?? []
+    list.push(edge)
+    edgeByType.set(edge.type, list)
+  }
+
+  const incomingEdgesByNode = new Map<string, CodeGraphEdge[]>()
+  const outgoingEdgesByNode = new Map<string, CodeGraphEdge[]>()
+  for (const edge of codeGraph.edges) {
+    const list = incomingEdgesByNode.get(edge.to) ?? []
+    list.push(edge)
+    incomingEdgesByNode.set(edge.to, list)
+    const outgoing = outgoingEdgesByNode.get(edge.from) ?? []
+    outgoing.push(edge)
+    outgoingEdgesByNode.set(edge.from, outgoing)
+  }
+
+  const hintByCapabilityId = new Map<string, MaterializedCapability['graphHint']>()
+  const endpointNodes = codeGraph.nodes.filter((node) => node.type === 'endpoint')
+
+  for (const capabilityNode of codeGraph.nodes.filter((node) => node.type === 'capability_candidate')) {
+    const capabilityId = typeof capabilityNode.metadata['capabilityId'] === 'string'
+      ? capabilityNode.metadata['capabilityId']
+      : null
+    if (!capabilityId) continue
+
+    const supportEdges = (incomingEdgesByNode.get(capabilityNode.id) ?? []).filter((edge) => edge.type === 'supports_capability')
+    const mappedSurfaceEdges = (edgeByType.get('maps_surface') ?? []).filter((edge) => edge.from === capabilityNode.id)
+    const surfaceNodeIds = mappedSurfaceEdges.map((edge) => edge.to)
+    const uiHandlerEdges = surfaceNodeIds.flatMap((surfaceNodeId) =>
+      (incomingEdgesByNode.get(surfaceNodeId) ?? []).filter((edge) =>
+        edge.type === 'handles' && edge.metadata?.['source'] === 'jsx_event_handler',
+      ),
+    )
+
+    const endpointNodes = supportEdges
+      .map((edge) => nodeById.get(edge.from))
+      .filter((node): node is CodeGraphNode => Boolean(node?.type === 'endpoint'))
+    const httpCallNodes = supportEdges
+      .map((edge) => nodeById.get(edge.from))
+      .filter((node): node is CodeGraphNode => Boolean(node?.type === 'http_call'))
+
+    const handlerNodeIds = new Set<string>()
+    for (const edge of uiHandlerEdges) handlerNodeIds.add(edge.from)
+    for (const endpointNode of endpointNodes) {
+      for (const edge of incomingEdgesByNode.get(endpointNode.id) ?? []) {
+        if (edge.type === 'handles') handlerNodeIds.add(edge.from)
+      }
+    }
+    for (const httpCallNode of httpCallNodes) {
+      for (const edge of incomingEdgesByNode.get(httpCallNode.id) ?? []) {
+        if (edge.type === 'calls') handlerNodeIds.add(edge.from)
+      }
+    }
+
+    const downstream = collectTransitiveFunctionSupport({
+      startNodeIds: [...handlerNodeIds],
+      nodeById,
+      outgoingEdgesByNode,
+    })
+    const upstreamFromHttpCalls = collectUpstreamFunctionSupport({
+      startNodeIds: httpCallNodes.map((node) => node.id),
+      nodeById,
+      incomingEdgesByNode,
+    })
+    for (const handlerNodeId of downstream.handlerNodeIds) handlerNodeIds.add(handlerNodeId)
+    for (const handlerNodeId of upstreamFromHttpCalls.handlerNodeIds) handlerNodeIds.add(handlerNodeId)
+
+    const handlers = [...handlerNodeIds]
+      .map((id) => nodeById.get(id))
+      .filter((node): node is CodeGraphNode => Boolean(node && ['function', 'handler', 'service'].includes(node.type)))
+      .map(formatGraphNodeHint)
+
+    const endpoints = endpointNodes.map(formatEndpointHint)
+    const httpCalls = uniqueStrings([
+      ...httpCallNodes.map(formatHttpCallHint),
+      ...downstream.httpCallNodeIds
+        .map((id) => nodeById.get(id))
+        .filter((node): node is CodeGraphNode => Boolean(node?.type === 'http_call'))
+        .map(formatHttpCallHint),
+    ])
+
+    const mapping = capabilityNode.metadata['graphMapping']
+    const mappedConfidence = mapping && typeof mapping === 'object' && !Array.isArray(mapping) && typeof mapping['confidence'] === 'number'
+      ? mapping['confidence']
+      : Math.max(0, ...supportEdges.map((edge) => edge.confidence ?? 0), handlers.length > 0 ? 0.45 : 0)
+    const hasMappedSupport = supportEdges.length > 0
+    const mappedHandlerIds = readStringArray(mapping?.['handlerIds'])
+    const mappedEndpointIds = readStringArray(mapping?.['endpointIds'])
+    const mappedHttpCallIds = readStringArray(mapping?.['httpCallIds'])
+    const mappedResolver = typeof mapping?.['resolver'] === 'string' ? mapping['resolver'] : undefined
+
+    hintByCapabilityId.set(capabilityId, {
+      status: hasMappedSupport ? 'mapped' : handlers.length > 0 ? 'ui_handler_linked' : 'unmapped',
+      confidence: Number(mappedConfidence.toFixed(3)),
+      resolver: mappedResolver,
+      handlers: uniqueStrings(handlers),
+      endpoints: uniqueStrings(endpoints),
+      httpCalls: uniqueStrings(httpCalls),
+      handlerIds: uniqueStrings([...mappedHandlerIds, ...handlerNodeIds]),
+      endpointIds: uniqueStrings([...mappedEndpointIds, ...endpointNodes.map((node) => node.id)]),
+      httpCallIds: uniqueStrings([...mappedHttpCallIds, ...httpCallNodes.map((node) => node.id), ...downstream.httpCallNodeIds]),
+    })
+  }
+
+  if (codeGraph.repositoryKind === 'backend_api') {
+    const healthEndpointNode = selectBackendHealthEndpoint(endpointNodes)
+    const primaryEndpointNode = selectBackendPrimaryEndpoint(endpointNodes)
+    applyBackendCapabilityFallback(hintByCapabilityId, 'callHealthEndpoint', healthEndpointNode, nodeById, incomingEdgesByNode, outgoingEdgesByNode, edgeByType)
+    applyBackendCapabilityFallback(hintByCapabilityId, 'callPrimaryEndpoint', primaryEndpointNode ?? healthEndpointNode, nodeById, incomingEdgesByNode, outgoingEdgesByNode, edgeByType)
+    const verificationTarget = primaryEndpointNode ?? healthEndpointNode
+    applyBackendCapabilityFallback(hintByCapabilityId, 'verifyApiResponse', verificationTarget, nodeById, incomingEdgesByNode, outgoingEdgesByNode, edgeByType, 0.38)
+  }
+
+  return hintByCapabilityId
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
+}
+
+function inferCapabilityRouteHintFromGraph(
+  capability: MaterializedCapability,
+  graphHint: MaterializedCapability['graphHint'] | undefined,
+) {
+  const currentRouteHint = capability.routeHint
+  const endpointPath = selectPreferredEndpointPath(graphHint?.endpoints ?? [])
+  if (!endpointPath) return currentRouteHint
+
+  if (!currentRouteHint || currentRouteHint === '/' || currentRouteHint === '/TODO') {
+    return endpointPath
+  }
+
+  if (capability.id === 'verifyApiResponse' && currentRouteHint === '/') {
+    return endpointPath
+  }
+
+  return currentRouteHint
+}
+
+function selectPreferredEndpointPath(endpointHints: string[]) {
+  const endpointPaths = endpointHints
+    .map((hint) => extractRoutePathFromEvidence(hint))
+    .filter((path): path is string => Boolean(path))
+  const nonHealth = prioritizeBackendPaths(endpointPaths).find((path) => !isHealthLikeRoutePath(path) && path !== '/')
+  return nonHealth ?? endpointPaths[0]
+}
+
+function isHealthLikeRoutePath(routePath: string) {
+  return /health|heartbeat|readiness|liveness|ready|live/i.test(routePath)
+}
+
+function selectBackendHealthEndpoint(endpointNodes: CodeGraphNode[]) {
+  return endpointNodes.find((node) => {
+    const routePath = typeof node.metadata['path'] === 'string' ? node.metadata['path'] : ''
+    return isHealthLikeRoutePath(routePath)
+  })
+}
+
+function selectBackendPrimaryEndpoint(endpointNodes: CodeGraphNode[]) {
+  return prioritizeBackendEndpointNodes(endpointNodes).find((node) => {
+    const routePath = typeof node.metadata['path'] === 'string' ? node.metadata['path'] : ''
+    return Boolean(routePath) && routePath !== '/' && !isHealthLikeRoutePath(routePath)
+  })
+}
+
+function prioritizeBackendEndpointNodes(endpointNodes: CodeGraphNode[]) {
+  return [...endpointNodes].sort((left, right) => {
+    const leftPath = typeof left.metadata['path'] === 'string' ? left.metadata['path'] : left.label
+    const rightPath = typeof right.metadata['path'] === 'string' ? right.metadata['path'] : right.label
+    const leftMounted = left.metadata['isMountedRoute'] === true
+    const rightMounted = right.metadata['isMountedRoute'] === true
+    const leftMountChainLength = Array.isArray(left.metadata['mountChain']) ? left.metadata['mountChain'].length : 0
+    const rightMountChainLength = Array.isArray(right.metadata['mountChain']) ? right.metadata['mountChain'].length : 0
+    const leftScore = backendPathPriority(leftPath) + (leftMounted ? 25 : 0) + leftMountChainLength * 5
+    const rightScore = backendPathPriority(rightPath) + (rightMounted ? 25 : 0) + rightMountChainLength * 5
+    return rightScore - leftScore
+  })
+}
+
+function prioritizeBackendPaths(paths: string[]) {
+  return [...paths].sort((left, right) => backendPathPriority(right) - backendPathPriority(left))
+}
+
+function backendPathPriority(routePath: string) {
+  const segments = routePath.split('/').filter(Boolean).length
+  const apiBoost = /\/api\/|^\/api$|\/v\d+\//i.test(routePath) ? 10 : 0
+  return apiBoost + segments * 2 + routePath.length / 100
+}
+
+function applyBackendCapabilityFallback(
+  hintByCapabilityId: Map<string, MaterializedCapability['graphHint']>,
+  capabilityId: string,
+  endpointNode: CodeGraphNode | undefined,
+  nodeById: Map<string, CodeGraphNode>,
+  incomingEdgesByNode: Map<string, CodeGraphEdge[]>,
+  outgoingEdgesByNode: Map<string, CodeGraphEdge[]>,
+  edgeByType: Map<string, CodeGraphEdge[]>,
+  confidence = 0.42,
+) {
+  const existingHint = hintByCapabilityId.get(capabilityId)
+  if (existingHint && existingHint.status === 'mapped') return
+  if (!endpointNode) return
+
+  const handlerNodeIds = new Set<string>()
+  for (const edge of incomingEdgesByNode.get(endpointNode.id) ?? []) {
+    if (edge.type === 'handles' || edge.type === 'calls') handlerNodeIds.add(edge.from)
+  }
+  const linkedHttpCallIds = (edgeByType.get('calls') ?? [])
+    .filter((edge) => edge.to === endpointNode.id)
+    .map((edge) => edge.from)
+
+  const handlers = [...handlerNodeIds]
+    .map((id) => nodeById.get(id))
+    .filter((node): node is CodeGraphNode => Boolean(node && ['function', 'handler', 'service', 'http_call'].includes(node.type)))
+    .map((node) => node.type === 'http_call' ? formatHttpCallHint(node) : formatGraphNodeHint(node))
+
+  const downstream = collectTransitiveFunctionSupport({
+    startNodeIds: [...handlerNodeIds],
+    nodeById,
+    outgoingEdgesByNode,
+  })
+  const upstreamFromHttpCalls = collectUpstreamFunctionSupport({
+    startNodeIds: linkedHttpCallIds,
+    nodeById,
+    incomingEdgesByNode,
+  })
+
+  const httpCalls = uniqueStrings([
+    ...linkedHttpCallIds
+    .map((id) => nodeById.get(id))
+    .filter((node): node is CodeGraphNode => Boolean(node?.type === 'http_call'))
+    .map(formatHttpCallHint),
+    ...downstream.httpCallNodeIds
+      .map((id) => nodeById.get(id))
+      .filter((node): node is CodeGraphNode => Boolean(node?.type === 'http_call'))
+      .map(formatHttpCallHint),
+  ])
+
+  const expandedHandlers = uniqueStrings([
+    ...(existingHint?.handlers ?? []),
+    ...handlers,
+    ...downstream.handlerNodeIds
+      .map((id) => nodeById.get(id))
+      .filter((node): node is CodeGraphNode => Boolean(node && ['function', 'handler', 'service'].includes(node.type)))
+      .map(formatGraphNodeHint),
+    ...upstreamFromHttpCalls.handlerNodeIds
+      .map((id) => nodeById.get(id))
+      .filter((node): node is CodeGraphNode => Boolean(node && ['function', 'handler', 'service'].includes(node.type)))
+      .map(formatGraphNodeHint),
+  ])
+
+  hintByCapabilityId.set(capabilityId, {
+    status: 'mapped',
+    confidence,
+    handlers: expandedHandlers,
+    endpoints: uniqueStrings([...(existingHint?.endpoints ?? []), formatEndpointHint(endpointNode)]),
+    httpCalls: uniqueStrings([...(existingHint?.httpCalls ?? []), ...httpCalls]),
+  })
+}
+
+function collectTransitiveFunctionSupport(input: {
+  startNodeIds: string[]
+  nodeById: Map<string, CodeGraphNode>
+  outgoingEdgesByNode: Map<string, CodeGraphEdge[]>
+  maxDepth?: number
+}) {
+  const handlerNodeIds = new Set<string>()
+  const httpCallNodeIds = new Set<string>()
+  const visited = new Set<string>()
+  const maxDepth = input.maxDepth ?? 5
+  const queue = input.startNodeIds
+    .filter(Boolean)
+    .map((id) => ({ id, depth: 0 }))
+
+  while (queue.length > 0) {
+    const current = queue.shift()
+    if (!current || visited.has(current.id) || current.depth > maxDepth) continue
+    visited.add(current.id)
+
+    for (const edge of input.outgoingEdgesByNode.get(current.id) ?? []) {
+      if (edge.type !== 'calls') continue
+      const targetNode = input.nodeById.get(edge.to)
+      if (!targetNode) continue
+      if (targetNode.type === 'http_call') {
+        httpCallNodeIds.add(targetNode.id)
+        continue
+      }
+      if (!['function', 'handler', 'service'].includes(targetNode.type)) continue
+      handlerNodeIds.add(targetNode.id)
+      queue.push({ id: targetNode.id, depth: current.depth + 1 })
+    }
+  }
+
+  return {
+    handlerNodeIds: [...handlerNodeIds],
+    httpCallNodeIds: [...httpCallNodeIds],
+  }
+}
+
+function collectUpstreamFunctionSupport(input: {
+  startNodeIds: string[]
+  nodeById: Map<string, CodeGraphNode>
+  incomingEdgesByNode: Map<string, CodeGraphEdge[]>
+  maxDepth?: number
+}) {
+  const handlerNodeIds = new Set<string>()
+  const visited = new Set<string>()
+  const maxDepth = input.maxDepth ?? 5
+  const queue = input.startNodeIds
+    .filter(Boolean)
+    .map((id) => ({ id, depth: 0 }))
+
+  while (queue.length > 0) {
+    const current = queue.shift()
+    if (!current || visited.has(current.id) || current.depth > maxDepth) continue
+    visited.add(current.id)
+
+    for (const edge of input.incomingEdgesByNode.get(current.id) ?? []) {
+      if (edge.type !== 'calls') continue
+      const sourceNode = input.nodeById.get(edge.from)
+      if (!sourceNode || !['function', 'handler', 'service', 'http_call'].includes(sourceNode.type)) continue
+      if (sourceNode.type === 'http_call') {
+        queue.push({ id: sourceNode.id, depth: current.depth + 1 })
+        continue
+      }
+      handlerNodeIds.add(sourceNode.id)
+      queue.push({ id: sourceNode.id, depth: current.depth + 1 })
+    }
+  }
+
+  return {
+    handlerNodeIds: [...handlerNodeIds],
+  }
+}
+
+function formatGraphNodeHint(node: CodeGraphNode) {
+  const filePath = node.source?.filePath
+  const line = node.source?.line
+  if (filePath && line) return `${node.label} (${filePath}:${line})`
+  if (filePath) return `${node.label} (${filePath})`
+  return node.label
+}
+
+function formatEndpointHint(node: CodeGraphNode) {
+  const method = typeof node.metadata['method'] === 'string' ? node.metadata['method'] : 'ANY'
+  const routePath = typeof node.metadata['path'] === 'string' ? node.metadata['path'] : node.label
+  return `${method} ${routePath}`
+}
+
+function formatHttpCallHint(node: CodeGraphNode) {
+  const method = typeof node.metadata['method'] === 'string' ? node.metadata['method'] : 'GET'
+  const normalizedPath = typeof node.metadata['normalizedPath'] === 'string'
+    ? node.metadata['normalizedPath']
+    : typeof node.metadata['url'] === 'string'
+      ? node.metadata['url']
+      : node.label
+  return `${method} ${normalizedPath}`
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values.filter(Boolean))]
+}
+
+function materializeDomainScenario(
+  scenario: ScenarioCandidate,
+  personas: PersonaCandidate[],
+  personaMap: Map<string, MaterializedPersona>,
+): MaterializedScenario {
+  const roles = scenario.participatingPersonaIds.map(normalizeId)
+  const stepDefinitions = scenario.steps.map((step) => {
+    const capabilityId = normalizeId(step.capabilityId ?? step.id)
+    const roleId = inferRoleForDomainStep(capabilityId, roles, personas)
+    return {
+      id: normalizeId(step.id),
+      roleId,
+      capabilityId,
+      producesArtifacts: inferProducedArtifacts(capabilityId),
+    }
+  })
+
+  const allowedRoleSet = new Set(roles.filter((roleId) => personaMap.has(roleId)))
+
+  return {
+    id: normalizeId(scenario.id),
+    title: scenario.title,
+    roles: allowedRoleSet.size > 0 ? [...allowedRoleSet] : roles,
+    steps: stepDefinitions.map((step) => step.id),
+    expectedArtifacts: [...new Set(stepDefinitions.flatMap((step) => step.producesArtifacts))],
+    stepDefinitions,
+  }
+}
+
+function inferRoleForDomainStep(
+  capabilityId: string,
+  scenarioRoleIds: string[],
+  personas: PersonaCandidate[],
+) {
+  const normalizedCapabilityId = normalizeId(capabilityId)
+  const normalizedRoles = scenarioRoleIds.map(normalizeId)
+
+  if (/(assert|verify|review|report|relatorio|notes|intake|copy)/.test(normalizedCapabilityId)) {
+    const reviewerRole = normalizedRoles.find((roleId) => roleId.includes('reviewer'))
+    if (reviewerRole) return reviewerRole
+  }
+
+  if (/(iniciar|start|encerrar|end|pedido|fulfillment|nova_pedido|new_fulfillment)/.test(normalizedCapabilityId)) {
+    const operatorRole = normalizedRoles.find((roleId) => roleId.includes('operator'))
+    if (operatorRole) return operatorRole
+  }
+
+  const matchingPersona = personas.find((persona) => (
+    scenarioRoleIds.includes(normalizeId(persona.id))
+      && persona.allowedCapabilityIds.map(normalizeId).includes(normalizedCapabilityId)
+  ))
+
+  return normalizeId(matchingPersona?.id ?? scenarioRoleIds[0] ?? 'primary_user')
+}
+
 function buildRuntimePlan(input: {
   auth: Awaited<ReturnType<typeof detectAuth>>
   routes: MaterializedRoute[]
   capabilities: MaterializedCapability[]
   scenarios: MaterializedScenario[]
   repositoryKind?: string
+  codeGraph?: CodeGraph
 }): RuntimePlan {
   const requiresBrowser = !input.repositoryKind || input.repositoryKind === 'frontend'
 
@@ -455,21 +977,51 @@ function buildRuntimePlan(input: {
     runtimeMode: requiresBrowser ? 'browser_model' : 'deterministic_non_browser',
     requiresBrowser,
     requiresAnthropicModel: requiresBrowser,
-    routeCoverage: input.routes.map((route) => ({
-      routeId: route.id,
-      path: route.path,
-      purpose: route.purpose,
-    })),
+    routeCoverage: buildRuntimeRouteCoverage(input.routes, input.codeGraph),
     capabilityCoverage: input.capabilities.map((capability) => ({
       capabilityId: capability.id,
       routeHint: capability.routeHint,
       implementationStatus: 'stub',
+      graphStatus: capability.graphHint?.status,
+      graphConfidence: capability.graphHint?.confidence,
+      graphResolver: capability.graphHint?.resolver,
+      handlerHints: capability.graphHint?.handlers ?? [],
+      endpointHints: capability.graphHint?.endpoints ?? [],
+      httpCallHints: capability.graphHint?.httpCalls ?? [],
+      handlerNodeIds: capability.graphHint?.handlerIds ?? [],
+      endpointNodeIds: capability.graphHint?.endpointIds ?? [],
+      httpCallNodeIds: capability.graphHint?.httpCallIds ?? [],
     })),
     scenarioCoverage: input.scenarios.map((scenario) => ({
       scenarioId: scenario.id,
       steps: scenario.steps,
     })),
   }
+}
+
+function buildRuntimeRouteCoverage(routes: MaterializedRoute[], codeGraph?: CodeGraph) {
+  const routeCoverage = new Map<string, { routeId: string; path: string; purpose: string }>()
+
+  for (const route of routes) {
+    routeCoverage.set(`${route.id}:${route.path}`, {
+      routeId: route.id,
+      path: route.path,
+      purpose: route.purpose,
+    })
+  }
+
+  for (const endpointNode of codeGraph?.nodes.filter((node) => node.type === 'endpoint') ?? []) {
+    const routePath = typeof endpointNode.metadata['path'] === 'string' ? endpointNode.metadata['path'] : null
+    if (!routePath) continue
+    const method = typeof endpointNode.metadata['method'] === 'string' ? endpointNode.metadata['method'] : 'ANY'
+    routeCoverage.set(`graph:${method}:${routePath}`, {
+      routeId: `graph_${normalizeId(`${method}_${routePath}`)}`,
+      path: routePath,
+      purpose: `endpoint: ${method} ${routePath}`,
+    })
+  }
+
+  return [...routeCoverage.values()]
 }
 
 function buildAuthRuntimeStub(auth: Awaited<ReturnType<typeof detectAuth>>) {
@@ -514,7 +1066,7 @@ export async function switchHostRole() {
 function buildCapabilityRuntimeStub(capabilities: MaterializedCapability[]) {
   const handlers = capabilities
     .map((capability) => `  ${JSON.stringify(capability.id)}: async () => {
-    throw new Error('TODO: implement ${capability.id}${capability.routeHint ? ` using route ${capability.routeHint}` : ''}.')
+    throw new Error('TODO: implement ${capability.id}${capability.routeHint ? ` using route ${capability.routeHint}` : ''}${formatCapabilityGraphHintMessage(capability)}.')
   },`)
     .join('\n')
 
@@ -522,6 +1074,17 @@ function buildCapabilityRuntimeStub(capabilities: MaterializedCapability[]) {
 ${handlers}
 } as const
 `
+}
+
+function formatCapabilityGraphHintMessage(capability: MaterializedCapability) {
+  const graphHint = capability.graphHint
+  if (!graphHint) return ''
+  const parts: string[] = []
+  if (graphHint.handlers.length > 0) parts.push(`handlers: ${graphHint.handlers.join(', ')}`)
+  if (graphHint.endpoints.length > 0) parts.push(`endpoints: ${graphHint.endpoints.join(', ')}`)
+  if (graphHint.httpCalls.length > 0) parts.push(`http calls: ${graphHint.httpCalls.join(', ')}`)
+  if (parts.length === 0) return ''
+  return `; graph hints -> ${parts.join(' | ')}`
 }
 
 function buildAssertionsStub(scenarios: MaterializedScenario[]) {
@@ -863,22 +1426,27 @@ export async function materializeLocalDiscovery(input: {
     framework: normalizedReport.framework ?? 'unknown',
     status: 'draft',
   }
-  const capabilities = buildMaterializedCapabilities(normalizedDraft.capabilityCandidates, routes)
+  const domainArtifacts = normalizedReport.domainDiscovery
+    ? buildMaterializedArtifactsFromDomainBundle(normalizedReport.domainDiscovery, routes)
+    : null
+  const baseCapabilities = domainArtifacts?.capabilities ?? buildMaterializedCapabilities(normalizedDraft.capabilityCandidates, routes)
+  const capabilities = applyCapabilityGraphHints(baseCapabilities, codeGraph)
 
-  const personas: MaterializedPersona[] = normalizedDraft.personas.map((persona) => ({
+  const personas: MaterializedPersona[] = domainArtifacts?.personas ?? normalizedDraft.personas.map((persona) => ({
     id: persona.id,
     title: persona.title,
     goal: persona.rationale,
     allowedCapabilities: persona.allowedTools,
   }))
 
-  const scenarios = buildMaterializedScenarios(normalizedDraft.scenarios)
+  const scenarios = domainArtifacts?.scenarios ?? buildMaterializedScenarios(normalizedDraft.scenarios)
   const runtimePlan = buildRuntimePlan({
     auth,
     routes,
     capabilities,
     scenarios,
     repositoryKind: normalizedReport.repository?.kind,
+    codeGraph,
   })
   const authRuntimeStub = buildAuthRuntimeStub(auth)
   const capabilityRuntimeStub = buildCapabilityRuntimeStub(capabilities)
@@ -898,6 +1466,19 @@ export async function materializeLocalDiscovery(input: {
       producedArtifacts: step.producesArtifacts ?? [],
     })),
   }))
+
+  await Promise.all([
+    removeGeneratedFilesIfExists(path.join(adapterRoot, 'manifest')),
+    removeGeneratedFilesIfExists(path.join(adapterRoot, 'auth')),
+    removeGeneratedFilesIfExists(path.join(adapterRoot, 'routes')),
+    removeGeneratedFilesIfExists(path.join(adapterRoot, 'capabilities')),
+    removeGeneratedFilesIfExists(path.join(adapterRoot, 'personas')),
+    removeGeneratedFilesIfExists(path.join(adapterRoot, 'scenarios')),
+    removeGeneratedFilesIfExists(path.join(adapterRoot, 'config')),
+    removeGeneratedFilesIfExists(path.join(adapterRoot, 'runtime')),
+    removeGeneratedFilesIfExists(path.join(adapterRoot, 'assertions')),
+    removeGeneratedFilesIfExists(path.join(adapterRoot, 'workflow-contracts')),
+  ])
 
   const outputFiles: Array<readonly [string, unknown]> = [
     [path.join(adapterRoot, 'manifest', 'adapter-manifest.generated.json'), manifest],

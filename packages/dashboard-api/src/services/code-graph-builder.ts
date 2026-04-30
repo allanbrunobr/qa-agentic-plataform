@@ -53,6 +53,7 @@ interface ImportEvidence {
   targetFilePath: string | null
   externalPackage: string | null
   label: string
+  localBindings: string[]
 }
 
 interface FunctionEvidence {
@@ -60,7 +61,20 @@ interface FunctionEvidence {
   name: string
   source: SourceLocation
   label: string
-  kind: 'function' | 'handler'
+  kind: 'function' | 'handler' | 'service'
+}
+
+interface FunctionCallEvidence {
+  id: string
+  source: SourceLocation
+  callerFunctionName: string
+  calleeName: string
+  targetFilePath: string | null
+  targetLabel?: string
+  externalPackage?: string | null
+  callCategory?: 'data_access' | 'external_client'
+  baseIdentifier?: string
+  propertyPath?: string[]
 }
 
 interface EndpointEvidence {
@@ -70,9 +84,11 @@ interface EndpointEvidence {
   source: SourceLocation
   label: string
   framework: string
+  routerName?: string
   handlerName?: string
   handlerSource?: SourceLocation
   enclosingFunctionName?: string
+  mountChain?: string[]
 }
 
 interface HttpCallEvidence {
@@ -86,12 +102,33 @@ interface HttpCallEvidence {
   enclosingFunctionName?: string
 }
 
+interface UiEventHandlerEvidence {
+  id: string
+  eventName: 'onClick' | 'onSubmit'
+  surfaceKind: 'button' | 'form'
+  source: SourceLocation
+  handlerNames: string[]
+  enclosingFunctionName?: string
+}
+
+interface RouteMountEvidence {
+  id: string
+  source: SourceLocation
+  prefix: string
+  routerIdentifier: string
+  targetFilePath: string | null
+  enclosingFunctionName?: string
+}
+
 interface SourceGraphEvidence {
   files: SourceGraphFile[]
   imports: ImportEvidence[]
   functions: FunctionEvidence[]
+  functionCalls: FunctionCallEvidence[]
   endpoints: EndpointEvidence[]
   httpCalls: HttpCallEvidence[]
+  uiEventHandlers: UiEventHandlerEvidence[]
+  routeMounts: RouteMountEvidence[]
 }
 
 const EVIDENCE_KIND_TO_NODE_TYPE: Record<FrontendEvidenceKind, CodeGraphNodeType> = {
@@ -246,30 +283,45 @@ function evidenceSource(item: Record<string, unknown>): SourceLocation | undefin
 }
 
 async function scanSourceGraph(repoPath: string | undefined): Promise<SourceGraphEvidence> {
-  if (!repoPath) return { files: [], imports: [], functions: [], endpoints: [], httpCalls: [] }
+  if (!repoPath) return { files: [], imports: [], functions: [], functionCalls: [], endpoints: [], httpCalls: [], uiEventHandlers: [], routeMounts: [] }
   const files = await listSourceGraphFiles(repoPath)
   const filePathSet = new Set(files.map((file) => file.relativePath))
   const imports: ImportEvidence[] = []
   const functions: FunctionEvidence[] = []
+  const functionCalls: FunctionCallEvidence[] = []
   const endpoints: EndpointEvidence[] = []
   const httpCalls: HttpCallEvidence[] = []
+  const uiEventHandlers: UiEventHandlerEvidence[] = []
+  const routeMounts: RouteMountEvidence[] = []
 
   for (const file of files) {
     const astEvidence = collectAstSourceEvidence(file, filePathSet)
     imports.push(...astEvidence.imports)
     functions.push(...astEvidence.functions)
+    functionCalls.push(...astEvidence.functionCalls)
     endpoints.push(...astEvidence.endpoints)
     httpCalls.push(...astEvidence.httpCalls)
+    uiEventHandlers.push(...astEvidence.uiEventHandlers)
+    routeMounts.push(...astEvidence.routeMounts)
     endpoints.push(...collectEndpointEvidence(file))
     httpCalls.push(...collectHttpCallEvidence(file))
   }
+
+  endpoints.push(...composeMountedEndpoints({
+    imports: uniqueById(imports),
+    endpoints: uniqueById(endpoints),
+    routeMounts: uniqueById(routeMounts),
+  }))
 
   return {
     files,
     imports: uniqueById(imports).slice(0, 160),
     functions: uniqueById(functions).slice(0, 200),
+    functionCalls: uniqueById(functionCalls).slice(0, 240),
     endpoints: uniqueById(endpoints).slice(0, 80),
     httpCalls: uniqueById(httpCalls).slice(0, 80),
+    uiEventHandlers: uniqueById(uiEventHandlers).slice(0, 120),
+    routeMounts: uniqueById(routeMounts).slice(0, 80),
   }
 }
 
@@ -332,14 +384,20 @@ async function listSourceGraphFiles(repoPath: string): Promise<SourceGraphFile[]
 function collectAstSourceEvidence(file: SourceGraphFile, filePathSet: Set<string>): {
   imports: ImportEvidence[]
   functions: FunctionEvidence[]
+  functionCalls: FunctionCallEvidence[]
   endpoints: EndpointEvidence[]
   httpCalls: HttpCallEvidence[]
+  uiEventHandlers: UiEventHandlerEvidence[]
+  routeMounts: RouteMountEvidence[]
 } {
   const imports: ImportEvidence[] = []
   const functions: FunctionEvidence[] = []
+  const functionCalls: FunctionCallEvidence[] = []
   const endpoints: EndpointEvidence[] = []
   const httpCalls: HttpCallEvidence[] = []
-  if (!/\.[cm]?[jt]sx?$/.test(file.relativePath)) return { imports, functions, endpoints, httpCalls }
+  const uiEventHandlers: UiEventHandlerEvidence[] = []
+  const routeMounts: RouteMountEvidence[] = []
+  if (!/\.[cm]?[jt]sx?$/.test(file.relativePath)) return { imports, functions, functionCalls, endpoints, httpCalls, uiEventHandlers, routeMounts }
 
   const sourceFile = ts.createSourceFile(
     file.relativePath,
@@ -350,6 +408,7 @@ function collectAstSourceEvidence(file: SourceGraphFile, filePathSet: Set<string
   )
   const functionNameByNode = new Map<ts.Node, string>()
   const functionNodeByName = new Map<string, ts.Node>()
+  const routerInstanceNames = new Set(['app', 'router', 'fastify', 'server'])
 
   function sourceForNode(node: ts.Node): SourceLocation {
     return {
@@ -358,17 +417,40 @@ function collectAstSourceEvidence(file: SourceGraphFile, filePathSet: Set<string
     }
   }
 
+  function inferredFunctionKind(filePath: string, currentKind: FunctionEvidence['kind'] = 'function'): FunctionEvidence['kind'] {
+    if (currentKind !== 'function') return currentKind
+    if (/\/(services|clients|repositories|data)\//i.test(filePath)) return 'service'
+    return currentKind
+  }
+
   function registerFunction(node: ts.Node, name: string, kind: FunctionEvidence['kind'] = 'function') {
     if (!name) return
+    const resolvedKind = inferredFunctionKind(file.relativePath, kind)
     functionNameByNode.set(node, name)
     functionNodeByName.set(name, node)
     functions.push({
-      id: graphId(kind, file.relativePath, name, String(sourceForNode(node).line ?? 1)),
+      id: graphId(resolvedKind, file.relativePath, name, String(sourceForNode(node).line ?? 1)),
       name,
       source: sourceForNode(node),
       label: name,
-      kind,
+      kind: resolvedKind,
     })
+  }
+
+  function registerObjectLiteralMethods(node: ts.ObjectLiteralExpression) {
+    for (const property of node.properties) {
+      if (ts.isMethodDeclaration(property)) {
+        const methodName = propertyNameText(property.name)
+        if (methodName) registerFunction(property, methodName)
+        continue
+      }
+      if (!ts.isPropertyAssignment(property)) continue
+      const methodName = propertyNameText(property.name)
+      if (!methodName) continue
+      if (ts.isArrowFunction(property.initializer) || ts.isFunctionExpression(property.initializer)) {
+        registerFunction(property.initializer, methodName)
+      }
+    }
   }
 
   function discoverDeclarations(node: ts.Node): void {
@@ -382,18 +464,27 @@ function collectAstSourceEvidence(file: SourceGraphFile, filePathSet: Set<string
         targetFilePath,
         externalPackage: targetFilePath ? null : externalPackageName(specifier),
         label: specifier,
+        localBindings: importLocalBindings(node.importClause),
       })
     }
 
     if (ts.isFunctionDeclaration(node) && node.name?.text) {
       registerFunction(node, node.name.text)
     } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      if (isRouterInitializer(node.initializer)) {
+        routerInstanceNames.add(node.name.text)
+      }
+      if (ts.isObjectLiteralExpression(node.initializer)) {
+        registerObjectLiteralMethods(node.initializer)
+      }
       if (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer)) {
         registerFunction(node.initializer, node.name.text)
       }
     } else if (ts.isMethodDeclaration(node)) {
       const methodName = propertyNameText(node.name)
       if (methodName) registerFunction(node, methodName)
+    } else if (ts.isExportAssignment(node) && ts.isObjectLiteralExpression(node.expression)) {
+      registerObjectLiteralMethods(node.expression)
     }
 
     ts.forEachChild(node, discoverDeclarations)
@@ -411,7 +502,7 @@ function collectAstSourceEvidence(file: SourceGraphFile, filePathSet: Set<string
 
   function discoverCalls(node: ts.Node): void {
     if (ts.isCallExpression(node)) {
-      const endpoint = endpointFromAstCall(file, sourceFile, node, enclosingFunctionName(node), functionNodeByName)
+      const endpoint = endpointFromAstCall(file, sourceFile, node, enclosingFunctionName(node), functionNodeByName, routerInstanceNames)
       if (endpoint) {
         endpoints.push(endpoint)
         if (endpoint.handlerName && endpoint.handlerSource) {
@@ -426,15 +517,115 @@ function collectAstSourceEvidence(file: SourceGraphFile, filePathSet: Set<string
       }
       const httpCall = httpCallFromAstCall(file, sourceFile, node, enclosingFunctionName(node))
       if (httpCall) httpCalls.push(httpCall)
+      const routeMount = routeMountFromAstCall(file, sourceFile, node, imports, enclosingFunctionName(node), routerInstanceNames)
+      if (routeMount) routeMounts.push(routeMount)
+      const functionCall = functionCallFromAstCall(file, sourceFile, node, imports, enclosingFunctionName(node), routerInstanceNames)
+      if (functionCall) functionCalls.push(functionCall)
     }
 
     ts.forEachChild(node, discoverCalls)
   }
 
+  function discoverUiEventHandlers(node: ts.Node): void {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const tagName = jsxTagNameText(node.tagName)
+      const surfaceKind = tagName === 'button'
+        ? 'button'
+        : tagName === 'form'
+          ? 'form'
+          : null
+      if (surfaceKind) {
+        for (const attribute of node.attributes.properties) {
+          if (!ts.isJsxAttribute(attribute)) continue
+          const eventName = attribute.name.text === 'onClick' || attribute.name.text === 'onSubmit'
+            ? attribute.name.text
+            : null
+          if (!eventName) continue
+          const initializer = attribute.initializer
+          if (!initializer || !ts.isJsxExpression(initializer) || !initializer.expression) continue
+          const handlerNames = extractUiHandlerNames(initializer.expression)
+          if (handlerNames.length === 0) continue
+          const source = sourceForNode(node)
+          uiEventHandlers.push({
+            id: graphId('ui_event', file.relativePath, surfaceKind, eventName, String(source.line ?? 1), handlerNames.join('_')),
+            eventName,
+            surfaceKind,
+            source,
+            handlerNames,
+            enclosingFunctionName: enclosingFunctionName(node),
+          })
+        }
+      }
+    }
+
+    ts.forEachChild(node, discoverUiEventHandlers)
+  }
+
   discoverDeclarations(sourceFile)
   discoverCalls(sourceFile)
+  discoverUiEventHandlers(sourceFile)
 
-  return { imports, functions, endpoints, httpCalls }
+  return { imports, functions, functionCalls, endpoints, httpCalls, uiEventHandlers, routeMounts }
+}
+
+function jsxTagNameText(name: ts.JsxTagNameExpression): string | null {
+  if (ts.isIdentifier(name)) return name.text
+  if (ts.isPropertyAccessExpression(name)) return name.name.text
+  return null
+}
+
+function extractUiHandlerNames(expression: ts.Expression): string[] {
+  const names = new Set<string>()
+
+  function visit(node: ts.Node): void {
+    if (
+      ts.isParenthesizedExpression(node)
+      || ts.isAsExpression(node)
+      || ts.isTypeAssertionExpression(node)
+      || ts.isNonNullExpression(node)
+      || ts.isAwaitExpression(node)
+      || ts.isVoidExpression(node)
+    ) {
+      visit(node.expression)
+      return
+    }
+
+    if (ts.isIdentifier(node)) {
+      names.add(node.text)
+      return
+    }
+
+    if (ts.isPropertyAccessExpression(node)) {
+      names.add(node.name.text)
+      visit(node.expression)
+      return
+    }
+
+    if (ts.isCallExpression(node)) {
+      const targetName = callTargetName(node.expression)
+      if (targetName) names.add(targetName)
+      ts.forEachChild(node, visit)
+      return
+    }
+
+    ts.forEachChild(node, visit)
+  }
+
+  visit(expression)
+
+  return [...names]
+    .filter((name) => !isUiLocalOnlyHandlerName(name))
+    .slice(0, 6)
+}
+
+function callTargetName(expression: ts.Expression): string | null {
+  if (ts.isIdentifier(expression)) return expression.text
+  if (ts.isPropertyAccessExpression(expression)) return expression.name.text
+  return null
+}
+
+function isUiLocalOnlyHandlerName(name: string) {
+  return /^(set[A-Z]|console|preventDefault|stopPropagation|then|catch|finally)$/i.test(name)
 }
 
 function scriptKindForPath(relativePath: string): ts.ScriptKind {
@@ -467,11 +658,142 @@ function objectLiteralStringProperty(objectLiteral: ts.ObjectLiteralExpression |
   return null
 }
 
+function importLocalBindings(importClause: ts.ImportClause | undefined) {
+  const bindings: string[] = []
+  if (!importClause) return bindings
+  if (importClause.name?.text) bindings.push(importClause.name.text)
+  const namedBindings = importClause.namedBindings
+  if (!namedBindings) return bindings
+  if (ts.isNamespaceImport(namedBindings)) {
+    bindings.push(namedBindings.name.text)
+    return bindings
+  }
+  for (const element of namedBindings.elements) {
+    bindings.push((element.name?.text ?? element.propertyName?.text ?? '').trim())
+  }
+  return bindings.filter(Boolean)
+}
+
+function isRouterInitializer(expression: ts.Expression) {
+  if (!ts.isCallExpression(expression)) return false
+  if (ts.isIdentifier(expression.expression) && expression.expression.text === 'Router') return true
+  if (!ts.isPropertyAccessExpression(expression.expression)) return false
+  return ts.isIdentifier(expression.expression.expression)
+    && expression.expression.expression.text === 'express'
+    && expression.expression.name.text === 'Router'
+}
+
 function callPropertyName(expression: ts.Expression): { objectName: string | null; propertyName: string | null } {
   if (!ts.isPropertyAccessExpression(expression)) return { objectName: null, propertyName: null }
   const propertyName = expression.name.text
   const objectName = ts.isIdentifier(expression.expression) ? expression.expression.text : null
   return { objectName, propertyName }
+}
+
+function callTargetDescriptor(expression: ts.Expression): {
+  baseIdentifier: string | null
+  propertyPath: string[]
+  fullName: string | null
+} {
+  if (ts.isIdentifier(expression)) {
+    return {
+      baseIdentifier: expression.text,
+      propertyPath: [],
+      fullName: expression.text,
+    }
+  }
+  if (!ts.isPropertyAccessExpression(expression)) {
+    return {
+      baseIdentifier: null,
+      propertyPath: [],
+      fullName: null,
+    }
+  }
+
+  const propertyPath: string[] = []
+  let current: ts.Expression = expression
+  while (ts.isPropertyAccessExpression(current)) {
+    propertyPath.unshift(current.name.text)
+    current = current.expression
+  }
+
+  if (!ts.isIdentifier(current)) {
+    return {
+      baseIdentifier: null,
+      propertyPath,
+      fullName: propertyPath.length > 0 ? propertyPath.join('.') : null,
+    }
+  }
+
+  return {
+    baseIdentifier: current.text,
+    propertyPath,
+    fullName: [current.text, ...propertyPath].join('.'),
+  }
+}
+
+function isKnownDataPackage(packageName: string | null | undefined) {
+  if (!packageName) return false
+  return [
+    '@prisma/client',
+    '@supabase/supabase-js',
+    'drizzle-orm',
+    'kysely',
+    'knex',
+    'mongoose',
+    'pg',
+    'mysql2',
+    'better-sqlite3',
+    'sqlite3',
+    'sequelize',
+    'typeorm',
+  ].includes(packageName)
+}
+
+function looksLikeDataAccessTarget(input: {
+  baseIdentifier: string | null
+  propertyPath: string[]
+  externalPackage: string | null
+}) {
+  if (isKnownDataPackage(input.externalPackage)) return true
+  const identifier = (input.baseIdentifier ?? '').toLowerCase()
+  const fullPath = input.propertyPath.map((segment) => segment.toLowerCase())
+  if (/(^|_)(db|database|repo|repository|model|models|collection|collections|prisma|sequelize|typeorm|knex|mongoose|supabase)(_|$)/i.test(identifier)) {
+    return true
+  }
+  const dataVerbs = new Set([
+    'find',
+    'findall',
+    'findmany',
+    'findfirst',
+    'findunique',
+    'select',
+    'insert',
+    'update',
+    'delete',
+    'upsert',
+    'create',
+    'save',
+    'query',
+    'from',
+    'where',
+    'aggregate',
+    'count',
+  ])
+  return fullPath.some((segment) => dataVerbs.has(segment))
+}
+
+function looksLikeHttpClientCall(input: {
+  baseIdentifier: string | null
+  propertyPath: string[]
+  externalPackage: string | null
+}) {
+  if (input.propertyPath.length === 0) return false
+  const finalProperty = input.propertyPath[input.propertyPath.length - 1]?.toLowerCase()
+  if (!finalProperty || !['get', 'post', 'put', 'patch', 'delete'].includes(finalProperty)) return false
+  if ((input.externalPackage ?? '').toLowerCase().includes('axios')) return true
+  const identifier = (input.baseIdentifier ?? '').toLowerCase()
+  return ['axios', 'http', 'client', 'api'].includes(identifier)
 }
 
 function endpointFromAstCall(
@@ -480,11 +802,12 @@ function endpointFromAstCall(
   node: ts.CallExpression,
   enclosingFunctionNameValue: string | undefined,
   functionNodeByName: Map<string, ts.Node>,
+  routerInstanceNames: Set<string>,
 ): EndpointEvidence | null {
   const { objectName, propertyName } = callPropertyName(node.expression)
   const method = propertyName?.toUpperCase()
   if (!method || !['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return null
-  if (!objectName || !['app', 'router', 'fastify', 'server'].includes(objectName)) return null
+  if (!objectName || !routerInstanceNames.has(objectName)) return null
   const routePath = stringLiteralText(node.arguments[0])
   if (!routePath) return null
   const handler = node.arguments.length >= 2 ? node.arguments[node.arguments.length - 1] : undefined
@@ -496,10 +819,113 @@ function endpointFromAstCall(
     method,
     routePath,
     framework: objectName === 'fastify' ? 'fastify_ast' : 'express_ast',
+    routerName: objectName,
     handlerName: handlerInfo.name,
     handlerSource: handlerInfo.source,
     enclosingFunctionName: enclosingFunctionNameValue,
   })
+}
+
+function routeMountFromAstCall(
+  file: SourceGraphFile,
+  sourceFile: ts.SourceFile,
+  node: ts.CallExpression,
+  imports: ImportEvidence[],
+  enclosingFunctionNameValue: string | undefined,
+  routerInstanceNames: Set<string>,
+): RouteMountEvidence | null {
+  const { objectName, propertyName } = callPropertyName(node.expression)
+  if (propertyName !== 'use' && propertyName !== 'register') return null
+  if (!objectName || !routerInstanceNames.has(objectName)) return null
+  if (node.arguments.length < 2) return null
+
+  const prefix = normalizeEndpointPath(stringLiteralText(node.arguments[0]) ?? '')
+  const targetArgument = node.arguments[1]
+  if (!prefix || prefix === '/' || !targetArgument || !ts.isIdentifier(targetArgument)) return null
+
+  const targetImport = imports.find((item) => item.localBindings.includes(targetArgument.text))
+  const source = {
+    filePath: file.relativePath,
+    line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
+  }
+
+  return {
+    id: graphId('route_mount', file.relativePath, objectName, prefix, targetArgument.text, String(source.line ?? 1)),
+    source,
+    prefix,
+    routerIdentifier: targetArgument.text,
+    targetFilePath: targetImport?.targetFilePath ?? null,
+    enclosingFunctionName: enclosingFunctionNameValue,
+  }
+}
+
+function functionCallFromAstCall(
+  file: SourceGraphFile,
+  sourceFile: ts.SourceFile,
+  node: ts.CallExpression,
+  imports: ImportEvidence[],
+  enclosingFunctionNameValue: string | undefined,
+  routerInstanceNames: Set<string>,
+): FunctionCallEvidence | null {
+  if (!enclosingFunctionNameValue) return null
+  if (ts.isIdentifier(node.expression) && node.expression.text === 'fetch') return null
+
+  if (ts.isIdentifier(node.expression)) {
+    const calleeName = node.expression.text
+    if (!calleeName) return null
+    const importMatch = imports.find((item) => item.localBindings.includes(calleeName))
+    const source = {
+      filePath: file.relativePath,
+      line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
+    }
+    return {
+      id: graphId('function_call', file.relativePath, enclosingFunctionNameValue, calleeName, String(source.line ?? 1)),
+      source,
+      callerFunctionName: enclosingFunctionNameValue,
+      calleeName,
+      targetFilePath: importMatch?.targetFilePath ?? null,
+      targetLabel: calleeName,
+      externalPackage: importMatch?.externalPackage ?? null,
+      callCategory: isKnownDataPackage(importMatch?.externalPackage ?? null) ? 'data_access' : importMatch?.externalPackage ? 'external_client' : undefined,
+    }
+  }
+
+  const targetDescriptor = callTargetDescriptor(node.expression)
+  const propertyName = targetDescriptor.propertyPath[targetDescriptor.propertyPath.length - 1] ?? null
+  const objectName = targetDescriptor.baseIdentifier
+  if (!propertyName || !objectName || routerInstanceNames.has(objectName)) return null
+  if (['json', 'send', 'status'].includes(propertyName)) return null
+  const importMatch = imports.find((item) => item.localBindings.includes(objectName))
+  if (looksLikeHttpClientCall({
+    baseIdentifier: objectName,
+    propertyPath: targetDescriptor.propertyPath,
+    externalPackage: importMatch?.externalPackage ?? null,
+  })) return null
+  const source = {
+    filePath: file.relativePath,
+    line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
+  }
+  const callCategory = looksLikeDataAccessTarget({
+    baseIdentifier: objectName,
+    propertyPath: targetDescriptor.propertyPath,
+    externalPackage: importMatch?.externalPackage ?? null,
+  })
+    ? 'data_access'
+    : importMatch?.externalPackage
+      ? 'external_client'
+      : undefined
+  return {
+    id: graphId('function_call', file.relativePath, enclosingFunctionNameValue, targetDescriptor.fullName ?? `${objectName}.${propertyName}`, String(source.line ?? 1)),
+    source,
+    callerFunctionName: enclosingFunctionNameValue,
+    calleeName: propertyName,
+    targetFilePath: importMatch?.targetFilePath ?? null,
+    targetLabel: targetDescriptor.fullName ?? `${objectName}.${propertyName}`,
+    externalPackage: importMatch?.externalPackage ?? null,
+    callCategory,
+    baseIdentifier: objectName,
+    propertyPath: targetDescriptor.propertyPath,
+  }
 }
 
 function handlerNameAndSource(
@@ -537,9 +963,11 @@ function endpointFromAstSource(input: {
   method: string
   routePath: string
   framework: string
+  routerName?: string
   handlerName?: string
   handlerSource?: SourceLocation
   enclosingFunctionName?: string
+  mountChain?: string[]
 }): EndpointEvidence {
   const line = input.sourceFile.getLineAndCharacterOfPosition(input.node.getStart(input.sourceFile)).line + 1
   const normalizedPath = normalizeEndpointPath(input.routePath)
@@ -550,9 +978,11 @@ function endpointFromAstSource(input: {
     source: { filePath: input.file.relativePath, line },
     label: `${input.method} ${normalizedPath}`,
     framework: input.framework,
+    routerName: input.routerName,
     handlerName: input.handlerName,
     handlerSource: input.handlerSource,
     enclosingFunctionName: input.enclosingFunctionName,
+    mountChain: input.mountChain,
   }
 }
 
@@ -605,8 +1035,20 @@ function resolveRelativeImport(fromFilePath: string, specifier: string, filePath
   if (!specifier.startsWith('.')) return null
   const baseDir = path.posix.dirname(normalizePath(fromFilePath))
   const raw = normalizePath(path.posix.normalize(path.posix.join(baseDir, specifier)))
+  const withoutExplicitJsExt = raw.replace(/\.(?:c|m)?jsx?$/i, '')
   const candidates = [
     raw,
+    withoutExplicitJsExt,
+    `${withoutExplicitJsExt}.ts`,
+    `${withoutExplicitJsExt}.tsx`,
+    `${withoutExplicitJsExt}.js`,
+    `${withoutExplicitJsExt}.jsx`,
+    `${withoutExplicitJsExt}.mjs`,
+    `${withoutExplicitJsExt}.cjs`,
+    `${withoutExplicitJsExt}/index.ts`,
+    `${withoutExplicitJsExt}/index.tsx`,
+    `${withoutExplicitJsExt}/index.js`,
+    `${withoutExplicitJsExt}/index.jsx`,
     `${raw}.ts`,
     `${raw}.tsx`,
     `${raw}.js`,
@@ -688,6 +1130,73 @@ function collectHttpCallEvidence(file: SourceGraphFile): HttpCallEvidence[] {
   }
 
   return calls
+}
+
+function composeMountedEndpoints(input: {
+  imports: ImportEvidence[]
+  endpoints: EndpointEvidence[]
+  routeMounts: RouteMountEvidence[]
+}) {
+  const importsByFile = new Map<string, ImportEvidence[]>()
+  for (const importItem of input.imports) {
+    const list = importsByFile.get(importItem.source.filePath) ?? []
+    list.push(importItem)
+    importsByFile.set(importItem.source.filePath, list)
+  }
+
+  const endpointPool = [...input.endpoints]
+  const composed: EndpointEvidence[] = []
+  const seen = new Set(endpointPool.map((endpoint) => endpoint.id))
+
+  for (let iteration = 0; iteration < 4; iteration += 1) {
+    let added = 0
+    const candidates = [...endpointPool]
+
+    for (const mount of input.routeMounts) {
+      const mountedEndpoints = candidates.filter((endpoint) => endpointMatchesRouteMount(endpoint, mount, importsByFile))
+      for (const endpoint of mountedEndpoints) {
+        if (endpoint.mountChain?.includes(mount.id)) continue
+        const prefixedPath = normalizeEndpointPath(`${mount.prefix}/${endpoint.routePath}`)
+        const composedEndpoint: EndpointEvidence = {
+          ...endpoint,
+          id: graphId('endpoint', endpoint.method, prefixedPath, mount.source.filePath, String(mount.source.line ?? 1), endpoint.label),
+          routePath: prefixedPath,
+          source: mount.source,
+          label: `${endpoint.method} ${prefixedPath}`,
+          framework: `${endpoint.framework}_mounted`,
+          mountChain: [...(endpoint.mountChain ?? []), mount.id],
+          enclosingFunctionName: mount.enclosingFunctionName ?? endpoint.enclosingFunctionName,
+        }
+        if (seen.has(composedEndpoint.id)) continue
+        seen.add(composedEndpoint.id)
+        endpointPool.push(composedEndpoint)
+        composed.push(composedEndpoint)
+        added += 1
+      }
+    }
+
+    if (added === 0) break
+  }
+
+  return composed
+}
+
+function endpointMatchesRouteMount(
+  endpoint: EndpointEvidence,
+  mount: RouteMountEvidence,
+  importsByFile: Map<string, ImportEvidence[]>,
+) {
+  if (endpoint.source.filePath === mount.source.filePath && endpoint.routerName === mount.routerIdentifier) {
+    return true
+  }
+
+  if (!mount.targetFilePath) return false
+  if (endpoint.source.filePath !== mount.targetFilePath) return false
+
+  const importedBindings = (importsByFile.get(mount.source.filePath) ?? []).find((item) =>
+    item.targetFilePath === mount.targetFilePath && item.localBindings.includes(mount.routerIdentifier),
+  )
+  return Boolean(importedBindings)
 }
 
 function httpCallFromMatch(
@@ -1063,15 +1572,24 @@ function addSourceGraph(input: {
   const fileNodeByPath = new Map<string, string>()
   const endpointNodeByPath = new Map<string, string>()
   const functionNodeByFileAndName = new Map<string, string>()
+  const functionNodeIdsByName = new Map<string, string[]>()
+  const importedTargetsByFile = new Map<string, Set<string>>()
   const sourceFiles = new Set<string>()
 
   for (const importItem of input.sourceGraph.imports) {
     sourceFiles.add(importItem.source.filePath)
     if (importItem.targetFilePath) sourceFiles.add(importItem.targetFilePath)
+    if (importItem.targetFilePath) {
+      const imported = importedTargetsByFile.get(importItem.source.filePath) ?? new Set<string>()
+      imported.add(importItem.targetFilePath)
+      importedTargetsByFile.set(importItem.source.filePath, imported)
+    }
   }
   for (const fn of input.sourceGraph.functions) sourceFiles.add(fn.source.filePath)
+  for (const functionCall of input.sourceGraph.functionCalls) sourceFiles.add(functionCall.source.filePath)
   for (const endpoint of input.sourceGraph.endpoints) sourceFiles.add(endpoint.source.filePath)
   for (const call of input.sourceGraph.httpCalls) sourceFiles.add(call.source.filePath)
+  for (const uiEventHandler of input.sourceGraph.uiEventHandlers) sourceFiles.add(uiEventHandler.source.filePath)
 
   for (const file of input.sourceGraph.files) {
     if (!sourceFiles.has(file.relativePath)) continue
@@ -1141,6 +1659,9 @@ function addSourceGraph(input: {
       },
     })
     functionNodeByFileAndName.set(`${fn.source.filePath}:${fn.name}`, functionNodeId)
+    const ids = functionNodeIdsByName.get(fn.name) ?? []
+    ids.push(functionNodeId)
+    functionNodeIdsByName.set(fn.name, ids)
     addEdge(input.edges, {
       id: edgeId('contains', input.repositoryNodeId, functionNodeId),
       from: input.repositoryNodeId,
@@ -1158,6 +1679,97 @@ function addSourceGraph(input: {
     }
   }
 
+  for (const functionCall of input.sourceGraph.functionCalls) {
+    const callerNodeId = functionNodeByFileAndName.get(`${functionCall.source.filePath}:${functionCall.callerFunctionName}`)
+    if (!callerNodeId) continue
+
+    const directMatches = [
+      functionNodeByFileAndName.get(`${functionCall.source.filePath}:${functionCall.calleeName}`),
+      functionCall.targetFilePath ? functionNodeByFileAndName.get(`${functionCall.targetFilePath}:${functionCall.calleeName}`) : undefined,
+    ].filter(Boolean) as string[]
+    const globalMatches = functionNodeIdsByName.get(functionCall.calleeName) ?? []
+    let calleeNodeId = directMatches[0] ?? (globalMatches.length === 1 ? globalMatches[0] : undefined)
+    if (!calleeNodeId && (functionCall.targetFilePath || functionCall.externalPackage || functionCall.callCategory)) {
+      const syntheticLabel = functionCall.targetLabel ?? functionCall.calleeName
+      calleeNodeId = addNode(input.nodes, {
+        id: graphId(
+          'service',
+          functionCall.targetFilePath ?? functionCall.externalPackage ?? functionCall.source.filePath,
+          syntheticLabel,
+        ),
+        type: 'service',
+        label: syntheticLabel,
+        source: functionCall.targetFilePath ? { filePath: functionCall.targetFilePath } : functionCall.source,
+        metadata: {
+          name: functionCall.calleeName,
+          targetLabel: syntheticLabel,
+          kind: functionCall.callCategory ?? 'external_client',
+          externalPackage: functionCall.externalPackage,
+          baseIdentifier: functionCall.baseIdentifier,
+          propertyPath: functionCall.propertyPath,
+          source: 'synthetic_call_target',
+        },
+      })
+      addEdge(input.edges, {
+        id: edgeId('contains', input.repositoryNodeId, calleeNodeId),
+        from: input.repositoryNodeId,
+        to: calleeNodeId,
+        type: 'contains',
+      })
+      if (functionCall.targetFilePath) {
+        const targetFileNodeId = fileNodeByPath.get(functionCall.targetFilePath)
+        if (targetFileNodeId) {
+          addEdge(input.edges, {
+            id: edgeId('contains', targetFileNodeId, calleeNodeId),
+            from: targetFileNodeId,
+            to: calleeNodeId,
+            type: 'contains',
+          })
+        }
+      }
+      if (functionCall.externalPackage) {
+        const packageNodeId = addNode(input.nodes, {
+          id: graphId('package', functionCall.externalPackage),
+          type: 'package',
+          label: functionCall.externalPackage,
+          metadata: {
+            packageName: functionCall.externalPackage,
+            source: 'synthetic_call_target',
+          },
+        })
+        addEdge(input.edges, {
+          id: edgeId('contains', input.repositoryNodeId, packageNodeId),
+          from: input.repositoryNodeId,
+          to: packageNodeId,
+          type: 'contains',
+        })
+        addEdge(input.edges, {
+          id: edgeId('related_to', calleeNodeId, packageNodeId),
+          from: calleeNodeId,
+          to: packageNodeId,
+          type: 'related_to',
+          metadata: {
+            relationship: 'backed_by_package',
+          },
+        })
+      }
+    }
+    if (!calleeNodeId || calleeNodeId === callerNodeId) continue
+
+    addEdge(input.edges, {
+      id: edgeId('calls', callerNodeId, calleeNodeId),
+      from: callerNodeId,
+      to: calleeNodeId,
+      type: 'calls',
+      confidence: 0.72,
+      metadata: {
+        callType: 'function',
+        callerFunctionName: functionCall.callerFunctionName,
+        calleeName: functionCall.calleeName,
+      },
+    })
+  }
+
   for (const endpoint of input.sourceGraph.endpoints) {
     const endpointNodeId = addNode(input.nodes, {
       id: endpoint.id,
@@ -1168,8 +1780,11 @@ function addSourceGraph(input: {
         method: endpoint.method,
         path: endpoint.routePath,
         framework: endpoint.framework,
+        routerName: endpoint.routerName,
         handlerName: endpoint.handlerName,
         enclosingFunctionName: endpoint.enclosingFunctionName,
+        mountChain: endpoint.mountChain,
+        isMountedRoute: Array.isArray(endpoint.mountChain) && endpoint.mountChain.length > 0,
       },
     })
     endpointNodeByPath.set(`${endpoint.method} ${endpoint.routePath}`, endpointNodeId)
@@ -1190,8 +1805,13 @@ function addSourceGraph(input: {
       })
     }
     const handlerNodeId = endpoint.handlerName
-      ? functionNodeByFileAndName.get(`${endpoint.source.filePath}:${endpoint.handlerName}`)
-        ?? (endpoint.handlerSource ? functionNodeByFileAndName.get(`${endpoint.handlerSource.filePath}:${endpoint.handlerName}`) : undefined)
+      ? resolveEndpointHandlerNodeId({
+          endpoint,
+          functionNodeByFileAndName,
+          functionNodeIdsByName,
+          importedTargetsByFile,
+          nodeById: input.nodes,
+        })
       : undefined
     if (handlerNodeId) {
       addEdge(input.edges, {
@@ -1275,6 +1895,152 @@ function addSourceGraph(input: {
       }
     }
   }
+
+  const uiSurfaceNodeByLocation = buildUiSurfaceNodeByLocation(input.nodes)
+  for (const uiEventHandler of input.sourceGraph.uiEventHandlers) {
+    const surfaceNodeId = findUiSurfaceNodeId(uiSurfaceNodeByLocation, uiEventHandler)
+    if (!surfaceNodeId) continue
+    const handlerNodeIds = resolveUiHandlerNodeIds({
+      uiEventHandler,
+      functionNodeByFileAndName,
+      functionNodeIdsByName,
+      importedTargetsByFile,
+      nodeById: input.nodes,
+    })
+    for (const handlerNodeId of handlerNodeIds) {
+      addEdge(input.edges, {
+        id: edgeId('handles', handlerNodeId, surfaceNodeId),
+        from: handlerNodeId,
+        to: surfaceNodeId,
+        type: 'handles',
+        confidence: 0.78,
+        metadata: {
+          eventName: uiEventHandler.eventName,
+          source: 'jsx_event_handler',
+          handlerNames: uiEventHandler.handlerNames,
+        },
+      })
+    }
+  }
+}
+
+function resolveEndpointHandlerNodeId(input: {
+  endpoint: EndpointEvidence
+  functionNodeByFileAndName: Map<string, string>
+  functionNodeIdsByName: Map<string, string[]>
+  importedTargetsByFile: Map<string, Set<string>>
+  nodeById: Map<string, CodeGraphNode>
+}) {
+  const handlerName = input.endpoint.handlerName
+  if (!handlerName) return undefined
+
+  const resolveImportedHandler = (filePath: string, visited = new Set<string>()): string | undefined => {
+    if (visited.has(filePath)) return undefined
+    visited.add(filePath)
+
+    const directNodeId = input.functionNodeByFileAndName.get(`${filePath}:${handlerName}`)
+    const directNode = directNodeId ? input.nodeById.get(directNodeId) : undefined
+    if (directNodeId && directNode && directNode.type !== 'handler') return directNodeId
+
+    const importedTargets = input.importedTargetsByFile.get(filePath) ?? new Set<string>()
+    for (const importedFilePath of importedTargets) {
+      const importedNodeId = resolveImportedHandler(importedFilePath, visited)
+      if (importedNodeId) return importedNodeId
+    }
+
+    if (directNodeId) return directNodeId
+    return undefined
+  }
+
+  const candidateFilePaths = [
+    input.endpoint.source.filePath,
+    input.endpoint.handlerSource?.filePath,
+  ].filter(Boolean) as string[]
+
+  for (const candidateFilePath of candidateFilePaths) {
+    const importedNodeId = resolveImportedHandler(candidateFilePath)
+    if (importedNodeId) return importedNodeId
+  }
+
+  const directMatches = [
+    input.functionNodeByFileAndName.get(`${input.endpoint.source.filePath}:${handlerName}`),
+    input.endpoint.handlerSource
+      ? input.functionNodeByFileAndName.get(`${input.endpoint.handlerSource.filePath}:${handlerName}`)
+      : undefined,
+  ].filter(Boolean) as string[]
+  if (directMatches.length > 0) return directMatches[0]
+
+  const globalMatches = (input.functionNodeIdsByName.get(handlerName) ?? []).filter((id) => {
+    const node = input.nodeById.get(id)
+    return node?.type === 'function' || node?.type === 'handler' || node?.type === 'service'
+  })
+  if (globalMatches.length === 1) return globalMatches[0]
+  return undefined
+}
+
+function buildUiSurfaceNodeByLocation(nodes: Map<string, CodeGraphNode>) {
+  const map = new Map<string, Array<{ id: string; line: number }>>()
+  for (const node of nodes.values()) {
+    if (!['button', 'form'].includes(node.type)) continue
+    if (!node.source?.filePath || !node.source?.line) continue
+    const key = `${node.type}:${node.source.filePath}`
+    const list = map.get(key) ?? []
+    list.push({ id: node.id, line: node.source.line })
+    map.set(key, list)
+  }
+  return map
+}
+
+function findUiSurfaceNodeId(
+  uiSurfaceNodeByLocation: Map<string, Array<{ id: string; line: number }>>,
+  uiEventHandler: UiEventHandlerEvidence,
+) {
+  const key = `${uiEventHandler.surfaceKind}:${uiEventHandler.source.filePath}`
+  const candidates = uiSurfaceNodeByLocation.get(key) ?? []
+  if (candidates.length === 0) return null
+  const nearest = candidates
+    .map((candidate) => ({
+      ...candidate,
+      distance: Math.abs(candidate.line - (uiEventHandler.source.line ?? candidate.line)),
+    }))
+    .sort((left, right) => left.distance - right.distance)[0]
+  if (!nearest || nearest.distance > 3) return null
+  return nearest.id
+}
+
+function resolveUiHandlerNodeIds(input: {
+  uiEventHandler: UiEventHandlerEvidence
+  functionNodeByFileAndName: Map<string, string>
+  functionNodeIdsByName: Map<string, string[]>
+  importedTargetsByFile: Map<string, Set<string>>
+  nodeById: Map<string, CodeGraphNode>
+}) {
+  const handlerNodeIds = new Set<string>()
+  const sourceFilePath = input.uiEventHandler.source.filePath
+  const importedTargets = input.importedTargetsByFile.get(sourceFilePath) ?? new Set<string>()
+
+  for (const handlerName of input.uiEventHandler.handlerNames) {
+    const sameFileNodeId = input.functionNodeByFileAndName.get(`${sourceFilePath}:${handlerName}`)
+    if (sameFileNodeId) {
+      handlerNodeIds.add(sameFileNodeId)
+      continue
+    }
+
+    for (const importedFilePath of importedTargets) {
+      const importedNodeId = input.functionNodeByFileAndName.get(`${importedFilePath}:${handlerName}`)
+      if (importedNodeId) handlerNodeIds.add(importedNodeId)
+    }
+
+    const globalMatches = input.functionNodeIdsByName.get(handlerName) ?? []
+    if (handlerNodeIds.size === 0 && globalMatches.length === 1) {
+      handlerNodeIds.add(globalMatches[0]!)
+    }
+  }
+
+  return [...handlerNodeIds].filter((id) => {
+    const node = input.nodeById.get(id)
+    return node?.type === 'function' || node?.type === 'handler' || node?.type === 'service'
+  })
 }
 
 function resolveCapabilitySupport(input: {
@@ -1286,16 +2052,126 @@ function resolveCapabilitySupport(input: {
   const httpCalls = [...input.nodes.values()].filter((node) => node.type === 'http_call')
   const callsEndpoint = new Map<string, string[]>()
   const nodeById = new Map([...input.nodes.values()].map((node) => [node.id, node]))
+  const incomingEdgesByNode = new Map<string, CodeGraphEdge[]>()
+  const outgoingEdgesByNode = new Map<string, CodeGraphEdge[]>()
+  const edgeByType = new Map<CodeGraphEdgeType, CodeGraphEdge[]>()
 
-  for (const edge of input.edges.values()) {
-    if (edge.type !== 'calls') continue
-    if (nodeById.get(edge.from)?.type !== 'http_call' || nodeById.get(edge.to)?.type !== 'endpoint') continue
-    const list = callsEndpoint.get(edge.from) ?? []
-    list.push(edge.to)
-    callsEndpoint.set(edge.from, list)
+  const rememberEdge = (edge: CodeGraphEdge) => {
+    const incoming = incomingEdgesByNode.get(edge.to) ?? []
+    incoming.push(edge)
+    incomingEdgesByNode.set(edge.to, incoming)
+
+    const outgoing = outgoingEdgesByNode.get(edge.from) ?? []
+    outgoing.push(edge)
+    outgoingEdgesByNode.set(edge.from, outgoing)
+
+    const typed = edgeByType.get(edge.type) ?? []
+    typed.push(edge)
+    edgeByType.set(edge.type, typed)
+
+    if (edge.type === 'calls' && nodeById.get(edge.from)?.type === 'http_call' && nodeById.get(edge.to)?.type === 'endpoint') {
+      const list = callsEndpoint.get(edge.from) ?? []
+      list.push(edge.to)
+      callsEndpoint.set(edge.from, list)
+    }
+  }
+
+  for (const edge of input.edges.values()) rememberEdge(edge)
+
+  const addSupportEdge = (params: {
+    sourceNodeId: string
+    capabilityNode: CodeGraphNode
+    confidence: number
+    matchedBy: string
+    targetType: string
+  }) => {
+    const sourceNode = nodeById.get(params.sourceNodeId)
+    if (!sourceNode) return
+    const supportEdge: CodeGraphEdge = {
+      id: edgeId('supports_capability', params.sourceNodeId, params.capabilityNode.id),
+      from: params.sourceNodeId,
+      to: params.capabilityNode.id,
+      type: 'supports_capability',
+      confidence: params.confidence,
+      label: `${sourceNode.label} supports ${params.capabilityNode.label}`,
+      metadata: {
+        matchedBy: params.matchedBy,
+        capabilityId: params.capabilityNode.metadata['capabilityId'] ?? params.capabilityNode.label,
+        targetType: params.targetType,
+        score: Number(params.confidence.toFixed(3)),
+      },
+    }
+    if (input.edges.has(supportEdge.id)) return
+    addEdge(input.edges, supportEdge)
+    const created = input.edges.get(supportEdge.id)
+    if (created) rememberEdge(created)
   }
 
   for (const capability of capabilities) {
+    const mappedSurfaceEdges = (edgeByType.get('maps_surface') ?? []).filter((edge) => edge.from === capability.id)
+    const directUiHandlerNodeIds = new Set<string>()
+    for (const mappedSurfaceEdge of mappedSurfaceEdges) {
+      for (const edge of incomingEdgesByNode.get(mappedSurfaceEdge.to) ?? []) {
+        if (edge.type === 'handles' && edge.metadata?.['source'] === 'jsx_event_handler') {
+          directUiHandlerNodeIds.add(edge.from)
+        }
+      }
+    }
+
+    const downstreamSupport = collectTransitiveFunctionSupport({
+      startNodeIds: [...directUiHandlerNodeIds],
+      nodeById,
+      outgoingEdgesByNode,
+    })
+
+    const structuralHttpCallNodeIds = new Set<string>(downstreamSupport.httpCallNodeIds)
+    const structuralEndpointNodeIds = new Set<string>()
+    for (const httpCallNodeId of structuralHttpCallNodeIds) {
+      for (const endpointNodeId of callsEndpoint.get(httpCallNodeId) ?? []) {
+        structuralEndpointNodeIds.add(endpointNodeId)
+      }
+    }
+
+    for (const handlerNodeId of directUiHandlerNodeIds) {
+      addSupportEdge({
+        sourceNodeId: handlerNodeId,
+        capabilityNode: capability,
+        confidence: 0.56,
+        matchedBy: 'frontend_surface_handler_direct',
+        targetType: 'handler',
+      })
+    }
+
+    for (const handlerNodeId of downstreamSupport.handlerNodeIds) {
+      addSupportEdge({
+        sourceNodeId: handlerNodeId,
+        capabilityNode: capability,
+        confidence: 0.48,
+        matchedBy: 'frontend_surface_handler_transitive',
+        targetType: 'handler',
+      })
+    }
+
+    for (const httpCallNodeId of structuralHttpCallNodeIds) {
+      addSupportEdge({
+        sourceNodeId: httpCallNodeId,
+        capabilityNode: capability,
+        confidence: 0.68,
+        matchedBy: 'frontend_surface_http_call',
+        targetType: 'http_call',
+      })
+    }
+
+    for (const endpointNodeId of structuralEndpointNodeIds) {
+      addSupportEdge({
+        sourceNodeId: endpointNodeId,
+        capabilityNode: capability,
+        confidence: 0.74,
+        matchedBy: 'frontend_surface_endpoint',
+        targetType: 'endpoint',
+      })
+    }
+
     const capabilityTokens = tokenizeGraphText([
       capability.label,
       capability.metadata['capabilityId'],
@@ -1328,51 +2204,98 @@ function resolveCapabilitySupport(input: {
       .slice(0, 3)
 
     for (const match of endpointMatches) {
-      addEdge(input.edges, {
-        id: edgeId('supports_capability', match.node.id, capability.id),
-        from: match.node.id,
-        to: capability.id,
-        type: 'supports_capability',
+      addSupportEdge({
+        sourceNodeId: match.node.id,
+        capabilityNode: capability,
         confidence: match.score,
-        label: `${match.node.label} supports ${capability.label}`,
-        metadata: {
-          matchedBy: 'capability_token_endpoint',
-          capabilityId: capability.metadata['capabilityId'] ?? capability.label,
-          targetType: 'endpoint',
-          score: Number(match.score.toFixed(3)),
-        },
+        matchedBy: 'capability_token_endpoint',
+        targetType: 'endpoint',
       })
     }
 
     for (const match of httpCallMatches) {
-      addEdge(input.edges, {
-        id: edgeId('supports_capability', match.node.id, capability.id),
-        from: match.node.id,
-        to: capability.id,
-        type: 'supports_capability',
+      addSupportEdge({
+        sourceNodeId: match.node.id,
+        capabilityNode: capability,
         confidence: match.score,
-        label: `${match.node.label} supports ${capability.label}`,
-        metadata: {
-          matchedBy: 'capability_token_http_call',
-          capabilityId: capability.metadata['capabilityId'] ?? capability.label,
-          targetType: 'http_call',
-          score: Number(match.score.toFixed(3)),
-        },
+        matchedBy: 'capability_token_http_call',
+        targetType: 'http_call',
       })
     }
 
-    const mappedEndpointIds = endpointMatches.map((match) => match.node.id)
-    const mappedHttpCallIds = httpCallMatches.map((match) => match.node.id)
-    const bestScore = Math.max(0, ...endpointMatches.map((match) => match.score), ...httpCallMatches.map((match) => match.score))
+    const finalSupportEdges = (incomingEdgesByNode.get(capability.id) ?? []).filter((edge) => edge.type === 'supports_capability')
+    const mappedEndpointIds = uniqueStrings(finalSupportEdges
+      .map((edge) => nodeById.get(edge.from))
+      .filter((node): node is CodeGraphNode => Boolean(node?.type === 'endpoint'))
+      .map((node) => node.id))
+    const mappedHttpCallIds = uniqueStrings(finalSupportEdges
+      .map((edge) => nodeById.get(edge.from))
+      .filter((node): node is CodeGraphNode => Boolean(node?.type === 'http_call'))
+      .map((node) => node.id))
+    const mappedHandlerIds = uniqueStrings(finalSupportEdges
+      .map((edge) => nodeById.get(edge.from))
+      .filter((node): node is CodeGraphNode => Boolean(node && ['function', 'handler', 'service'].includes(node.type)))
+      .map((node) => node.id))
+    const bestScore = Math.max(0, ...finalSupportEdges.map((edge) => edge.confidence ?? 0))
+    const resolver = finalSupportEdges.some((edge) => String(edge.metadata?.['matchedBy'] ?? '').startsWith('frontend_surface_'))
+      ? 'capability_surface_graph_v2'
+      : finalSupportEdges.length > 0
+        ? 'capability_token_graph_v1'
+        : 'capability_token_graph_v1'
+
     updateNodeMetadata(input.nodes, capability.id, {
       graphMapping: {
-        status: bestScore >= 0.34 ? 'mapped' : 'unmapped',
+        status: finalSupportEdges.length > 0 ? 'mapped' : 'unmapped',
         confidence: Number(bestScore.toFixed(3)),
         endpointIds: mappedEndpointIds,
         httpCallIds: mappedHttpCallIds,
-        resolver: 'capability_token_graph_v1',
+        handlerIds: mappedHandlerIds,
+        resolver,
       },
     })
+  }
+}
+
+function uniqueStrings(values: Array<string | undefined | null>) {
+  return [...new Set(values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0))]
+}
+
+function collectTransitiveFunctionSupport(input: {
+  startNodeIds: string[]
+  nodeById: Map<string, CodeGraphNode>
+  outgoingEdgesByNode: Map<string, CodeGraphEdge[]>
+  maxDepth?: number
+}) {
+  const handlerNodeIds = new Set<string>()
+  const httpCallNodeIds = new Set<string>()
+  const visited = new Set<string>()
+  const maxDepth = input.maxDepth ?? 5
+  const queue = input.startNodeIds
+    .filter(Boolean)
+    .map((id) => ({ id, depth: 0 }))
+
+  while (queue.length > 0) {
+    const current = queue.shift()
+    if (!current || visited.has(current.id) || current.depth > maxDepth) continue
+    visited.add(current.id)
+
+    for (const edge of input.outgoingEdgesByNode.get(current.id) ?? []) {
+      if (edge.type !== 'calls') continue
+      const targetNode = input.nodeById.get(edge.to)
+      if (!targetNode) continue
+      if (targetNode.type === 'http_call') {
+        httpCallNodeIds.add(targetNode.id)
+        continue
+      }
+      if (!['function', 'handler', 'service'].includes(targetNode.type)) continue
+      handlerNodeIds.add(targetNode.id)
+      queue.push({ id: targetNode.id, depth: current.depth + 1 })
+    }
+  }
+
+  return {
+    handlerNodeIds: [...handlerNodeIds],
+    httpCallNodeIds: [...httpCallNodeIds],
   }
 }
 
@@ -1442,6 +2365,10 @@ function enrichScenarioReadiness(input: {
     const supportSourceIds = new Set<string>()
     const supportSourceTypes = new Set<string>()
     const supportScores: number[] = []
+    let supportEndpointCount = 0
+    let supportHandlerCount = 0
+    let supportHttpCallCount = 0
+    let supportDataAccessCount = 0
 
     for (const capability of requiredCapabilities) {
       const supportEdges = supportEdgesByCapability.get(capability.id) ?? []
@@ -1469,6 +2396,12 @@ function enrichScenarioReadiness(input: {
         if (!sourceNode) continue
         supportSourceIds.add(sourceNode.id)
         supportSourceTypes.add(sourceNode.type)
+        if (sourceNode.type === 'endpoint') supportEndpointCount += 1
+        if (sourceNode.type === 'http_call') supportHttpCallCount += 1
+        if (['function', 'handler', 'service'].includes(sourceNode.type)) {
+          supportHandlerCount += 1
+          if (sourceNode.metadata['kind'] === 'data_access') supportDataAccessCount += 1
+        }
         addEdge(input.edges, {
           id: edgeId('related_to', candidate.id, sourceNode.id),
           from: candidate.id,
@@ -1503,6 +2436,10 @@ function enrichScenarioReadiness(input: {
         mappedCapabilityCount,
         supportSourceIds: [...supportSourceIds].slice(0, 20),
         supportSourceTypes: [...supportSourceTypes].sort(),
+        supportEndpointCount,
+        supportHandlerCount,
+        supportHttpCallCount,
+        supportDataAccessCount,
         resolver: 'scenario_graph_readiness_v1',
       },
     })

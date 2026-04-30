@@ -76,9 +76,22 @@ function inferProducedArtifacts(stepId: string) {
   if (tokens.has('api') || tokens.has('request') || tokens.has('endpoint')) return ['response']
   if (tokens.has('inspect') || tokens.has('identify') || tokens.has('discover')) return ['inspectionResult']
   if (tokens.has('run') || tokens.has('command') || tokens.has('cli')) return ['commandResult']
-  if (tokens.has('open') || tokens.has('navigate') || tokens.has('visit')) return ['pageLoaded']
-  if (tokens.has('fill') || tokens.has('add') || tokens.has('submit') || tokens.has('interact')) {
-    return ['interactionResult']
+  if (
+    tokens.has('open') ||
+    tokens.has('navigate') ||
+    tokens.has('visit') ||
+    tokens.has('fill') ||
+    tokens.has('add') ||
+    tokens.has('submit') ||
+    tokens.has('interact') ||
+    tokens.has('click') ||
+    tokens.has('select') ||
+    tokens.has('start') ||
+    tokens.has('save') ||
+    tokens.has('create') ||
+    tokens.has('update')
+  ) {
+    return ['commandResult']
   }
 
   const artifactName = toCamelCase(`${stepId}_result`)

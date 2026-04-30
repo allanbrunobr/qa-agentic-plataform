@@ -1,4 +1,5 @@
 import { L5ClosedLoopService, type L5ClosedLoopRunOptions } from './l5-closed-loop-service.js'
+import { summarizeExecutionContext } from './execution-context.js'
 import type { L5ClosedLoopRun, SessionService } from './session-service.js'
 
 export interface L5ClosedLoopSchedulerOptions extends L5ClosedLoopRunOptions {
@@ -29,6 +30,7 @@ export interface L5ClosedLoopSchedulerState {
     generateScenarioDrafts: boolean
     maxApprovedApplies: number
     actor: string
+    executionContext?: Record<string, unknown>
   }
 }
 
@@ -64,7 +66,10 @@ export class L5ClosedLoopScheduler {
   private consecutiveFailures = 0
   private lastRunId: string | null = null
   private lastError: string | null = null
-  private runOptions: Required<Omit<L5ClosedLoopRunOptions, 'scenarioId'>> & { scenarioId?: string } = {
+  private runOptions: Required<Omit<L5ClosedLoopRunOptions, 'scenarioId' | 'executionContext'>> & {
+    scenarioId?: string
+    executionContext?: L5ClosedLoopRunOptions['executionContext']
+  } = {
     maxScenarios: DEFAULT_MAX_SCENARIOS,
     applyApprovedChanges: false,
     generateScenarioDrafts: false,
@@ -97,7 +102,10 @@ export class L5ClosedLoopScheduler {
       consecutiveFailures: this.consecutiveFailures,
       lastRunId: this.lastRunId,
       lastError: this.lastError,
-      options: { ...this.runOptions },
+      options: {
+        ...this.runOptions,
+        executionContext: summarizeExecutionContext(this.runOptions.executionContext),
+      },
     }
   }
 
@@ -188,6 +196,7 @@ export class L5ClosedLoopScheduler {
         },
         metadata: {
           scheduler: this.status(),
+          executionContext: summarizeExecutionContext(options.executionContext),
         },
         startedAt,
         completedAt: this.lastTickCompletedAt,
@@ -222,6 +231,7 @@ export class L5ClosedLoopScheduler {
     if (options.generateScenarioDrafts !== undefined) this.runOptions.generateScenarioDrafts = options.generateScenarioDrafts
     if (options.actor !== undefined) this.runOptions.actor = options.actor
     if (options.maxApprovedApplies !== undefined) this.runOptions.maxApprovedApplies = clamp(options.maxApprovedApplies, 0, 10)
+    if (options.executionContext !== undefined) this.runOptions.executionContext = options.executionContext
   }
 
   private scheduleNext(): void {

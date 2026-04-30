@@ -42,6 +42,25 @@ describe('generic generated adapter runtime', () => {
     }))
   })
 
+  it('prefers the exact capability tool name when the scenario step id matches a generated capability', async () => {
+    const provider = createDeterministicProvider()
+    const response = await provider.chat([{
+      role: 'user',
+      content: JSON.stringify({
+        scenarioStep: 'click_iniciar_pedido',
+        producedArtifacts: ['commandResult'],
+      }),
+    }], [
+      { name: 'click_iniciar_pedido', description: 'start fulfillment', inputSchema: {} },
+      { name: 'click_copiar_intake', description: 'copy history', inputSchema: {} },
+    ])
+
+    expect(response.stopReason).toBe('tool_use')
+    expect(response.toolCalls[0]).toEqual(expect.objectContaining({
+      name: 'click_iniciar_pedido',
+    }))
+  })
+
   it('disables browser evidence requirements for non-frontend generated personas', async () => {
     const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'generic-agent-profile-'))
     const personasFile = path.join(fixtureRoot, 'personas.generated.json')
@@ -117,6 +136,22 @@ describe('generic generated adapter runtime', () => {
     if (verifyResult.ok) {
       expect(verifyResult.output).toEqual(expect.objectContaining({
         primaryFeedbackVisible: true,
+      }))
+    }
+    if (fillResult.ok) {
+      expect(fillResult.output).toEqual(expect.objectContaining({
+        commandResult: expect.objectContaining({
+          action: 'fill',
+          completed: true,
+        }),
+      }))
+    }
+    if (submitResult.ok) {
+      expect(submitResult.output).toEqual(expect.objectContaining({
+        commandResult: expect.objectContaining({
+          action: 'click',
+          completed: true,
+        }),
       }))
     }
   })

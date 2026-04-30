@@ -87,6 +87,7 @@ export function L5RunAuditPanel({
   }
 
   const lifecycle = selectedRun.metadata?.lifecycle ?? []
+  const executionContext = recordValue(selectedRun.metadata?.executionContext)
   const visibleLifecycle = lifecycle.slice(-8).reverse()
   const visibleActions = selectedRun.actions.slice(0, 6)
   const comparisons = arrayValue(selectedRun.verification['comparisons'])
@@ -139,6 +140,8 @@ export function L5RunAuditPanel({
         blockedReason={promotionBlockedReason}
         onRunPromotionAction={onRunPromotionAction}
       />
+
+      <ExecutionContextPanel context={executionContext} />
 
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Metric label="Status" value={selectedRun.status.replace('_', ' ')} tone={runStatusTone(selectedRun.status)} />
@@ -477,6 +480,8 @@ function PromotionEventHistory({ events }: { events: Phase2KnowledgePromotionEve
 
 function PromotionEventRow({ event }: { event: Phase2KnowledgePromotionEvent }) {
   const verification = event.result?.postPromotionVerification
+  const materialization = recordValue(event.result?.materialization)
+  const runnableRegistry = recordValue(event.result?.runnableScenarioRegistry)
 
   return (
     <div className="rounded-md border border-[var(--border)] px-3 py-2">
@@ -503,7 +508,56 @@ function PromotionEventRow({ event }: { event: Phase2KnowledgePromotionEvent }) 
           <span className="shrink-0">{verification.checks.length} checks</span>
         </div>
       ) : null}
+      {(Object.keys(materialization).length > 0 || Object.keys(runnableRegistry).length > 0) ? (
+        <div className="mt-2 space-y-1 text-[11px] text-[var(--text-muted)]">
+          {Object.keys(materialization).length > 0 ? (
+            <p className="truncate">
+              materialization: {stringValue(materialization['kind'], 'unknown')} / {stringValue(materialization['id'], 'n/a').slice(0, 12)}
+            </p>
+          ) : null}
+          {Object.keys(runnableRegistry).length > 0 ? (
+            <p className="truncate">
+              runnable registry: {stringValue(runnableRegistry['kind'], 'unknown')} / {stringValue(runnableRegistry['id'], 'n/a').slice(0, 12)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
+  )
+}
+
+function ExecutionContextPanel({ context }: { context: Record<string, unknown> }) {
+  if (Object.keys(context).length === 0) return null
+
+  const previewTargets = Array.isArray(context['previewTargets']) ? context['previewTargets'] : []
+
+  return (
+    <section className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
+      <SectionHeader title="Execution context" detail={stringValue(context['source'], 'custom')} />
+      <div className="grid gap-2 lg:grid-cols-2">
+        <AuditLine label="Target base URL" value={stringValue(context['targetBaseUrl'], 'default local base URL')} />
+        <AuditLine label="Branch" value={stringValue(context['branchName'], 'n/a')} />
+        <AuditLine label="PR" value={stringValue(context['prNumber'], 'n/a')} />
+        <AuditLine label="Repo path" value={stringValue(context['targetRepoPath'], 'n/a')} />
+      </div>
+      {previewTargets.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          {previewTargets.slice(0, 4).map((target, index) => {
+            const targetRecord = recordValue(target)
+            return (
+              <div key={`${stringValue(targetRecord['role'], 'target')}-${index}`} className="rounded-md border border-[var(--border)] px-3 py-2 text-[11px] text-[var(--text-muted)]">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium text-[var(--text-secondary)]">{stringValue(targetRecord['role'], 'target')}</span>
+                  <span>{stringValue(targetRecord['ref'], 'ref n/a')}</span>
+                </div>
+                <p className="mt-1 truncate">{stringValue(targetRecord['repo'], 'repo n/a')}</p>
+                {targetRecord['url'] ? <p className="mt-1 truncate">{stringValue(targetRecord['url'], '')}</p> : null}
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+    </section>
   )
 }
 
@@ -534,7 +588,12 @@ function PromotionCandidateRow({
       <p className="mt-2 line-clamp-2 text-[11px] text-[var(--text-muted)]">{candidate.reason}</p>
       <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-[var(--text-muted)]">
         <span className="truncate">{candidate.promotionType.replace(/_/g, ' ')}</span>
-        <span className="shrink-0">next: {candidate.nextAction}</span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className={`rounded-md px-2 py-0.5 text-[10px] uppercase ${promotionPriorityClass(candidate.priority)}`}>
+            {candidate.priority}
+          </span>
+          <span>next: {candidate.nextAction}</span>
+        </div>
       </div>
       <div className="mt-2 flex items-center justify-between gap-3">
         <p className="truncate text-[10px] text-[var(--text-muted)]">v {candidate.version.slice(0, 12)}</p>
@@ -896,6 +955,13 @@ function historyStatusClass(tone: 'success' | 'warning' | 'danger' | 'neutral') 
   if (tone === 'warning') return 'bg-amber-500/10 text-amber-200'
   if (tone === 'danger') return 'bg-red-500/10 text-red-200'
   return 'bg-[var(--bg-secondary)] text-[var(--text-muted)]'
+}
+
+function promotionPriorityClass(priority: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number]['priority']) {
+  if (priority === 'critical') return 'border border-red-500/30 bg-red-500/10 text-red-300'
+  if (priority === 'high') return 'border border-amber-500/30 bg-amber-500/10 text-amber-300'
+  if (priority === 'normal') return 'border border-cyan-500/30 bg-cyan-500/10 text-cyan-300'
+  return 'border border-[var(--border)] bg-[var(--bg-hover)] text-[var(--text-muted)]'
 }
 
 function promotionStatusClass(status: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number]['status']) {

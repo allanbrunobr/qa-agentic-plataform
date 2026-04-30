@@ -396,6 +396,7 @@ function promotionPreview(): Phase2ClosedLoopAuditBundle['promotion'] {
         title: 'Prompt patch for create_customer',
         target: 'agent:sales-associate',
         reason: 'Step success rate is below the adaptive threshold.',
+        priority: 'high',
         approvalRequired: true,
         materializationReady: false,
         nextAction: 'approve',

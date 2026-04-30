@@ -166,6 +166,7 @@ export interface LearningProposal extends LearningProposalInput {
 }
 
 export interface ScenarioDraftInput {
+  id?: string
   scenarioId: string
   name: string
   description?: string
@@ -1308,7 +1309,7 @@ export class SessionService {
   }
 
   createScenarioDraft(input: ScenarioDraftInput): ScenarioDraft {
-    const id = randomUUID()
+    const id = input.id ?? randomUUID()
     const now = new Date().toISOString()
     this.sqlite
       .prepare(

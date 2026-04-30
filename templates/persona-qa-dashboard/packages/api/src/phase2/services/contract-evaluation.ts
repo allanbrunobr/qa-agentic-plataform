@@ -47,7 +47,16 @@ function capabilityMatchesObservedTools(capabilityId: string, observedTools: str
 }
 
 export function buildContractEvaluation(session: Session) {
-  const scenario = loadScenario(session.scenarioId);
+  let scenario;
+  try {
+    scenario = loadScenario(session.scenarioId);
+  } catch {
+    return {
+      workflowContract: null,
+      workflowContractYaml: null,
+      contractEvaluation: null,
+    };
+  }
   const workflowContract = scenario.workflowContract ?? null;
   const workflowContractYaml = workflowContract
     ? dump(workflowContract, { noRefs: true, lineWidth: 120, quotingType: "'" })

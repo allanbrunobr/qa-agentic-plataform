@@ -75,6 +75,10 @@ function hasToolResult(messages: ModelMessage[]): boolean {
 function selectTool(messages: ModelMessage[], tools: ToolDefinition[]): ToolDefinition | undefined {
   const step = extractStepEnvelope(messages)
   const stepId = typeof step?.scenarioStep === 'string' ? step.scenarioStep : undefined
+  if (stepId) {
+    const exactTool = tools.find((item) => item.name === stepId)
+    if (exactTool) return exactTool
+  }
   const mappedTool = stepId ? STEP_TOOL_MAP[stepId] : undefined
   if (mappedTool) {
     const tool = tools.find((item) => item.name === mappedTool)
@@ -144,7 +148,7 @@ function extractStepEnvelope(messages: ModelMessage[]): StepEnvelope | undefined
 
 function buildToolInput(toolName: string): Record<string, unknown> {
   if (toolName === 'callHealthEndpoint') return { path: '/health' }
-  if (toolName === 'callPrimaryEndpoint') return { path: '/' }
+  if (toolName === 'callPrimaryEndpoint') return {}
   if (toolName === 'runCliHelp') return { args: ['--help'] }
   return {}
 }

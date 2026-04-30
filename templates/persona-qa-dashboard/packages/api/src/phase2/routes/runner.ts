@@ -6,6 +6,11 @@ import { listScenarios, loadScenario } from '../scenarios/index.js'
 import { buildScenarioQualityGateForSessions } from '../services/scenario-quality-gates.js'
 import { createPhase2Runtime } from '../services/runtime-bootstrap.js'
 import {
+  parseExecutionContext,
+  resolveExecutionBaseUrl,
+  summarizeExecutionContext,
+} from '../services/execution-context.js'
+import {
   isGeneratedNonFrontendRuntime,
   resolveGeneratedTargetRepoPath,
 } from '../services/generated-adapter-runtime.js'
@@ -18,6 +23,7 @@ const StartAgenticRunBody = z.object({
   customer_name: z.string().optional(),
   customer_phone: z.string().optional(),
   order_type: z.string().optional(),
+  execution_context: z.unknown().optional(),
 })
 
 export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
@@ -106,7 +112,8 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
       })
     }
 
-    const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3012'
+    const executionContext = parseExecutionContext(parsed.data.execution_context)
+    const baseUrl = resolveExecutionBaseUrl(executionContext) ?? process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3012'
     const uniqueSuffix = Date.now().toString().slice(-6)
     const customerName = parsed.data.customer_name ?? `Maria Agentic ${uniqueSuffix}`
 
@@ -114,6 +121,13 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
       ? createPhase2Runtime({ deterministic: true })
       : createPhase2Runtime({ providerName: runtimeSettings!.provider })
     const session = runtime.sessionService.createSession(scenario.id)
+    if (executionContext) {
+      runtime.sessionService.addEvent(session.id, 'info', {
+        message: 'execution_context_initialized',
+        executionContext: summarizeExecutionContext(executionContext),
+        baseUrl,
+      })
+    }
 
     void (async () => {
       let browser: { close(): Promise<void>; newPage(options: { baseURL: string }): Promise<{ close(): Promise<void> }> } | null = null
@@ -122,7 +136,7 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
       try {
         if (useGeneratedNonFrontendRuntime) {
           await runtime.orchestrator.executeRunInSession(session.id, scenario, {
-            targetRepoPath: resolveGeneratedTargetRepoPath(),
+            targetRepoPath: executionContext?.targetRepoPath ?? resolveGeneratedTargetRepoPath(),
             runtimeMode: 'generated_non_browser',
           })
           return
@@ -143,6 +157,7 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
         runtime.sessionService.addEvent(session.id, 'run_failed', {
           scenarioId: scenario.id,
           error: error instanceof Error ? error.message : String(error),
+          executionContext: summarizeExecutionContext(executionContext),
         })
       } finally {
         await page?.close().catch(() => {})
@@ -155,6 +170,7 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
       scenario_id: scenario.id,
       status: 'pending',
       started_at: session.startedAt,
+      execution_context: summarizeExecutionContext(executionContext),
     })
   })
 }

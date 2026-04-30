@@ -386,7 +386,12 @@ function matches(value: string | undefined, expected: string, exact = false) {
 }
 
 function normalize(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, ' ')
+  return value
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
 }
 
 function addMatch(matched: Map<string, EvidenceRef>, item: { id: string; kind: FrontendEvidenceKind } | undefined) {

@@ -65,6 +65,7 @@ function createFixtures() {
     },
   }, null, 2)}\n`)
   writeFile('backend-api', 'src/server.ts', `import express from 'express'
+import accountsRouter from './routes/accounts.js'
 
 const app = express()
 
@@ -72,11 +73,60 @@ app.get('/health', (_request, response) => {
   response.json({ status: 'ok' })
 })
 
-app.get('/api/accounts', (_request, response) => {
-  response.json([{ id: 'acct_1' }])
-})
+app.use('/api', accountsRouter)
 
 app.listen(3000)
+`)
+  writeFile('backend-api', 'src/routes/accounts.ts', `import { Router } from 'express'
+import { listAccounts } from '../controllers/accounts.js'
+
+const router = Router()
+
+router.get('/accounts', listAccounts)
+
+export default router
+`)
+  writeFile('backend-api', 'src/controllers/accounts.ts', `import type { Request, Response } from 'express'
+import accountsService from '../services/accounts.js'
+
+export function listAccounts(_request: Request, response: Response) {
+  response.json(accountsService.buildAccountsPayload())
+}
+`)
+  writeFile('backend-api', 'src/services/accounts.ts', `import billingClient from '../clients/billing.js'
+import accountsRepository from '../repositories/accounts.js'
+
+const accountsService = {
+  buildAccountsPayload() {
+    billingClient.fetchSnapshot()
+    accountsRepository.listAccounts()
+    return [{ id: 'acct_1' }]
+  },
+}
+
+export default accountsService
+`)
+  writeFile('backend-api', 'src/repositories/accounts.ts', `import { prisma } from '../db/client.js'
+
+const accountsRepository = {
+  listAccounts() {
+    return prisma.account.findMany()
+  },
+}
+
+export default accountsRepository
+`)
+  writeFile('backend-api', 'src/db/client.ts', `import { PrismaClient } from '@prisma/client'
+
+export const prisma = new PrismaClient()
+`)
+  writeFile('backend-api', 'src/clients/billing.ts', `const billingClient = {
+  fetchSnapshot() {
+    return fetch('https://billing.example.com/api/accounts')
+  },
+}
+
+export default billingClient
 `)
 
   writeFile('cli-tool', 'package.json', `${JSON.stringify({
@@ -145,6 +195,7 @@ function verifyFixture(fixtureName, expected) {
   const capabilities = readGeneratedJson(fixtureName, 'capabilities/capabilities.generated.json')
   const codeGraph = readGeneratedJson(fixtureName, 'config/code-graph.generated.json')
   const contractsIndex = readGeneratedJson(fixtureName, 'workflow-contracts/index.generated.json')
+  const runtimePlan = readGeneratedJson(fixtureName, 'runtime/runtime-plan.generated.json')
 
   const personaIds = personas.map((persona) => persona.id)
   const scenarioIds = scenarios.map((scenario) => scenario.id)
@@ -169,6 +220,43 @@ function verifyFixture(fixtureName, expected) {
   assert(!surfaceIds.includes('form_entry') && !surfaceIds.includes('checkout'), `${fixtureName}: frontend surfaces leaked into non-frontend adapter`)
   assert(auth.loginEntryPoint === 'not_applicable', `${fixtureName}: expected no browser login, got ${auth.loginEntryPoint}`)
   assert(contractsIndex.some((entry) => entry.scenarioId === expected.scenario), `${fixtureName}: workflow contract missing`)
+
+  if (fixtureName === 'backend-api') {
+    assert(surfaceIds.includes('primary_endpoint'), `${fixtureName}: primary endpoint surface missing`)
+    assert(scenarioIds.includes('api_contract_smoke'), `${fixtureName}: api_contract_smoke should be generated when non-health endpoints exist`)
+    assert(capabilityIds.includes('callPrimaryEndpoint'), `${fixtureName}: callPrimaryEndpoint capability missing`)
+    const primaryCapability = capabilities.find((capability) => capability.id === 'callPrimaryEndpoint')
+    assert(primaryCapability?.graphHint?.status === 'mapped', `${fixtureName}: callPrimaryEndpoint should be graph-mapped`)
+    assert(primaryCapability?.graphHint?.endpoints?.includes('GET /api/accounts'), `${fixtureName}: primary endpoint hint missing`)
+    assert(primaryCapability?.graphHint?.handlers?.some((hint) => hint.includes('listAccounts')), `${fixtureName}: imported controller handler hint missing`)
+    assert(primaryCapability?.graphHint?.handlers?.some((hint) => hint.includes('buildAccountsPayload')), `${fixtureName}: service handler hint missing`)
+    assert(primaryCapability?.graphHint?.handlers?.some((hint) => hint.includes('prisma.account.findMany')), `${fixtureName}: data access handler hint missing`)
+    assert(primaryCapability?.graphHint?.handlers?.some((hint) => hint.includes('fetchSnapshot')), `${fixtureName}: client handler hint missing`)
+    assert(primaryCapability?.graphHint?.httpCalls?.includes('GET /api/accounts'), `${fixtureName}: downstream http call hint missing`)
+    assert(primaryCapability?.routeHint === '/api/accounts', `${fixtureName}: callPrimaryEndpoint should point to /api/accounts`)
+    const verifyCapability = capabilities.find((capability) => capability.id === 'verifyApiResponse')
+    assert(verifyCapability?.graphHint?.status === 'mapped', `${fixtureName}: verifyApiResponse should inherit graph mapping`)
+    assert(runtimePlan.routeCoverage.some((route) => route.path === '/api/accounts'), `${fixtureName}: runtime route coverage missing /api/accounts`)
+    const controllerNode = codeGraph.nodes.find((node) => node.label === 'listAccounts' && node.source?.filePath === 'src/controllers/accounts.ts')
+    const serviceNode = codeGraph.nodes.find((node) => node.label === 'buildAccountsPayload' && node.source?.filePath === 'src/services/accounts.ts')
+    const repositoryNode = codeGraph.nodes.find((node) => node.label === 'listAccounts' && node.source?.filePath === 'src/repositories/accounts.ts')
+    const clientNode = codeGraph.nodes.find((node) => node.label === 'fetchSnapshot' && node.source?.filePath === 'src/clients/billing.ts')
+    const dataAccessNode = codeGraph.nodes.find((node) =>
+      node.label === 'prisma.account.findMany'
+      && node.type === 'service'
+      && node.metadata?.kind === 'data_access',
+    )
+    const downstreamHttpCallNode = codeGraph.nodes.find((node) =>
+      node.type === 'http_call'
+      && node.metadata?.url === 'https://billing.example.com/api/accounts',
+    )
+    assert(controllerNode && serviceNode && repositoryNode && clientNode && dataAccessNode && downstreamHttpCallNode, `${fixtureName}: controller/service/repository/data/http nodes missing in code graph`)
+    assert(codeGraph.edges.some((edge) => edge.type === 'calls' && edge.from === controllerNode.id && edge.to === serviceNode.id), `${fixtureName}: controller -> service call edge missing`)
+    assert(codeGraph.edges.some((edge) => edge.type === 'calls' && edge.from === serviceNode.id && edge.to === repositoryNode.id), `${fixtureName}: service -> repository call edge missing`)
+    assert(codeGraph.edges.some((edge) => edge.type === 'calls' && edge.from === repositoryNode.id && edge.to === dataAccessNode.id), `${fixtureName}: repository -> data access call edge missing`)
+    assert(codeGraph.edges.some((edge) => edge.type === 'calls' && edge.from === serviceNode.id && edge.to === clientNode.id), `${fixtureName}: service -> client call edge missing`)
+    assert(codeGraph.edges.some((edge) => edge.type === 'calls' && edge.from === clientNode.id && edge.to === downstreamHttpCallNode.id), `${fixtureName}: client -> http call edge missing`)
+  }
 }
 
 try {
@@ -181,7 +269,7 @@ try {
       kind: 'backend_api',
       persona: 'api_consumer',
       scenario: 'api_health_smoke',
-      capabilities: ['startApiService', 'callHealthEndpoint', 'verifyApiResponse'],
+      capabilities: ['startApiService', 'callHealthEndpoint', 'callPrimaryEndpoint', 'verifyApiResponse'],
     },
     {
       fixtureName: 'cli-tool',

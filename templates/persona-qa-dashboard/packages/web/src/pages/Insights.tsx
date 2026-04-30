@@ -6,7 +6,14 @@ import { SeverityBadge } from '@/components/ui/Badge'
 import { L5GovernancePanel } from '@/components/L5GovernancePanel'
 import type { ApiInsight } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
-import { api, type Phase2GovernanceDecision, type Phase2HealingAction, type Phase2LearningProposal, type Phase2ScenarioDraft } from '@/lib/api'
+import {
+  api,
+  type Phase2GovernanceDecision,
+  type Phase2HealingAction,
+  type Phase2LearningProposal,
+  type Phase2ScenarioDraft,
+  type Phase2ScenarioDraftPromotionReadiness,
+} from '@/lib/api'
 
 type SpecialistId = ApiInsight['specialist'] | 'all'
 
@@ -73,6 +80,7 @@ export function Insights() {
   const [governanceDecisions, setGovernanceDecisions] = useState<Phase2GovernanceDecision[]>([])
   const [learningProposals, setLearningProposals] = useState<Phase2LearningProposal[]>([])
   const [scenarioDrafts, setScenarioDrafts] = useState<Phase2ScenarioDraft[]>([])
+  const [draftReadinessById, setDraftReadinessById] = useState<Record<string, Phase2ScenarioDraftPromotionReadiness | undefined>>({})
   const [loading, setLoading] = useState(true)
   const [actionPendingId, setActionPendingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -90,10 +98,20 @@ export function Insights() {
       api.getPhase2LearningProposals({ limit: 20 }).catch(() => [] as Phase2LearningProposal[]),
       api.getPhase2ScenarioDrafts({ limit: 20 }).catch(() => [] as Phase2ScenarioDraft[]),
     ])
+    const readinessEntries = await Promise.all(
+      nextScenarioDrafts.map(async (draft) => {
+        try {
+          return [draft.id, await api.getPhase2ScenarioDraftPromotionReadiness(draft.id, { actor: 'dashboard' })] as const
+        } catch {
+          return [draft.id, undefined] as const
+        }
+      }),
+    )
     setHealingActions(nextHealingActions)
     setGovernanceDecisions(nextGovernanceDecisions)
     setLearningProposals(nextLearningProposals)
     setScenarioDrafts(nextScenarioDrafts)
+    setDraftReadinessById(Object.fromEntries(readinessEntries))
   }, [])
 
   useEffect(() => {
@@ -154,6 +172,7 @@ export function Insights() {
         governanceDecisions={governanceDecisions}
         learningProposals={learningProposals}
         scenarioDrafts={scenarioDrafts}
+        draftReadinessById={draftReadinessById}
         actionPendingId={actionPendingId}
         onApproveProposal={(id) => runL5Action(`proposal:${id}`, () => api.approvePhase2LearningProposal(id))}
         onApplyProposal={(id) => runL5Action(`proposal:${id}`, () => api.applyPhase2LearningProposal(id))}

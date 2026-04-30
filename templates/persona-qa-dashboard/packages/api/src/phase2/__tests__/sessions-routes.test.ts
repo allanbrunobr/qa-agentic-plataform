@@ -1248,6 +1248,12 @@ describe('Phase 2 Session Routes', () => {
             reason: 'Scenario draft must be approved before promotion',
           }),
         }),
+        recommendation: expect.objectContaining({
+          priority: 'normal',
+          action: 'review',
+          structurallyPromotable: false,
+          summary: expect.stringContaining('missing capabilities: fillCustomerEmail'),
+        }),
       }));
       expect(readiness.json().requirements).toEqual(expect.arrayContaining([
         expect.objectContaining({
@@ -1267,6 +1273,85 @@ describe('Phase 2 Session Routes', () => {
       expect(readiness.json().nextSteps).toEqual(expect.arrayContaining([
         expect.stringContaining('missing capabilities: fillCustomerEmail'),
       ]));
+    });
+
+    it('should block approval when graph readiness is fully mapped but structurally shallow', async () => {
+      const draft = sessionService.createScenarioDraft({
+        scenarioId: 'domain_backend_shallow_graph',
+        name: 'Domain draft: Shallow graph',
+        description: 'Generated from domain discovery with endpoint-only evidence',
+        contract: {
+          id: 'domain_backend_shallow_graph',
+          name: 'Shallow graph',
+          steps: [],
+          domainDiscovery: {
+            sourceDomain: 'backend_api',
+            sourceScenarioId: 'api_contract_smoke',
+            mappingRequired: true,
+            graphReadiness: {
+              status: 'fully_mapped',
+              confidence: 0.91,
+              requiredCapabilityCount: 1,
+              mappedCapabilityCount: 1,
+              mappedCapabilityIds: ['callPrimaryEndpoint'],
+              missingCapabilityIds: [],
+              supportSourceTypes: ['endpoint'],
+              supportEndpointCount: 1,
+              supportHandlerCount: 0,
+              supportHttpCallCount: 0,
+              supportDataAccessCount: 0,
+            },
+            mappingReview: {
+              selectorsMapped: true,
+              authMapped: true,
+              testDataMapped: true,
+              assertionsMapped: true,
+              reviewedBy: 'qa_lead',
+              reviewedAt: new Date().toISOString(),
+              notes: 'Mapped but too shallow.',
+            },
+          },
+        },
+        gapType: 'domain_discovery_mapping',
+      });
+
+      const blockedApproval = await app.inject({
+        method: 'PATCH',
+        url: `/api/p2/scenarios/drafts/${draft.id}`,
+        payload: {
+          status: 'approved',
+          reviewedBy: 'qa_lead',
+        },
+      });
+
+      expect(blockedApproval.statusCode).toBe(409);
+      expect(blockedApproval.json()).toEqual(expect.objectContaining({
+        error: expect.stringContaining('lacks structural evidence depth'),
+      }));
+
+      const readiness = await app.inject({
+        method: 'GET',
+        url: `/api/p2/scenarios/drafts/${draft.id}/promotion-readiness?actor=qa_lead`,
+      });
+
+      expect(readiness.statusCode).toBe(200);
+      expect(readiness.json().requirements).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: 'graph_evidence_depth',
+          status: 'blocked',
+          blocking: true,
+          evidence: expect.objectContaining({
+            supportEndpointCount: 1,
+            supportHandlerCount: 0,
+          }),
+        }),
+      ]));
+      expect(readiness.json().recommendation).toEqual(expect.objectContaining({
+        priority: 'normal',
+        action: 'review',
+        structurallyPromotable: false,
+        summary: expect.stringContaining('Graph evidence is too shallow'),
+      }));
     });
 
     it('should report scenario draft ready for promotion after graph, mapping, and approval gates pass', async () => {
@@ -1313,6 +1398,12 @@ describe('Phase 2 Session Routes', () => {
       expect(initialReadiness.json()).toEqual(expect.objectContaining({
         readyForApproval: true,
         readyForPromotion: false,
+        recommendation: expect.objectContaining({
+          priority: 'high',
+          action: 'approve',
+          structurallyPromotable: true,
+          summary: expect.stringContaining('Structurally promotion-ready after approval'),
+        }),
       }));
 
       const approved = await app.inject({
@@ -1337,6 +1428,12 @@ describe('Phase 2 Session Routes', () => {
         actions: expect.objectContaining({
           approve: expect.objectContaining({ allowed: true }),
           promote: expect.objectContaining({ allowed: true }),
+        }),
+        recommendation: expect.objectContaining({
+          priority: 'critical',
+          action: 'promote',
+          structurallyPromotable: true,
+          summary: expect.stringContaining('Structurally promotion-ready'),
         }),
         nextSteps: [],
       }));

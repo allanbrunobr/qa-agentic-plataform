@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { L5GovernancePanel } from '../L5GovernancePanel'
 import type {
   Phase2GovernanceDecision,
   Phase2HealingAction,
   Phase2LearningProposal,
   Phase2ScenarioDraft,
+  Phase2ScenarioDraftPromotionReadiness,
 } from '@/lib/api'
 
 const now = '2026-04-17T12:00:00.000Z'
@@ -69,6 +70,20 @@ describe('L5GovernancePanel', () => {
           scenarioDraft({ id: 'draft-1', status: 'pending' }),
           scenarioDraft({ id: 'draft-2', status: 'approved', name: 'Approved coverage' }),
         ]}
+        draftReadinessById={{
+          'draft-2': draftReadiness({
+            draftId: 'draft-2',
+            status: 'approved',
+            readyForApproval: true,
+            readyForPromotion: true,
+            recommendation: {
+              priority: 'critical',
+              action: 'promote',
+              structurallyPromotable: true,
+              summary: 'Structurally promotion-ready.',
+            },
+          }),
+        }}
         onApproveProposal={onApproveProposal}
         onPromoteDraft={onPromoteDraft}
         onRejectDraft={onRejectDraft}
@@ -77,7 +92,7 @@ describe('L5GovernancePanel', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Approve' })[0]!)
     fireEvent.click(screen.getByRole('button', { name: 'Promote' }))
-    fireEvent.click(screen.getAllByRole('button', { name: 'Reject' })[0]!)
+    fireEvent.click(within(screen.getByTestId('l5-draft-draft-1')).getByRole('button', { name: 'Reject' }))
 
     expect(onApproveProposal).toHaveBeenCalledWith('proposal-2')
     expect(onPromoteDraft).toHaveBeenCalledWith('draft-2')
@@ -150,10 +165,16 @@ describe('L5GovernancePanel', () => {
               mappingRequired: true,
               graphReadiness: {
                 status: 'partially_mapped',
+                confidence: 0.73,
                 requiredCapabilityCount: 2,
                 mappedCapabilityCount: 1,
                 mappedCapabilityIds: ['submitOrder'],
                 missingCapabilityIds: ['fillCustomerEmail'],
+                supportSourceTypes: ['service', 'http_call', 'endpoint'],
+                supportEndpointCount: 1,
+                supportHandlerCount: 1,
+                supportHttpCallCount: 1,
+                supportDataAccessCount: 0,
               },
               mappingReview: {
                 selectorsMapped: true,
@@ -171,6 +192,71 @@ describe('L5GovernancePanel', () => {
     expect(screen.getByText('Graph readiness')).toBeInTheDocument()
     expect(screen.getByText('partially mapped')).toBeInTheDocument()
     expect(screen.getByText(/1\/2 capabilities mapped; missing fillCustomerEmail/)).toBeInTheDocument()
+    expect(screen.getByText('confidence 0.73')).toBeInTheDocument()
+    expect(screen.getByText('handlers 1')).toBeInTheDocument()
+    expect(screen.getByText('endpoints 1')).toBeInTheDocument()
+    expect(screen.getByText('http 1')).toBeInTheDocument()
+  })
+
+  it('renders readiness recommendation and suppresses premature approve actions', () => {
+    const onApproveDraft = vi.fn()
+
+    render(
+      <L5GovernancePanel
+        healingActions={[]}
+        governanceDecisions={[]}
+        learningProposals={[]}
+        scenarioDrafts={[domainScenarioDraft({
+          id: 'domain-draft-review',
+          status: 'pending',
+          contract: {
+            domainDiscovery: {
+              mappingRequired: true,
+              graphReadiness: {
+                status: 'partially_mapped',
+                confidence: 0.66,
+                requiredCapabilityCount: 2,
+                mappedCapabilityCount: 1,
+                mappedCapabilityIds: ['submitOrder'],
+                missingCapabilityIds: ['fillCustomerEmail'],
+                supportSourceTypes: ['endpoint', 'http_call'],
+                supportEndpointCount: 1,
+                supportHandlerCount: 1,
+                supportHttpCallCount: 1,
+                supportDataAccessCount: 0,
+              },
+              mappingReview: {
+                selectorsMapped: true,
+                authMapped: true,
+                testDataMapped: true,
+                assertionsMapped: true,
+                reviewedBy: 'qa_lead',
+              },
+            },
+          },
+        })]}
+        draftReadinessById={{
+          'domain-draft-review': draftReadiness({
+            draftId: 'domain-draft-review',
+            scenarioId: 'domain_commerce_place_order',
+            recommendation: {
+              priority: 'normal',
+              action: 'review',
+              structurallyPromotable: false,
+              summary: 'Graph readiness is partially_mapped; missing capabilities: fillCustomerEmail.',
+            },
+            nextSteps: ['Graph readiness is partially_mapped; missing capabilities: fillCustomerEmail.'],
+          }),
+        }}
+        onApproveDraft={onApproveDraft}
+      />,
+    )
+
+    expect(screen.getByText('Promotion readiness')).toBeInTheDocument()
+    expect(screen.getByText('review')).toBeInTheDocument()
+    expect(screen.getByText('normal')).toBeInTheDocument()
+    expect(screen.getAllByText(/missing capabilities: fillCustomerEmail/).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
   })
 })
 
@@ -254,4 +340,42 @@ function domainScenarioDraft(overrides: Partial<Phase2ScenarioDraft> = {}): Phas
     },
     ...overrides,
   })
+}
+
+function draftReadiness(overrides: Partial<Phase2ScenarioDraftPromotionReadiness> = {}): Phase2ScenarioDraftPromotionReadiness {
+  return {
+    draftId: 'draft',
+    scenarioId: 'scenario',
+    status: 'pending',
+    actor: 'dashboard',
+    readyForApproval: false,
+    readyForPromotion: false,
+    graphReadiness: null,
+    mappingReview: null,
+    requirements: [],
+    actions: {
+      approve: {
+        action: 'approve',
+        allowed: false,
+        verdict: 'blocked',
+        reason: 'blocked',
+        requirements: [],
+      },
+      promote: {
+        action: 'promote',
+        allowed: false,
+        verdict: 'blocked',
+        reason: 'blocked',
+        requirements: [],
+      },
+    },
+    recommendation: {
+      priority: 'normal',
+      action: 'review',
+      structurallyPromotable: false,
+      summary: 'Review required.',
+    },
+    nextSteps: [],
+    ...overrides,
+  }
 }

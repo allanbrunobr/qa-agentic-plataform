@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { CoverageAnalysisService } from '../services/coverage-analysis-service.js'
 import { GovernancePolicyService } from '../services/governance-policy-service.js'
+import { L5AuditBundleService } from '../services/l5-audit-bundle-service.js'
 import { L5ClosedLoopScheduler } from '../services/l5-closed-loop-scheduler.js'
 import { L5ClosedLoopService } from '../services/l5-closed-loop-service.js'
 import { L5LoopGuardService } from '../services/l5-loop-guard-service.js'
@@ -252,6 +253,117 @@ describe('L5 controlled feedback services', () => {
     expect(queue.find((item) => item.scenarioId === 'first_order')?.l5SignalPolicy).toEqual(expect.objectContaining({
       requiresReplay: true,
       riskModifier: 0.1,
+    }))
+  })
+
+
+  it('prioritizes structurally ready scenario drafts in promotion candidates', () => {
+    const service = new SessionService(':memory:')
+    const run = service.recordL5ClosedLoopRun({
+      status: 'needs_review',
+      mode: 'observe',
+      queuedScenarios: ['generated_place_order'],
+      actions: [
+        { type: 'scenario_draft_generated', draftId: 'draft-strong' },
+        { type: 'scenario_draft_generated', draftId: 'draft-weak' },
+      ],
+      verification: {},
+      summary: {},
+      metadata: {},
+    })
+
+    service.createScenarioDraft({
+      id: 'draft-strong',
+      scenarioId: 'generated_place_order',
+      name: 'Structurally ready draft',
+      description: 'Ready for governed approval.',
+      contract: {
+        domainDiscovery: {
+          mappingRequired: true,
+          mappingReview: {
+            selectorsMapped: true,
+            authMapped: true,
+            testDataMapped: true,
+            assertionsMapped: true,
+            reviewedBy: 'qa_lead',
+          },
+          graphReadiness: {
+            status: 'fully_mapped',
+            confidence: 0.91,
+            requiredCapabilityCount: 2,
+            mappedCapabilityCount: 2,
+            mappedCapabilityIds: ['click_submit_order', 'assert_visible_state'],
+            missingCapabilityIds: [],
+            supportSourceTypes: ['service', 'http_call', 'endpoint'],
+            supportEndpointCount: 1,
+            supportHandlerCount: 1,
+            supportHttpCallCount: 1,
+            supportDataAccessCount: 0,
+          },
+        },
+      },
+      gapType: 'coverage_gap',
+      gapEvidence: [],
+    })
+
+    service.createScenarioDraft({
+      id: 'draft-weak',
+      scenarioId: 'generated_place_order_alt',
+      name: 'Shallow draft',
+      description: 'Needs more mapping depth.',
+      contract: {
+        domainDiscovery: {
+          mappingRequired: true,
+          mappingReview: {
+            selectorsMapped: true,
+            authMapped: false,
+            testDataMapped: false,
+            assertionsMapped: false,
+            reviewedBy: null,
+          },
+          graphReadiness: {
+            status: 'partially_mapped',
+            confidence: 0.52,
+            requiredCapabilityCount: 2,
+            mappedCapabilityCount: 1,
+            mappedCapabilityIds: ['click_submit_order'],
+            missingCapabilityIds: ['assert_visible_state'],
+            supportSourceTypes: ['http_call'],
+            supportEndpointCount: 0,
+            supportHandlerCount: 0,
+            supportHttpCallCount: 1,
+            supportDataAccessCount: 0,
+          },
+        },
+      },
+      gapType: 'coverage_gap',
+      gapEvidence: [],
+    })
+
+    const bundle = new L5AuditBundleService(service).build(run.id)
+    expect(bundle).toBeTruthy()
+    const scenarioCandidates = bundle!.promotion.candidates.filter((candidate) => candidate.subjectType === 'scenario_draft')
+    expect(scenarioCandidates).toHaveLength(2)
+    expect(scenarioCandidates[0]).toEqual(expect.objectContaining({
+      subjectId: 'draft-strong',
+      priority: 'high',
+      nextAction: 'approve',
+      evidence: expect.objectContaining({
+        graphReadinessStatus: 'fully_mapped',
+        graphStructuralReady: true,
+        mappingReady: true,
+        structurallyPromotable: true,
+      }),
+    }))
+    expect(scenarioCandidates[1]).toEqual(expect.objectContaining({
+      subjectId: 'draft-weak',
+      priority: 'normal',
+      evidence: expect.objectContaining({
+        graphReadinessStatus: 'partially_mapped',
+        graphStructuralReady: true,
+        mappingReady: false,
+        structurallyPromotable: false,
+      }),
     }))
   })
 

@@ -130,7 +130,8 @@ export class AgentRuntime {
         Object.entries(context).filter(([key]) => key !== 'page' && key !== 'sessionId'),
       )
       const runtimeInstructions = buildStepInstructionEnvelope(step, availableArtifacts)
-      const result = await this.executeStep(profile, {
+      const scopedProfile = this.scopeProfileToScenarioStep(profile, step)
+      const result = await this.executeStep(scopedProfile, {
         sessionId: String(context['sessionId'] ?? 'orchestrator-session'),
         messages: [{
           role: 'user',
@@ -760,6 +761,21 @@ export class AgentRuntime {
   private hasExpectedArtifacts(output: Record<string, unknown>, expectedArtifacts: string[]): boolean {
     if (expectedArtifacts.length === 0) return false
     return expectedArtifacts.every((artifact) => output[artifact] !== undefined && output[artifact] !== null)
+  }
+
+  private scopeProfileToScenarioStep(profile: AgentProfile, step: ScenarioStep): AgentProfile {
+    const expectedTool = step.capabilityId ?? step.id
+    if (!expectedTool || !this.toolRegistry?.has(expectedTool)) {
+      return profile
+    }
+
+    return {
+      ...profile,
+      toolPolicy: {
+        ...profile.toolPolicy,
+        allowedTools: [expectedTool],
+      },
+    }
   }
 }
 

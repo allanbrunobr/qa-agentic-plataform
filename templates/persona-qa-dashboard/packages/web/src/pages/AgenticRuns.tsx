@@ -1052,7 +1052,7 @@ export function AgenticRuns() {
   const [activeView, setActiveView] = useState<RunsView>(initialHashState?.tab ?? 'current')
   const [selectedId, setSelectedId] = useState<string | null>(initialHashState?.selectedId ?? null)
   const [currentSessionIdOverride, setCurrentSessionIdOverride] = useState<string | null>(null)
-  const [selectedScenario, setSelectedScenario] = useState('first_order_multi_role')
+  const [selectedScenario, setSelectedScenario] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [startingRun, setStartingRun] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)

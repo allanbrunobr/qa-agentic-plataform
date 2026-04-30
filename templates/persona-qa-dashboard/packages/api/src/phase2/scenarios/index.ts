@@ -118,6 +118,7 @@ function toScenarioContract(model: AdapterScenarioModel): ScenarioContract {
     order: index,
     requiredArtifacts: [],
     producedArtifacts: step.producesArtifacts ?? [],
+    handoff: inferGeneratedHandoff(stepDefinitions, index),
     timeoutMs: 120_000,
     retryPolicy: { maxAttempts: 1, backoffMs: 0 },
   }))
@@ -145,6 +146,25 @@ function toScenarioContract(model: AdapterScenarioModel): ScenarioContract {
     requiredArtifacts: model.expectedArtifacts ?? unique(steps.flatMap((step) => step.producedArtifacts)),
     allowedTools: unique(steps.map((step) => step.capabilityId ?? step.id)),
   })
+}
+
+function inferGeneratedHandoff(
+  stepDefinitions: AdapterScenarioStepModel[],
+  stepIndex: number,
+) {
+  const currentStep = stepDefinitions[stepIndex]
+  const nextStep = stepDefinitions[stepIndex + 1]
+  if (!currentStep || !nextStep || currentStep.roleId === nextStep.roleId) {
+    return undefined
+  }
+
+  const requiredArtifacts = unique((currentStep.producesArtifacts ?? []).filter(Boolean))
+  return {
+    nextAgentId: nextStep.roleId,
+    reason: `Generated handoff from ${currentStep.roleId} to ${nextStep.roleId} after ${currentStep.id}.`,
+    requiredArtifacts,
+    expectedOutput: `Continue execution with capability ${nextStep.capabilityId}.`,
+  }
 }
 
 function generatedScenarioMap(): Record<string, ScenarioContract> {

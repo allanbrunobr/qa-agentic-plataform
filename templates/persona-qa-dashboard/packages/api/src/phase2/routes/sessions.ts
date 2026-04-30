@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildContractEvaluation } from '../services/contract-evaluation.js';
 import { CoverageAnalysisService } from '../services/coverage-analysis-service.js';
 import { diagnoseSessionFailure } from '../services/failure-diagnosis-service.js';
+import { parseExecutionContext } from '../services/execution-context.js';
 import { FailurePatternService } from '../services/failure-pattern-service.js';
 import { GovernancePolicyService } from '../services/governance-policy-service.js';
 import { IndependentAuditorService } from '../services/independent-auditor-service.js';
@@ -20,6 +21,7 @@ import { LearningPlaybookService } from '../services/learning-playbook-service.j
 import { buildMaturityStatus } from '../services/maturity-service.js';
 import { MetaOrchestrator } from '../services/meta-orchestrator.js';
 import { ProfileTuningService } from '../services/profile-tuning-service.js';
+import { filterSessionsForAvailableScenarios, isAvailableScenarioId } from '../services/available-scenarios.js';
 import { ScenarioDraftPromotionReadinessService } from '../services/scenario-draft-promotion-readiness-service.js';
 import {
   applyScenarioDraftMappingReview,
@@ -290,6 +292,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
       generateScenarioDrafts?: boolean
       actor?: string
       maxApprovedApplies?: number
+      executionContext?: unknown
     }
   }>(
     '/api/p2/closed-loop/run',
@@ -303,6 +306,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
           generateScenarioDrafts: request.body?.generateScenarioDrafts,
           actor: request.body?.actor,
           maxApprovedApplies: request.body?.maxApprovedApplies,
+          executionContext: parseExecutionContext(request.body?.executionContext),
         });
         return reply.status(201).send(run);
       } catch (error) {
@@ -340,7 +344,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/p2/sessions — list all sessions
   app.get('/api/p2/sessions', async (_request, reply) => {
     const service = getSessionService();
-    const sessions = service.getAllSessions();
+    const sessions = filterSessionsForAvailableScenarios(service.getAllSessions());
 
     const summaries = sessions.map((s) => {
       const evaluation = safeBuildContractEvaluation(s).contractEvaluation;
@@ -370,7 +374,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     const service = getSessionService();
     const session = service.getSession(request.params.id);
 
-    if (!session) {
+    if (!session || !isAvailableScenarioId(session.scenarioId)) {
       return reply.status(404).send({ error: 'Sessão não encontrada' });
     }
 
@@ -386,7 +390,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     const service = getSessionService();
     const session = service.getSession(request.params.id);
 
-    if (!session) {
+    if (!session || !isAvailableScenarioId(session.scenarioId)) {
       return reply.status(404).send({ error: 'Sessão não encontrada' });
     }
 
@@ -401,7 +405,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     const service = getSessionService();
     const session = service.getSession(request.params.id);
 
-    if (!session) {
+    if (!session || !isAvailableScenarioId(session.scenarioId)) {
       return reply.status(404).send({ error: 'Sessão não encontrada' });
     }
 
@@ -413,7 +417,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     const service = getSessionService();
     const session = service.getSession(request.params.id);
 
-    if (!session) {
+    if (!session || !isAvailableScenarioId(session.scenarioId)) {
       return reply.status(404).send({ error: 'Sessão não encontrada' });
     }
 
@@ -539,7 +543,13 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
         request.body.reviewedBy ?? 'human_reviewer',
       );
       if (governanceDecision.verdict === 'blocked') {
-        return reply.status(409).send({ error: governanceDecision.reason });
+        const actor = request.body.reviewedBy ?? currentDraft.reviewedBy ?? 'human_reviewer';
+        const readiness = new ScenarioDraftPromotionReadinessService(service).buildReport(currentDraft, actor);
+        return reply.status(409).send({
+          error: governanceDecision.reason,
+          governanceDecision,
+          promotionReadiness: readiness,
+        });
       }
 
       const draft = service.updateScenarioDraftStatus(
@@ -605,7 +615,13 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
         request.body?.reviewedBy ?? 'human_reviewer',
       );
       if (governanceDecision.verdict === 'blocked') {
-        return reply.status(409).send({ error: governanceDecision.reason });
+        const actor = request.body?.reviewedBy ?? currentDraft.reviewedBy ?? 'human_reviewer';
+        const readiness = new ScenarioDraftPromotionReadinessService(service).buildReport(currentDraft, actor);
+        return reply.status(409).send({
+          error: governanceDecision.reason,
+          governanceDecision,
+          promotionReadiness: readiness,
+        });
       }
 
       const draft = service.updateScenarioDraftStatus(
@@ -974,6 +990,7 @@ function normalizeSchedulerOptions(input: Partial<L5ClosedLoopSchedulerOptions> 
     generateScenarioDrafts: typeof input.generateScenarioDrafts === 'boolean' ? input.generateScenarioDrafts : undefined,
     actor: typeof input.actor === 'string' && input.actor.trim() ? input.actor : undefined,
     maxApprovedApplies: typeof input.maxApprovedApplies === 'number' ? input.maxApprovedApplies : undefined,
+    executionContext: parseExecutionContext(input.executionContext),
     intervalMs: typeof input.intervalMs === 'number' ? input.intervalMs : undefined,
     runImmediately: typeof input.runImmediately === 'boolean' ? input.runImmediately : undefined,
   };

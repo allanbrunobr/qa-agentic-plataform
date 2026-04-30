@@ -1,5 +1,7 @@
 import { buildContractEvaluation } from './contract-evaluation.js'
 import { CoverageAnalysisService } from './coverage-analysis-service.js'
+import type { Phase2ExecutionContext } from './execution-context.js'
+import { summarizeExecutionContext } from './execution-context.js'
 import { L5LoopGuardService, type L5LoopGuard, type L5LoopId } from './l5-loop-guard-service.js'
 import { L5MaterializationService } from './l5-materialization-service.js'
 import { LearningControlService } from './learning-control-service.js'
@@ -23,6 +25,7 @@ export interface L5ClosedLoopRunOptions {
   generateScenarioDrafts?: boolean
   actor?: string
   maxApprovedApplies?: number
+  executionContext?: Phase2ExecutionContext
 }
 
 export interface L5ClosedLoopStatus {
@@ -145,6 +148,7 @@ export class L5ClosedLoopService {
         applyApprovedChanges: options.applyApprovedChanges === true,
         generateScenarioDrafts: options.generateScenarioDrafts === true,
         retainedLearningSignals: learningSignals.retained,
+        executionContext: summarizeExecutionContext(options.executionContext),
       },
     })
     const maxScenarios = clamp(options.maxScenarios ?? 3, 1, 10)
@@ -189,7 +193,12 @@ export class L5ClosedLoopService {
           pendingReviews: 0,
           retainedLearningSignals: learningSignals.retained,
         },
-        metadata: { guards, lifecycle, learningSignals },
+        metadata: {
+          guards,
+          lifecycle,
+          learningSignals,
+          executionContext: summarizeExecutionContext(options.executionContext),
+        },
         startedAt,
       })
     }
@@ -476,6 +485,7 @@ export class L5ClosedLoopService {
         before,
         after,
         lifecycle,
+        executionContext: summarizeExecutionContext(options.executionContext),
       },
       startedAt,
     })

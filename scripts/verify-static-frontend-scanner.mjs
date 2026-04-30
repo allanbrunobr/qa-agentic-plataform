@@ -64,10 +64,17 @@ function createFixtures() {
         <input name="amount" placeholder="Amount" />
         <label>API_KEY=fake-test-secret-value-1234567890</label>
         <button aria-label="Submit transfer">Transfer</button>
+        <button>{isOpen)}</button>
+        <button className="text-lg">text-lg</button>
       </form>
     </main>
   )
 }
+`)
+  writeFile('vite-finance', 'src/services/SessionStateManager.tsx', `export function SessionStateManager() {
+  return null
+}
+export const API_BASE_URL = 'http://example.test'
 `)
   writeFile('vite-finance', 'tests/transfer.spec.ts', `import { test } from '@playwright/test'
 test('account holder transfers funds', async () => {})
@@ -147,10 +154,14 @@ try {
     assert(frameworkNames(finance).includes('vite'), 'vite fixture should detect Vite')
     assert(frameworkNames(finance).includes('react'), 'vite fixture should detect React')
     assert(byId(finance.routes, 'route_root'), 'vite fixture should include root route from index.html')
-    assert(finance.forms.some((form) => form.fields.includes('amount')), 'vite fixture should extract form fields')
+    assert(finance.forms.some((form) => form.fields.some((field) => field.toLowerCase() === 'amount')), 'vite fixture should extract form fields')
     assert(finance.buttons.some((button) => button.buttonText === 'Submit transfer'), 'vite fixture should extract aria button text')
+    assert(!finance.buttons.some((button) => button.buttonText === 'isOpen)'), 'scanner should ignore code-like button labels')
+    assert(!finance.buttons.some((button) => button.buttonText === 'text-lg'), 'scanner should ignore utility-class button labels')
     assert(finance.navigation.some((nav) => nav.targetPath === '/accounts'), 'vite fixture should extract navigation href')
     assert(finance.tests.some((test) => test.testName === 'account holder transfers funds' && test.tool === 'playwright'), 'vite fixture should extract Playwright test names')
+    assert(!finance.components.some((component) => component.componentName === 'SessionStateManager'), 'scanner should ignore service-like component files')
+    assert(!finance.components.some((component) => component.componentName === 'API_BASE_URL'), 'scanner should ignore constant-like exported names')
     assert(!JSON.stringify(finance).includes('fake-test-secret'), 'scanner output should redact key-like values')
 
     const next = await scanStaticFrontend(path.join(fixtureRoot, 'next-app'))

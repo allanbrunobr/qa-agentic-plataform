@@ -240,6 +240,7 @@ export type Phase2ClosedLoopMode = 'observe' | 'apply_approved'
 export type Phase2KnowledgePromotionType = 'learning_overlay' | 'scenario_contract' | 'healing_policy'
 export type Phase2KnowledgePromotionStatus = 'requires_review' | 'approved' | 'materialized' | 'blocked' | 'rejected'
 export type Phase2KnowledgePromotionNextAction = 'approve' | 'apply' | 'promote' | 'review' | 'none'
+export type Phase2KnowledgePromotionPriority = 'critical' | 'high' | 'normal' | 'low'
 export type Phase2KnowledgePromotionEventAction = 'approve' | 'apply' | 'promote'
 export type Phase2KnowledgePromotionEventStatus = 'completed' | 'blocked' | 'failed'
 export type Phase2KnowledgePromotionPostVerificationStatus = 'passed' | 'warning' | 'failed'
@@ -258,8 +259,27 @@ export interface Phase2ClosedLoopLifecycleEvent {
   details?: Record<string, unknown>
 }
 
+export interface Phase2ExecutionPreviewTarget {
+  role?: string
+  repo?: string
+  ref?: string
+  sha?: string
+  url?: string
+}
+
+export interface Phase2ExecutionContext {
+  source?: 'pr_preview' | 'branch_local' | 'staging' | 'production' | 'custom'
+  branchName?: string
+  prNumber?: number
+  targetBaseUrl?: string
+  targetRepoPath?: string
+  previewTargets?: Phase2ExecutionPreviewTarget[]
+  notes?: string[]
+}
+
 export interface Phase2ClosedLoopRunMetadata extends Record<string, unknown> {
   lifecycle?: Phase2ClosedLoopLifecycleEvent[]
+  executionContext?: Phase2ExecutionContext
 }
 
 export interface Phase2MaturityCapability {
@@ -568,6 +588,20 @@ export interface Phase2ScenarioDraft {
   updatedAt: string
 }
 
+export interface Phase2ScenarioDraftGraphReadiness {
+  status: string
+  confidence: number
+  requiredCapabilityCount: number
+  mappedCapabilityCount: number
+  mappedCapabilityIds: string[]
+  missingCapabilityIds: string[]
+  supportSourceTypes: string[]
+  supportEndpointCount: number
+  supportHandlerCount: number
+  supportHttpCallCount: number
+  supportDataAccessCount: number
+}
+
 export interface Phase2ScenarioDraftMappingReview {
   selectorsMapped: boolean
   authMapped: boolean
@@ -608,6 +642,16 @@ export interface Phase2ScenarioDraftPromotionActionReadiness {
   requirements: string[]
 }
 
+export type Phase2ScenarioDraftPromotionRecommendationAction = 'review' | 'approve' | 'promote' | 'none'
+export type Phase2ScenarioDraftPromotionRecommendationPriority = 'critical' | 'high' | 'normal' | 'low'
+
+export interface Phase2ScenarioDraftPromotionRecommendation {
+  priority: Phase2ScenarioDraftPromotionRecommendationPriority
+  action: Phase2ScenarioDraftPromotionRecommendationAction
+  structurallyPromotable: boolean
+  summary: string
+}
+
 export interface Phase2ScenarioDraftPromotionReadiness {
   draftId: string
   scenarioId: string
@@ -615,13 +659,14 @@ export interface Phase2ScenarioDraftPromotionReadiness {
   actor: string
   readyForApproval: boolean
   readyForPromotion: boolean
-  graphReadiness: Record<string, unknown> | null
+  graphReadiness: Phase2ScenarioDraftGraphReadiness | null
   mappingReview: Phase2ScenarioDraftMappingReview | null
   requirements: Phase2ScenarioDraftPromotionRequirement[]
   actions: {
     approve: Phase2ScenarioDraftPromotionActionReadiness
     promote: Phase2ScenarioDraftPromotionActionReadiness
   }
+  recommendation: Phase2ScenarioDraftPromotionRecommendation
   nextSteps: string[]
 }
 
@@ -720,6 +765,7 @@ export interface Phase2KnowledgePromotionCandidate {
   title: string
   target: string
   reason: string
+  priority: Phase2KnowledgePromotionPriority
   approvalRequired: boolean
   materializationReady: boolean
   nextAction: Phase2KnowledgePromotionNextAction
@@ -837,6 +883,7 @@ export interface Phase2ClosedLoopSchedulerStatus {
     generateScenarioDrafts: boolean
     maxApprovedApplies: number
     actor: string
+    executionContext?: Phase2ExecutionContext
   }
 }
 
@@ -999,6 +1046,7 @@ export const api = {
     maxScenarios?: number
     applyApprovedChanges?: boolean
     generateScenarioDrafts?: boolean
+    executionContext?: Phase2ExecutionContext
   }) =>
     fetchJSON<Phase2ClosedLoopRun>(`${API_BASE}/api/p2/closed-loop/run`, {
       method: 'POST',
@@ -1012,6 +1060,7 @@ export const api = {
     applyApprovedChanges?: boolean
     generateScenarioDrafts?: boolean
     maxApprovedApplies?: number
+    executionContext?: Phase2ExecutionContext
     intervalMs?: number
     runImmediately?: boolean
   }) =>
@@ -1028,6 +1077,7 @@ export const api = {
     maxScenarios?: number
     applyApprovedChanges?: boolean
     generateScenarioDrafts?: boolean
+    executionContext?: Phase2ExecutionContext
   }) =>
     fetchJSON<Phase2ClosedLoopSchedulerTickResult>(`${API_BASE}/api/p2/closed-loop/scheduler/tick`, {
       method: 'POST',
@@ -1135,12 +1185,14 @@ export const api = {
     customer_name?: string
     customer_phone?: string
     order_type?: string
+    execution_context?: Phase2ExecutionContext
   }) =>
     fetchJSON<{
       session_id: string
       scenario_id: string
       status: string
       started_at: string
+      execution_context?: Phase2ExecutionContext
     }>(`${API_BASE}/api/p2/runs`, {
       method: 'POST',
       body: JSON.stringify(payload),

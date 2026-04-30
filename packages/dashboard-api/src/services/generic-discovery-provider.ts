@@ -10,7 +10,7 @@ import type {
 } from '../../../host-sdk/src/contracts.ts'
 import { inferDomainDiscoveryBundle } from './domain-specialist-service.ts'
 import { classifyRepository } from './repository-classifier.ts'
-import { scanStaticFrontend } from './static-frontend-scanner.ts'
+import { resolvePreferredFrontendScanRoot, scanStaticFrontend } from './static-frontend-scanner.ts'
 
 export class GenericFrontendDiscoveryProvider implements DiscoveryHintsProvider {
   readonly id = 'generic-repository-discovery'
@@ -38,12 +38,20 @@ export class GenericFrontendDiscoveryProvider implements DiscoveryHintsProvider 
 }
 
 async function analyzeGenericFrontend(repoPath: string): Promise<{ report: DiscoveryReport; draft: BootstrapDraft }> {
-  const packageJson = await readJson(path.join(repoPath, 'package.json'))
-  const sourceFiles = await listSourceFiles(repoPath)
-  const sourceText = await readSourcePreview(sourceFiles)
   const repository = await classifyRepository(repoPath)
+  const frontendRoot = repository.kind === 'frontend'
+    ? await resolvePreferredFrontendScanRoot(repoPath)
+    : null
+  const packageJson = frontendRoot
+    ? await readJson(path.join(frontendRoot.appRoot, 'package.json'))
+    : await readJson(path.join(repoPath, 'package.json'))
+  const sourceFiles = await listSourceFiles(repoPath, repository, frontendRoot?.appRoot ?? null)
+  const backendEndpointCandidates = repository.kind === 'backend_api'
+    ? await extractBackendEndpointCandidatesFromFiles(repoPath, sourceFiles)
+    : []
+  const sourceText = await readSourcePreview(sourceFiles)
   const framework = detectFramework(packageJson, sourceFiles, repository)
-  const surfaces = buildSurfaces(repoPath, packageJson, sourceFiles, sourceText, repository)
+  const surfaces = buildSurfaces(repoPath, packageJson, sourceFiles, sourceText, repository, backendEndpointCandidates)
   const domainDiscovery = repository.kind === 'frontend'
     ? inferDomainDiscoveryBundle(await scanStaticFrontend(repoPath))
     : undefined
@@ -59,7 +67,7 @@ async function analyzeGenericFrontend(repoPath: string): Promise<{ report: Disco
 
   return {
     report,
-    draft: buildGenericDraft(sourceText, repository),
+    draft: buildGenericDraft(sourceText, repository, domainDiscovery?.domain.domain, backendEndpointCandidates),
   }
 }
 
@@ -84,33 +92,71 @@ function detectFramework(
   return 'unknown'
 }
 
-function buildGenericDraft(sourceText: string, repository: RepositoryClassification): BootstrapDraft {
+function buildGenericDraft(
+  sourceText: string,
+  repository: RepositoryClassification,
+  inferredDomain: string | undefined,
+  backendEndpointCandidates: Array<{ method: string; path: string }>,
+): BootstrapDraft {
   if (repository.kind === 'backend_api') {
-    const hasHealth = /health|heartbeat|readiness|liveness/i.test(sourceText)
+    const endpointCandidates = backendEndpointCandidates.length > 0
+      ? backendEndpointCandidates
+      : extractBackendEndpointCandidates(sourceText)
+    const hasHealth = endpointCandidates.some((candidate) => isHealthLikeRoute(candidate.path))
+    const hasPrimaryEndpoint = endpointCandidates.some((candidate) => !isHealthLikeRoute(candidate.path))
+    const allowedTools = [
+      'startApiService',
+      ...(hasHealth ? ['callHealthEndpoint'] : []),
+      ...(hasPrimaryEndpoint ? ['callPrimaryEndpoint'] : []),
+      'verifyApiResponse',
+    ]
+    const scenarios = [
+      ...(hasHealth
+        ? [{
+            id: 'api_health_smoke',
+            title: 'API health smoke flow',
+            participatingRoles: ['api_consumer'],
+            rationale: 'Generated from backend/API repository health endpoint signatures.',
+            candidateSteps: ['start_api_service', 'call_health_endpoint', 'verify_api_response'],
+          }]
+        : []),
+      ...(hasPrimaryEndpoint
+        ? [{
+            id: 'api_contract_smoke',
+            title: 'API contract smoke flow',
+            participatingRoles: ['api_consumer'],
+            rationale: 'Generated from backend/API primary endpoint signatures.',
+            candidateSteps: ['start_api_service', 'call_primary_endpoint', 'verify_api_response'],
+          }]
+        : []),
+    ]
+    const capabilityCandidates = [
+      'startApiService',
+      ...(hasHealth ? ['callHealthEndpoint'] : []),
+      ...(hasPrimaryEndpoint ? ['callPrimaryEndpoint'] : []),
+      'verifyApiResponse',
+    ]
+
     return {
       personas: [
         {
           id: 'api_consumer',
           title: 'API Consumer',
           rationale: 'Validates the primary service contract exposed by the target API repository.',
-          allowedTools: hasHealth
-            ? ['startApiService', 'callHealthEndpoint', 'verifyApiResponse']
-            : ['startApiService', 'callPrimaryEndpoint', 'verifyApiResponse'],
+          allowedTools,
         },
       ],
-      scenarios: [
-        {
-          id: hasHealth ? 'api_health_smoke' : 'api_contract_smoke',
-          title: hasHealth ? 'API health smoke flow' : 'API contract smoke flow',
-          participatingRoles: ['api_consumer'],
-          rationale: 'Generated from backend/API repository signatures.',
-          candidateSteps: hasHealth
-            ? ['start_api_service', 'call_health_endpoint', 'verify_api_response']
-            : ['start_api_service', 'call_primary_endpoint', 'verify_api_response'],
-        },
-      ],
-      capabilityCandidates: hasHealth
-        ? ['startApiService', 'callHealthEndpoint', 'verifyApiResponse']
+      scenarios: scenarios.length > 0
+        ? scenarios
+        : [{
+            id: 'api_contract_smoke',
+            title: 'API contract smoke flow',
+            participatingRoles: ['api_consumer'],
+            rationale: 'Generated from backend/API repository signatures.',
+            candidateSteps: ['start_api_service', 'call_primary_endpoint', 'verify_api_response'],
+          }],
+      capabilityCandidates: capabilityCandidates.length > 0
+        ? capabilityCandidates
         : ['startApiService', 'callPrimaryEndpoint', 'verifyApiResponse'],
       hostNotes: [
         'Backend/API adapter generated from deterministic repository classification.',
@@ -200,7 +246,34 @@ function buildGenericDraft(sourceText: string, repository: RepositoryClassificat
     }
   }
 
-  const hasCart = /cart|checkout|order|submit/i.test(sourceText)
+  if (inferredDomain === 'retail') {
+    return {
+      personas: [
+        {
+          id: 'care_coordinator',
+          title: 'Care Coordinator',
+          rationale: 'Validates the primary operational workflow surfaced by the detected retail UI.',
+          allowedTools: ['startFulfillment', 'generateDispatchReport', 'endFulfillment', 'captureScreenshot'],
+        },
+      ],
+      scenarios: [
+        {
+          id: 'operational_fulfillment_smoke',
+          title: 'Operational fulfillment smoke flow',
+          participatingRoles: ['care_coordinator'],
+          rationale: 'Generated from retail-specific UI evidence and domain inference.',
+          candidateSteps: ['start_fulfillment', 'generate_dispatch_report', 'end_fulfillment'],
+        },
+      ],
+      capabilityCandidates: ['startFulfillment', 'generateDispatchReport', 'endFulfillment', 'captureScreenshot'],
+      hostNotes: [
+        'Generic frontend adapter generated from retail-specific static evidence.',
+        'Replace generated capability stubs with host-specific Playwright actions before certifying this adapter.',
+      ],
+    }
+  }
+
+  const hasCart = /\bcart\b|\bcheckout\b|\bcustomer\b|\bshipping\b|\bproduct\b/.test(sourceText.toLowerCase())
   const scenarioTitle = hasCart ? 'Checkout smoke flow' : 'Primary user smoke flow'
   const scenarioId = hasCart ? 'checkout_smoke' : 'primary_user_smoke'
   const allowedTools = hasCart
@@ -320,6 +393,7 @@ function buildSurfaces(
   sourceFiles: string[],
   sourceText: string,
   repository: RepositoryClassification,
+  backendEndpointCandidates: Array<{ method: string; path: string }>,
 ): DiscoveryReport['surfaces'] {
   const surfaces: DiscoveryReport['surfaces'] = []
   const relativeSources = sourceFiles.map((filePath) => path.relative(repoPath, filePath))
@@ -327,18 +401,37 @@ function buildSurfaces(
   const hasMainEntry = relativeSources.some((filePath) => /(^|\/)main\.[jt]sx?$/.test(filePath))
 
   if (repository.kind === 'backend_api') {
+    const endpointCandidates = backendEndpointCandidates.length > 0
+      ? backendEndpointCandidates
+      : extractBackendEndpointCandidates(sourceText)
     surfaces.push({
       id: 'api_service',
       kind: 'module',
       label: 'API Service',
       evidence: repository.evidence,
     })
-    if (/health|heartbeat|readiness|liveness/i.test(sourceText)) {
+    const healthEndpoint = endpointCandidates.find((candidate) => isHealthLikeRoute(candidate.path))
+    if (healthEndpoint) {
       surfaces.push({
         id: 'health_endpoint',
         kind: 'route',
         label: 'Health Endpoint',
-        evidence: matchingEvidence(relativeSources, sourceText, ['health', 'heartbeat', 'readiness', 'liveness']),
+        evidence: [
+          `${healthEndpoint.method} ${healthEndpoint.path}`,
+          ...matchingEvidence(relativeSources, sourceText, ['health', 'heartbeat', 'readiness', 'liveness']),
+        ],
+      })
+    }
+    const primaryEndpoint = endpointCandidates.find((candidate) => !isHealthLikeRoute(candidate.path))
+    if (primaryEndpoint) {
+      surfaces.push({
+        id: 'primary_endpoint',
+        kind: 'route',
+        label: 'Primary Endpoint',
+        evidence: [
+          `${primaryEndpoint.method} ${primaryEndpoint.path}`,
+          ...matchingEvidence(relativeSources, sourceText, ['api', 'route', 'endpoint', primaryEndpoint.path]),
+        ],
       })
     }
   } else if (repository.kind === 'cli') {
@@ -371,12 +464,12 @@ function buildSurfaces(
     })
   }
 
-  if (repository.kind === 'frontend' && /checkout|cart|order/i.test(sourceText)) {
+  if (repository.kind === 'frontend' && /\bcart\b|\bcheckout\b|\bcustomer\b|\bshipping\b|\bproduct\b/.test(sourceText.toLowerCase())) {
     surfaces.push({
       id: 'checkout',
       kind: 'feature',
       label: 'Checkout',
-      evidence: matchingEvidence(relativeSources, sourceText, ['checkout', 'cart', 'order']),
+      evidence: matchingEvidence(relativeSources, sourceText, ['checkout', 'cart', 'customer', 'shipping', 'product']),
     })
   }
 
@@ -415,14 +508,221 @@ function matchingEvidence(relativeSources: string[], sourceText: string, tokens:
   return textToken ? [`source contains "${textToken}"`] : relativeSources.slice(0, 3)
 }
 
-async function listSourceFiles(repoPath: string): Promise<string[]> {
-  const roots = ['src', 'app', 'pages', 'routes', 'server', 'lib', 'bin', 'cmd', 'apps', 'packages']
-    .map((entry) => path.join(repoPath, entry))
+function extractBackendEndpointCandidates(sourceText: string) {
+  const endpoints: Array<{ method: string; path: string }> = []
+  const expressLike = /\b(?:app|router|fastify|server)\.(get|post|put|patch|delete)\s*\(\s*["'`]([^"'`]+)["'`]/gi
+  for (const match of sourceText.matchAll(expressLike)) {
+    const method = String(match[1] ?? 'get').toUpperCase()
+    const routePath = normalizeBackendRoutePath(String(match[2] ?? '/'))
+    if (!routePath) continue
+    endpoints.push({ method, path: routePath })
+  }
+  const seen = new Set<string>()
+  return endpoints.filter((endpoint) => {
+    const key = `${endpoint.method} ${endpoint.path}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+async function extractBackendEndpointCandidatesFromFiles(repoPath: string, sourceFiles: string[]) {
+  const fileEntries: Array<{
+    relativePath: string
+    content: string
+    imports: Array<{ binding: string; targetRelativePath: string | null }>
+    endpoints: Array<{ method: string; path: string; routerName: string }>
+    routeMounts: Array<{ prefix: string; routerIdentifier: string; targetRelativePath: string | null }>
+  }> = []
+  const existingRelativePaths = new Set(sourceFiles.map((filePath) => normalizeRepoRelativePath(repoPath, filePath)))
+
+  for (const filePath of sourceFiles) {
+    let content: string
+    try {
+      content = await fs.readFile(filePath, 'utf8')
+    } catch {
+      continue
+    }
+    const relativePath = normalizeRepoRelativePath(repoPath, filePath)
+    const imports = extractBackendImports(relativePath, content, existingRelativePaths)
+    const endpoints = extractBackendEndpointsFromContent(content)
+    const routeMounts = extractBackendRouteMounts(content, imports)
+    fileEntries.push({ relativePath, content, imports, endpoints, routeMounts })
+  }
+
+  const endpointPool = fileEntries.flatMap((entry) =>
+    entry.endpoints.map((endpoint) => ({
+      ...endpoint,
+      relativePath: entry.relativePath,
+      mountChain: [] as string[],
+    })),
+  )
+  const composed: typeof endpointPool = []
+  const seen = new Set(endpointPool.map((endpoint) => `${endpoint.method} ${endpoint.path}`))
+
+  for (let iteration = 0; iteration < 4; iteration += 1) {
+    let added = 0
+    for (const entry of fileEntries) {
+      for (const routeMount of entry.routeMounts) {
+        const matchingEndpoints = endpointPool.filter((endpoint) => {
+          if (endpoint.mountChain.includes(`${entry.relativePath}:${routeMount.prefix}:${routeMount.routerIdentifier}`)) return false
+          if (endpoint.relativePath === entry.relativePath && endpoint.routerName === routeMount.routerIdentifier) return true
+          return Boolean(routeMount.targetRelativePath && endpoint.relativePath === routeMount.targetRelativePath)
+        })
+        for (const endpoint of matchingEndpoints) {
+          const prefixedPath = normalizeBackendRoutePath(`${routeMount.prefix}/${endpoint.path}`)
+          if (!prefixedPath) continue
+          const key = `${endpoint.method} ${prefixedPath}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          const mountedId = `${entry.relativePath}:${routeMount.prefix}:${routeMount.routerIdentifier}`
+          const composedEndpoint = {
+            ...endpoint,
+            path: prefixedPath,
+            mountChain: [...endpoint.mountChain, mountedId],
+          }
+          endpointPool.push(composedEndpoint)
+          composed.push(composedEndpoint)
+          added += 1
+        }
+      }
+    }
+    if (added === 0) break
+  }
+
+  return [...endpointPool, ...composed]
+    .map((endpoint) => ({ method: endpoint.method, path: endpoint.path }))
+    .filter((endpoint, index, list) => list.findIndex((candidate) => candidate.method === endpoint.method && candidate.path === endpoint.path) === index)
+    .sort((left, right) => backendEndpointPriority(right.path) - backendEndpointPriority(left.path))
+}
+
+function extractBackendImports(relativePath: string, sourceText: string, existingRelativePaths: Set<string>) {
+  const imports: Array<{ binding: string; targetRelativePath: string | null }> = []
+  const importStatement = /\bimport\s+([^;]+?)\s+from\s+["'`]([^"'`]+)["'`]/g
+  for (const match of sourceText.matchAll(importStatement)) {
+    const clause = String(match[1] ?? '')
+    const specifier = String(match[2] ?? '')
+    const targetRelativePath = resolveBackendRelativeImport(relativePath, specifier, existingRelativePaths)
+    const bindings = clause
+      .replace(/[{}]/g, '')
+      .split(',')
+      .map((item) => item.trim().split(/\s+as\s+/i).pop() ?? '')
+      .filter(Boolean)
+    for (const binding of bindings) imports.push({ binding, targetRelativePath })
+  }
+  return imports
+}
+
+function extractBackendEndpointsFromContent(sourceText: string) {
+  const endpoints: Array<{ method: string; path: string; routerName: string }> = []
+  const routeCall = /\b([A-Za-z_$][A-Za-z0-9_$]*)\.(get|post|put|patch|delete)\s*\(\s*["'`]([^"'`]+)["'`]/g
+  for (const match of sourceText.matchAll(routeCall)) {
+    const routerName = String(match[1] ?? '')
+    const method = String(match[2] ?? 'get').toUpperCase()
+    const routePath = normalizeBackendRoutePath(String(match[3] ?? '/'))
+    if (!routerName || !routePath) continue
+    endpoints.push({ method, path: routePath, routerName })
+  }
+  return endpoints
+}
+
+function extractBackendRouteMounts(
+  sourceText: string,
+  imports: Array<{ binding: string; targetRelativePath: string | null }>,
+) {
+  const mounts: Array<{ prefix: string; routerIdentifier: string; targetRelativePath: string | null }> = []
+  const routeMount = /\b([A-Za-z_$][A-Za-z0-9_$]*)\.(?:use|register)\s*\(\s*["'`]([^"'`]+)["'`]\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)/g
+  for (const match of sourceText.matchAll(routeMount)) {
+    const prefix = normalizeBackendRoutePath(String(match[2] ?? ''))
+    const routerIdentifier = String(match[3] ?? '')
+    if (!prefix || prefix === '/' || !routerIdentifier) continue
+    const targetRelativePath = imports.find((item) => item.binding === routerIdentifier)?.targetRelativePath ?? null
+    mounts.push({ prefix, routerIdentifier, targetRelativePath })
+  }
+  return mounts
+}
+
+function resolveBackendRelativeImport(fromRelativePath: string, specifier: string, existingRelativePaths: Set<string>) {
+  if (!specifier.startsWith('.')) return null
+  const fromDir = path.posix.dirname(fromRelativePath.split(path.sep).join('/'))
+  const raw = path.posix.normalize(path.posix.join(fromDir, specifier))
+  const withoutExplicitJsExt = raw.replace(/\.(?:c|m)?jsx?$/i, '')
+  const candidates = [
+    raw,
+    withoutExplicitJsExt,
+    `${withoutExplicitJsExt}.ts`,
+    `${withoutExplicitJsExt}.tsx`,
+    `${withoutExplicitJsExt}.js`,
+    `${withoutExplicitJsExt}.jsx`,
+    `${withoutExplicitJsExt}.mjs`,
+    `${withoutExplicitJsExt}/index.ts`,
+    `${withoutExplicitJsExt}/index.tsx`,
+    `${withoutExplicitJsExt}/index.js`,
+    `${withoutExplicitJsExt}/index.jsx`,
+    `${raw}.ts`,
+    `${raw}.tsx`,
+    `${raw}.js`,
+    `${raw}.jsx`,
+    `${raw}.mjs`,
+    `${raw}/index.ts`,
+    `${raw}/index.tsx`,
+    `${raw}/index.js`,
+    `${raw}/index.jsx`,
+  ]
+  return candidates.find((candidate) => existingRelativePaths.has(candidate)) ?? null
+}
+
+function normalizeRepoRelativePath(repoPath: string, filePath: string) {
+  return path.relative(repoPath, filePath).split(path.sep).join('/')
+}
+
+function normalizeBackendRoutePath(routePath: string) {
+  const trimmed = routePath.trim()
+  if (!trimmed) return null
+  const cleaned = trimmed.replace(/\\/g, '/').replace(/\/+/g, '/')
+  const withLeadingSlash = cleaned.startsWith('/') ? cleaned : `/${cleaned}`
+  return withLeadingSlash.replace(/\/$/, '') || '/'
+}
+
+function isHealthLikeRoute(routePath: string) {
+  return /health|heartbeat|readiness|liveness|ready|live/i.test(routePath)
+}
+
+function backendEndpointPriority(routePath: string) {
+  const segments = routePath.split('/').filter(Boolean).length
+  const apiBoost = /\/api\/|^\/api$|\/v\d+\//i.test(routePath) ? 10 : 0
+  return apiBoost + segments * 2 + routePath.length / 100
+}
+
+async function listSourceFiles(
+  repoPath: string,
+  repository: RepositoryClassification,
+  preferredFrontendRoot: string | null,
+): Promise<string[]> {
+  const rootEntries = repository.kind === 'frontend'
+    ? preferredFrontendRoot
+      ? [preferredFrontendRoot]
+      : [
+          path.join(repoPath, 'frontend'),
+          path.join(repoPath, 'web'),
+          path.join(repoPath, 'client'),
+          path.join(repoPath, 'ui'),
+          path.join(repoPath, 'src'),
+          path.join(repoPath, 'app'),
+          path.join(repoPath, 'pages'),
+          path.join(repoPath, 'routes'),
+          path.join(repoPath, 'apps'),
+          path.join(repoPath, 'packages'),
+        ]
+    : ['src', 'app', 'pages', 'routes', 'server', 'lib', 'bin', 'cmd', 'apps', 'packages', 'frontend', 'web', 'client', 'backend']
+        .map((entry) => path.join(repoPath, entry))
+
+  const roots = Array.from(new Set(rootEntries.filter((entry): entry is string => Boolean(entry))))
   const files: string[] = []
   for (const root of roots) {
     files.push(...await walkSource(root))
   }
-  return files.slice(0, 200)
+  return Array.from(new Set(files)).slice(0, 250)
 }
 
 async function walkSource(root: string): Promise<string[]> {

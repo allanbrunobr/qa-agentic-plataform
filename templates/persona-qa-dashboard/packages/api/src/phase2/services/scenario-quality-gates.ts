@@ -1,4 +1,5 @@
 import { buildContractEvaluation } from './contract-evaluation.js'
+import { filterSessionsForAvailableScenarios, getAvailableScenarioIds } from './available-scenarios.js'
 import type { Session } from '../types/session-types.js'
 import type { SessionService } from './session-service.js'
 
@@ -92,8 +93,8 @@ export function buildScenarioQualityGateForSessions(
 }
 
 export function buildScenarioQualityGateMap(sessionService: SessionService): Record<string, ScenarioQualityGate> {
-  const sessions = sessionService.getAllSessions()
-  const scenarioIds = Array.from(new Set(sessions.map((session) => session.scenarioId)))
+  const sessions = filterSessionsForAvailableScenarios(sessionService.getAllSessions())
+  const scenarioIds = getAvailableScenarioIds()
   return Object.fromEntries(
     scenarioIds.map((scenarioId) => [scenarioId, buildScenarioQualityGateForSessions(scenarioId, sessions)]),
   )

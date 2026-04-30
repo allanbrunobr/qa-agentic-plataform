@@ -200,36 +200,57 @@ const DOMAIN_PROFILES: DomainProfile[] = [
     domain: 'retail',
     label: 'Retail',
     summary: 'Care workflows such as customers, orders, records, care plans, receipts, or operational review.',
-    keywords: ['order', 'care plan', 'operational', 'health', 'customer', 'receipt', 'record', 'visit'],
+    keywords: [
+      'order',
+      'care plan',
+      'operational',
+      'pedido',
+      'fulfillment',
+      'health',
+      'operational',
+      'customer',
+      'receipt',
+      'registro',
+      'record',
+      'relatorio fulfillment-agent',
+      'notes',
+      'symptom',
+      'sintoma',
+      'intake',
+      'intake',
+      'medicamento',
+      'medication',
+      'visit',
+    ],
     entities: [
-      { id: 'customer', name: 'Customer', kind: 'person', keywords: ['customer'] },
-      { id: 'order', name: 'Order', kind: 'workflow', keywords: ['order', 'visit'] },
-      { id: 'care_plan', name: 'Care Plan', kind: 'record', keywords: ['care plan', 'operational'] },
+      { id: 'customer', name: 'Customer', kind: 'person', keywords: ['customer', 'customer'] },
+      { id: 'order', name: 'Order', kind: 'workflow', keywords: ['order', 'visit', 'pedido', 'fulfillment'] },
+      { id: 'care_plan', name: 'Care Plan', kind: 'record', keywords: ['care plan', 'operational', 'intake', 'notes', 'operational', 'relatorio fulfillment-agent'] },
     ],
     personas: [
       {
-        id: 'care_coordinator',
-        title: 'Care Coordinator',
-        goals: ['Coordinate care workflow', 'Validate customer follow-up'],
-        rationale: 'Care plan and order evidence indicates operational coordination workflows.',
+        id: 'operator',
+        title: 'Operator',
+        goals: ['Conduct fulfillment', 'Generate structured operational documentation'],
+        rationale: 'Operational documentation and fulfillment evidence indicates a operator-facing workflow.',
       },
       {
-        id: 'customer',
-        title: 'Customer',
-        goals: ['Receive care', 'Attend scheduled orders'],
-        rationale: 'Customer record and order evidence implies a customer-facing outcome.',
+        id: 'operational_reviewer',
+        title: 'Operational Reviewer',
+        goals: ['Review generated report quality', 'Validate Notes and intake consistency'],
+        rationale: 'Report review and structured operational notes imply a reviewer persona for validation workflows.',
       },
     ],
     scenarios: [
       {
-        id: 'review_care_plan',
-        title: 'Review care plan',
-        rationale: 'Validates care plan and customer record evidence.',
+        id: 'conduct_fulfillment',
+        title: 'Conduct fulfillment',
+        rationale: 'Validates fulfillment start, live documentation, and visit closure evidence.',
       },
       {
-        id: 'schedule_order',
-        title: 'Schedule order',
-        rationale: 'Validates order form and scheduling action evidence.',
+        id: 'review_dispatch_report',
+        title: 'Review dispatch report',
+        rationale: 'Validates generated report, Notes content, and operational documentation review evidence.',
       },
     ],
   },
@@ -381,14 +402,13 @@ function buildDomainInference(selected: ScoredDomainProfile, evidenceRefs: Evide
 }
 
 function buildPersonas(selected: ScoredDomainProfile, capabilities: CapabilityCandidate[]): PersonaCandidate[] {
-  const allowedCapabilityIds = capabilities.map((capability) => capability.id)
   const evidenceRefs = evidenceRefsFromItems(selected.matchedEvidence).slice(0, 10)
   return selected.profile.personas.map((persona, index) => ({
     id: persona.id,
     title: persona.title,
     rationale: persona.rationale,
     goals: persona.goals,
-    allowedCapabilityIds,
+    allowedCapabilityIds: selectPersonaCapabilities(persona, capabilities),
     confidence: Math.max(0.35, selected.confidence - index * 0.04),
     evidenceRefs,
     status: 'draft',
@@ -403,7 +423,7 @@ function buildScenarios(
   capabilities: CapabilityCandidate[],
 ): ScenarioCandidate[] {
   return selected.profile.scenarios.map((scenario, index) => {
-    const steps = buildScenarioSteps(surfaceMap, capabilities)
+    const steps = buildScenarioSteps(surfaceMap, capabilities, scenario)
     const evidenceRefs = uniqueEvidenceRefs([
       ...evidenceRefsFromItems(selected.matchedEvidence).slice(0, 8),
       ...steps.flatMap((step) => step.evidenceRefs),
@@ -427,13 +447,21 @@ function buildScenarios(
   })
 }
 
-function buildScenarioSteps(surfaceMap: FrontendSurfaceMap, capabilities: CapabilityCandidate[]): ScenarioStepCandidate[] {
-  const preferredCapabilities = [
-    capabilities.find((capability) => capability.kind === 'navigation'),
-    capabilities.find((capability) => capability.kind === 'form_submit'),
-    capabilities.find((capability) => capability.kind === 'button_click'),
-    capabilities.find((capability) => capability.kind === 'assertion'),
-  ].filter((capability): capability is CapabilityCandidate => Boolean(capability))
+function buildScenarioSteps(
+  surfaceMap: FrontendSurfaceMap,
+  capabilities: CapabilityCandidate[],
+  scenario: DomainProfile['scenarios'][number],
+): ScenarioStepCandidate[] {
+  const navigationCapabilities = rankScenarioCapabilities(capabilities, scenario, 'navigation')
+  const formCapabilities = rankScenarioCapabilities(capabilities, scenario, 'form_submit')
+  const buttonCapabilities = rankScenarioCapabilities(capabilities, scenario, 'button_click')
+  const assertionCapabilities = rankScenarioCapabilities(capabilities, scenario, 'assertion')
+  const interactionCandidates = [...formCapabilities, ...buttonCapabilities, ...navigationCapabilities]
+
+  const preferredCapabilities = uniqueCapabilities([
+    ...selectScenarioSequence(interactionCandidates, scenario),
+    assertionCapabilities[0],
+  ].filter((capability): capability is CapabilityCandidate => Boolean(capability))).slice(0, 4)
 
   if (preferredCapabilities.length > 0) {
     return preferredCapabilities.map((capability, index) => ({
@@ -453,6 +481,84 @@ function buildScenarioSteps(surfaceMap: FrontendSurfaceMap, capabilities: Capabi
     capabilityId: undefined,
     evidenceRefs: fallbackEvidence,
   }]
+}
+
+function rankScenarioCapabilities(
+  capabilities: CapabilityCandidate[],
+  scenario: DomainProfile['scenarios'][number],
+  kind: CapabilityCandidate['kind'],
+) {
+  return capabilities
+    .filter((capability) => capability.kind === kind)
+    .sort((left, right) => scoreScenarioCapability(right, scenario) - scoreScenarioCapability(left, scenario))
+}
+
+function selectScenarioSequence(
+  interactionCandidates: CapabilityCandidate[],
+  scenario: DomainProfile['scenarios'][number],
+) {
+  const selected: CapabilityCandidate[] = []
+  const scenarioText = normalize([scenario.id, scenario.title, scenario.rationale].join(' '))
+
+  if (scenarioText.includes('fulfillment')) {
+    pushFirstMatch(selected, interactionCandidates, /\b(iniciar|start|begin|open)\b/)
+    pushFirstMatch(selected, interactionCandidates, /\b(gerar|generate|relatorio|report|notes|intake)\b/)
+    pushFirstMatch(selected, interactionCandidates, /\b(encerrar|finish|end|close)\b/)
+  }
+
+  if (scenarioText.includes('report')) {
+    pushFirstMatch(selected, interactionCandidates, /\b(gerar|generate|relatorio|report)\b/)
+    pushFirstMatch(selected, interactionCandidates, /\b(notes|intake|copy|clipboard)\b/)
+    pushFirstMatch(selected, interactionCandidates, /\b(review|validate|verif|assert)\b/)
+  }
+
+  for (const capability of interactionCandidates) {
+    if (selected.length >= 3) break
+    if (selected.some((item) => item.id === capability.id)) continue
+    if (isScenarioCapabilityOutOfBand(capability, scenario)) continue
+    selected.push(capability)
+  }
+
+  return selected
+}
+
+function pushFirstMatch(
+  selected: CapabilityCandidate[],
+  candidates: CapabilityCandidate[],
+  pattern: RegExp,
+) {
+  const match = candidates.find((capability) => {
+    if (selected.some((item) => item.id === capability.id)) return false
+    return pattern.test(normalizeScenarioCapabilityText(capability))
+  })
+  if (match) selected.push(match)
+}
+
+function isScenarioCapabilityOutOfBand(
+  capability: CapabilityCandidate,
+  scenario: DomainProfile['scenarios'][number],
+) {
+  const scenarioText = normalize([scenario.id, scenario.title, scenario.rationale].join(' '))
+  const capabilityText = normalizeScenarioCapabilityText(capability)
+
+  if (scenarioText.includes('fulfillment')) {
+    return /\b(copy|clipboard)\b/.test(capabilityText)
+  }
+
+  if (scenarioText.includes('report')) {
+    return /\b(iniciar|start|encerrar|end|nova pedido|new fulfillment)\b/.test(capabilityText)
+  }
+
+  return false
+}
+
+function normalizeScenarioCapabilityText(capability: CapabilityCandidate) {
+  return normalize([
+    capability.id,
+    capability.title,
+    capability.purpose,
+    ...(capability.selectorHints ?? []),
+  ].join(' '))
 }
 
 function buildCapabilities(
@@ -478,7 +584,12 @@ function buildCapabilities(
     })
   }
 
-  for (const nav of surfaceMap.navigation.slice(0, 4)) {
+  const prioritizedNavigation = [...surfaceMap.navigation]
+    .sort((left, right) => scoreNavigationSurface(right) - scoreNavigationSurface(left))
+    .slice(0, 4)
+
+  for (const nav of prioritizedNavigation) {
+    if (scoreNavigationSurface(nav) < 0) continue
     capabilities.push({
       id: makeId('navigate', nav.targetPath ?? nav.extractedText),
       title: `Navigate ${nav.extractedText || nav.targetPath || 'link'}`,
@@ -508,7 +619,12 @@ function buildCapabilities(
     })
   }
 
-  for (const button of surfaceMap.buttons.slice(0, 4)) {
+  const prioritizedButtons = [...surfaceMap.buttons]
+    .sort((left, right) => scoreButtonSurface(right, selected) - scoreButtonSurface(left, selected))
+    .slice(0, 6)
+
+  for (const button of prioritizedButtons) {
+    if (scoreButtonSurface(button, selected) < 0) continue
     capabilities.push({
       id: makeId('click', button.buttonText),
       title: `Click ${button.buttonText}`,
@@ -589,6 +705,166 @@ function buildAudit(
     downgradedCandidateIds: scenarios.map((scenario) => scenario.id),
     risks: [],
   }
+}
+
+function selectPersonaCapabilities(
+  persona: DomainProfile['personas'][number],
+  capabilities: CapabilityCandidate[],
+) {
+  const ranked = [...capabilities]
+    .filter((capability) => isCapabilitySuitableForPersona(capability, persona))
+    .sort((left, right) => scoreCapabilityForPersona(right, persona) - scoreCapabilityForPersona(left, persona))
+  const selected = ranked
+    .filter((capability, index) => scoreCapabilityForPersona(capability, persona) > -4 || index < 2)
+    .slice(0, 5)
+
+  return uniqueCapabilities(selected).map((capability) => capability.id)
+}
+
+function isCapabilitySuitableForPersona(
+  capability: CapabilityCandidate,
+  persona: DomainProfile['personas'][number],
+) {
+  const personaText = normalize([persona.title, persona.rationale, ...persona.goals].join(' '))
+  const capabilityText = normalize([
+    capability.id,
+    capability.title,
+    capability.purpose,
+    ...(capability.selectorHints ?? []),
+  ].join(' '))
+
+  if (personaText.includes('operator')) {
+    return !/\b(copy|clipboard|assert|verify|review)\b/.test(capabilityText)
+      || /\b(report|relatorio|operational)\b/.test(capabilityText)
+  }
+
+  if (personaText.includes('reviewer')) {
+    return !/\b(iniciar|start|encerrar|end|nova pedido|new fulfillment)\b/.test(capabilityText)
+      || /\b(report|relatorio|notes|intake|assert|verify|review|copy|clipboard)\b/.test(capabilityText)
+  }
+
+  return true
+}
+
+function scoreCapabilityForPersona(
+  capability: CapabilityCandidate,
+  persona: DomainProfile['personas'][number],
+) {
+  const personaText = normalize([persona.title, persona.rationale, ...persona.goals].join(' '))
+  const capabilityText = normalize([
+    capability.title,
+    capability.purpose,
+    ...(capability.selectorHints ?? []),
+  ].join(' '))
+
+  let score = capabilityStepPriority(capability)
+
+  if (personaText.includes('operator')) {
+    if (/\b(iniciar|start|pedido|fulfillment|encerrar|end|operational|report|relatorio|generate|gerar)\b/.test(capabilityText)) {
+      score += 7
+    }
+    if (/\b(assert|verify|review|copy|clipboard)\b/.test(capabilityText)) {
+      score -= 1
+    }
+  }
+
+  if (personaText.includes('reviewer')) {
+    if (/\b(assert|verify|review|report|notes|intake|operational|copy|clipboard)\b/.test(capabilityText)) {
+      score += 8
+    }
+    if (/\b(iniciar|start|encerrar|end|new fulfillment|nova pedido)\b/.test(capabilityText)) {
+      score -= 2
+    }
+  }
+
+  return score
+}
+
+function scoreScenarioCapability(
+  capability: CapabilityCandidate,
+  scenario: DomainProfile['scenarios'][number],
+) {
+  const scenarioText = normalize([scenario.id, scenario.title, scenario.rationale].join(' '))
+  const capabilityText = normalize([
+    capability.title,
+    capability.purpose,
+    ...(capability.selectorHints ?? []),
+  ].join(' '))
+
+  let score = capabilityStepPriority(capability)
+
+  if (scenarioText.includes('fulfillment')) {
+    if (/\b(iniciar|start|pedido|fulfillment|encerrar|end)\b/.test(capabilityText)) score += 8
+    if (/\b(report|relatorio|notes|intake|copy|clipboard)\b/.test(capabilityText)) score += 2
+  }
+
+  if (scenarioText.includes('report')) {
+    if (/\b(report|relatorio|notes|intake|copy|clipboard|review|assert|verify)\b/.test(capabilityText)) score += 8
+    if (/\b(iniciar|start|encerrar|end|nova pedido|new fulfillment)\b/.test(capabilityText)) score -= 6
+  }
+
+  return score
+}
+
+function capabilityStepPriority(capability: CapabilityCandidate) {
+  const text = normalize([
+    capability.title,
+    capability.purpose,
+    ...(capability.selectorHints ?? []),
+  ].join(' '))
+
+  let score = 0
+
+  if (capability.kind === 'form_submit') score += 8
+  if (capability.kind === 'button_click') score += 6
+  if (capability.kind === 'assertion') score += 4
+  if (capability.kind === 'navigation') score += 2
+
+  if (/\b(start|begin|open|create|new|iniciar|gerar|generate|encerrar|finish|end|review|schedule|pedido|relatorio|operational|care)\b/.test(text)) {
+    score += 6
+  }
+
+  if (/\b(settings|config|configuration|api key|google ai studio|reload|try again|dismiss|feedback|language|copy|download|print)\b/.test(text)) {
+    score -= 6
+  }
+
+  return score
+}
+
+function scoreNavigationSurface(item: FrontendSurfaceMap['navigation'][number]) {
+  const text = normalize([item.extractedText, item.targetPath].filter(Boolean).join(' '))
+  let score = 0
+
+  if (item.targetPath?.startsWith('/')) score += 4
+  if (/^https?:\/\//.test(item.targetPath ?? '')) score -= 2
+  if (/\b(settings|config|configuration|api key|google ai studio|docs|documentation|help)\b/.test(text)) score -= 6
+
+  return score
+}
+
+function scoreButtonSurface(item: FrontendSurfaceMap['buttons'][number], selected: ScoredDomainProfile) {
+  const text = normalize(item.buttonText)
+  let score = 0
+
+  if (isUtilityButtonSurface(text)) return -10
+
+  for (const keyword of selected.profile.keywords) {
+    if (text.includes(normalize(keyword))) score += 4
+  }
+
+  if (/\b(start|begin|new|iniciar|gerar|generate|encerrar|end|finish|review|schedule|pedido|notes|intake|operational|relatorio|customer|order)\b/.test(text)) {
+    score += 6
+  }
+
+  if (/\b(settings|config|configuration|reload|dismiss|feedback|language|copy|download|print|close|cancel|entendido)\b/.test(text)) {
+    score -= 5
+  }
+
+  return score
+}
+
+function isUtilityButtonSurface(text: string) {
+  return /\b(settings|config|configuration|reload|dismiss|feedback|language|download|print|close|cancel|entendido|try again|help|docs|documentation)\b/.test(text)
 }
 
 function collectEvidence(surfaceMap: FrontendSurfaceMap): EvidenceItem[] {

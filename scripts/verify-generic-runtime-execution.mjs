@@ -58,10 +58,36 @@ function createFixtures() {
     },
   }, null, 2)}\n`)
   writeFile('backend-api', 'src/server.ts', `import express from 'express'
+import accountsRouter from './routes/accounts.js'
 
 const app = express()
 app.get('/health', (_request, response) => response.json({ status: 'ok' }))
+app.use('/api', accountsRouter)
 app.listen(3000)
+`)
+  writeFile('backend-api', 'src/routes/accounts.ts', `import { Router } from 'express'
+import { listAccounts } from '../controllers/accounts.js'
+
+const router = Router()
+
+router.get('/accounts', listAccounts)
+
+export default router
+`)
+  writeFile('backend-api', 'src/controllers/accounts.ts', `import type { Request, Response } from 'express'
+import accountsService from '../services/accounts.js'
+
+export function listAccounts(_request: Request, response: Response) {
+  response.json(accountsService.buildAccountsPayload())
+}
+`)
+  writeFile('backend-api', 'src/services/accounts.ts', `const accountsService = {
+  buildAccountsPayload() {
+    return [{ id: 'acct_1' }]
+  },
+}
+
+export default accountsService
 `)
 
   writeFile('cli-tool', 'package.json', `${JSON.stringify({
@@ -176,6 +202,11 @@ try {
     {
       fixtureName: 'backend-api',
       scenarioId: 'api_health_smoke',
+      expectedArtifacts: ['serviceStarted', 'apiResponse', 'apiContractVerified'],
+    },
+    {
+      fixtureName: 'backend-api',
+      scenarioId: 'api_contract_smoke',
       expectedArtifacts: ['serviceStarted', 'apiResponse', 'apiContractVerified'],
     },
     {

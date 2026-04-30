@@ -12,7 +12,9 @@ const webRoot = path.join(dashboardRoot, 'packages/web')
 const preferredNodeBin = process.env.AGENTIC_RELEASE_NODE_BIN
   ?? path.join(process.env.HOME ?? '', '.nvm/versions/node/v22.13.1/bin')
 const preferredNodePath = path.join(preferredNodeBin, 'node')
+const preferredNpmCliPath = path.join(preferredNodeBin, 'lib/node_modules/npm/bin/npm-cli.js')
 const releaseNodePath = fs.existsSync(preferredNodePath) ? preferredNodePath : process.execPath
+const releaseNpmCliPath = fs.existsSync(preferredNpmCliPath) ? preferredNpmCliPath : null
 const releasePath = fs.existsSync(preferredNodePath)
   ? `${preferredNodeBin}${path.delimiter}${process.env.PATH ?? ''}`
   : process.env.PATH
@@ -38,15 +40,25 @@ const steps = [
   },
   {
     name: 'api: L5 transition and route tests',
-    command: 'npm',
-    args: [
-      'exec',
-      '--',
-      'vitest',
-      'run',
-      'src/phase2/__tests__/l5-services.test.ts',
-      'src/phase2/__tests__/sessions-routes.test.ts',
-    ],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [
+        releaseNpmCliPath,
+        'exec',
+        '--',
+        'vitest',
+        'run',
+        'src/phase2/__tests__/l5-services.test.ts',
+        'src/phase2/__tests__/sessions-routes.test.ts',
+      ]
+      : [
+        'exec',
+        '--',
+        'vitest',
+        'run',
+        'src/phase2/__tests__/l5-services.test.ts',
+        'src/phase2/__tests__/sessions-routes.test.ts',
+      ],
     cwd: apiRoot,
     env: {
       PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS: '1',
@@ -54,8 +66,10 @@ const steps = [
   },
   {
     name: 'api: L5 soak',
-    command: 'npm',
-    args: ['run', 'verify:l5:soak'],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'run', 'verify:l5:soak']
+      : ['run', 'verify:l5:soak'],
     cwd: repoRoot,
     env: {
       PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS: '1',
@@ -63,27 +77,41 @@ const steps = [
   },
   {
     name: 'api: typecheck',
-    command: 'npm',
-    args: ['exec', '--', 'tsc', '--noEmit'],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'exec', '--', 'tsc', '--noEmit']
+      : ['exec', '--', 'tsc', '--noEmit'],
     cwd: apiRoot,
   },
   {
     name: 'web: L5 visibility tests',
-    command: 'npm',
-    args: [
-      'exec',
-      '--',
-      'vitest',
-      'run',
-      'src/components/__tests__/L5RunAuditPanel.test.tsx',
-      'src/components/__tests__/MaturityStatusPanel.test.tsx',
-    ],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [
+        releaseNpmCliPath,
+        'exec',
+        '--',
+        'vitest',
+        'run',
+        'src/components/__tests__/L5RunAuditPanel.test.tsx',
+        'src/components/__tests__/MaturityStatusPanel.test.tsx',
+      ]
+      : [
+        'exec',
+        '--',
+        'vitest',
+        'run',
+        'src/components/__tests__/L5RunAuditPanel.test.tsx',
+        'src/components/__tests__/MaturityStatusPanel.test.tsx',
+      ],
     cwd: webRoot,
   },
   {
     name: 'web: typecheck',
-    command: 'npm',
-    args: ['exec', '--', 'tsc', '-p', 'tsconfig.app.json'],
+    command: releaseNpmCliPath ? releaseNodePath : 'npm',
+    args: releaseNpmCliPath
+      ? [releaseNpmCliPath, 'exec', '--', 'tsc', '-p', 'tsconfig.app.json']
+      : ['exec', '--', 'tsc', '-p', 'tsconfig.app.json'],
     cwd: webRoot,
   },
 ]

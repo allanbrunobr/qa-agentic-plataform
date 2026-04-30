@@ -13,6 +13,7 @@ import {
   type Phase2ClosedLoopSchedulerStatus,
   type Phase2ClosedLoopStatusResponse,
   type Phase2DomainDiscoveryResponse,
+  type Phase2ExecutionContext,
   type Phase2GovernanceDecision,
   type Phase2IndependentAuditReview,
   type Phase2IndependentAuditReviewQueueItem,
@@ -117,8 +118,16 @@ export function Overview() {
   const [governanceDecisions, setGovernanceDecisions] = useState<Phase2GovernanceDecision[]>([])
   const [selectedClosedLoopRunId, setSelectedClosedLoopRunId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [selectedScenario, setSelectedScenario] = useState(initialScenarioFromHash ?? 'first_order_multi_role')
+  const [selectedScenario, setSelectedScenario] = useState<string>(initialScenarioFromHash ?? '')
   const [customerName, setCustomerName] = useState('')
+  const [targetBaseUrl, setTargetBaseUrl] = useState('')
+  const [branchName, setBranchName] = useState('')
+  const [prNumber, setPrNumber] = useState('')
+  const [targetRepoPath, setTargetRepoPath] = useState('')
+  const [frontendRepo, setFrontendRepo] = useState('')
+  const [frontendRef, setFrontendRef] = useState('')
+  const [backendRepo, setBackendRepo] = useState('')
+  const [backendRef, setBackendRef] = useState('')
   const [startingRun, setStartingRun] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
   const [workflowYaml, setWorkflowYaml] = useState<string>('')
@@ -143,9 +152,7 @@ export function Overview() {
   useEffect(() => {
     const syncFromHash = () => {
       const nextScenario = parseOverviewHashScenario()
-      if (nextScenario) {
-        setSelectedScenario(nextScenario)
-      }
+      setSelectedScenario(nextScenario ?? '')
     }
 
     window.addEventListener('hashchange', syncFromHash)
@@ -216,11 +223,13 @@ export function Overview() {
   }, [])
 
   useEffect(() => {
-    writeOverviewHashScenario(selectedScenario)
+    if (selectedScenario) {
+      writeOverviewHashScenario(selectedScenario)
+    }
   }, [selectedScenario])
 
   useEffect(() => {
-    if (!selectedScenario) {
+    if (!selectedScenario || !scenarios.some((scenario) => scenario.id === selectedScenario)) {
       setWorkflowYaml('')
       setWorkflowError(null)
       return
@@ -248,7 +257,7 @@ export function Overview() {
     return () => {
       mounted = false
     }
-  }, [selectedScenario])
+  }, [selectedScenario, scenarios])
 
   const orderedSessions = useMemo(
     () => [...sessions].sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()),
@@ -349,6 +358,16 @@ export function Overview() {
       const result = await api.startPhase2Run({
         scenario_id: selectedScenario,
         customer_name: customerName.trim() || undefined,
+        execution_context: buildExecutionContext({
+          targetBaseUrl,
+          branchName,
+          prNumber,
+          targetRepoPath,
+          frontendRepo,
+          frontendRef,
+          backendRepo,
+          backendRef,
+        }),
       })
       window.location.hash = '#agentic-runs'
       window.dispatchEvent(new CustomEvent('agentic-run-started', { detail: result }))
@@ -368,6 +387,16 @@ export function Overview() {
         scenarioId: selectedScenario || undefined,
         maxScenarios: selectedScenario ? 1 : 3,
         applyApprovedChanges,
+        executionContext: buildExecutionContext({
+          targetBaseUrl,
+          branchName,
+          prNumber,
+          targetRepoPath,
+          frontendRepo,
+          frontendRef,
+          backendRepo,
+          backendRef,
+        }),
       })
       const [nextStatus, nextGovernance] = await Promise.all([
         api.getPhase2ClosedLoopStatus(),
@@ -392,6 +421,16 @@ export function Overview() {
         scenarioId: selectedScenario || undefined,
         maxScenarios: selectedScenario ? 1 : 3,
         applyApprovedChanges: false,
+        executionContext: buildExecutionContext({
+          targetBaseUrl,
+          branchName,
+          prNumber,
+          targetRepoPath,
+          frontendRepo,
+          frontendRef,
+          backendRepo,
+          backendRef,
+        }),
         intervalMs: 15 * 60 * 1000,
       })
       setClosedLoopScheduler(scheduler)
@@ -424,6 +463,16 @@ export function Overview() {
       await api.tickPhase2ClosedLoopScheduler({
         scenarioId: selectedScenario || undefined,
         maxScenarios: selectedScenario ? 1 : 3,
+        executionContext: buildExecutionContext({
+          targetBaseUrl,
+          branchName,
+          prNumber,
+          targetRepoPath,
+          frontendRepo,
+          frontendRef,
+          backendRepo,
+          backendRef,
+        }),
       })
       const [nextStatus, nextScheduler] = await Promise.all([
         api.getPhase2ClosedLoopStatus(),
@@ -660,6 +709,91 @@ export function Overview() {
                 {schedulerEnabled ? 'Pausar auto' : 'Iniciar auto'}
               </Button>
             </div>
+          </div>
+
+          <div className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
+            <p className="mb-3 text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+              Execution context
+            </p>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <label className="block">
+                <span className="mb-1 block text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Target base URL</span>
+                <input
+                  value={targetBaseUrl}
+                  onChange={(event) => setTargetBaseUrl(event.target.value)}
+                  placeholder="https://preview.example.com"
+                  className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]/50 focus:outline-none"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Branch name</span>
+                <input
+                  value={branchName}
+                  onChange={(event) => setBranchName(event.target.value)}
+                  placeholder="feature/LABS-1031"
+                  className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]/50 focus:outline-none"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] uppercase tracking-wide text-[var(--text-muted)]">PR number</span>
+                <input
+                  value={prNumber}
+                  onChange={(event) => setPrNumber(event.target.value)}
+                  placeholder="1031"
+                  className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]/50 focus:outline-none"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Target repo path</span>
+                <input
+                  value={targetRepoPath}
+                  onChange={(event) => setTargetRepoPath(event.target.value)}
+                  placeholder="/workspace/frontend-pr-preview"
+                  className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]/50 focus:outline-none"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Frontend repo</span>
+                <input
+                  value={frontendRepo}
+                  onChange={(event) => setFrontendRepo(event.target.value)}
+                  placeholder="org/frontend"
+                  className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]/50 focus:outline-none"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Frontend ref</span>
+                <input
+                  value={frontendRef}
+                  onChange={(event) => setFrontendRef(event.target.value)}
+                  placeholder="feature/LABS-1031"
+                  className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]/50 focus:outline-none"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Backend repo</span>
+                <input
+                  value={backendRepo}
+                  onChange={(event) => setBackendRepo(event.target.value)}
+                  placeholder="org/backend"
+                  className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]/50 focus:outline-none"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Backend ref</span>
+                <input
+                  value={backendRef}
+                  onChange={(event) => setBackendRef(event.target.value)}
+                  placeholder="feature/API-204"
+                  className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]/50 focus:outline-none"
+                />
+              </label>
+            </div>
+            {latestClosedLoop?.metadata?.executionContext && (
+              <p className="mt-3 text-xs text-[var(--text-muted)]">
+                Last run context: {String(latestClosedLoop.metadata.executionContext['targetBaseUrl'] ?? latestClosedLoop.metadata.executionContext['branchName'] ?? latestClosedLoop.metadata.executionContext['source'] ?? 'custom')}
+              </p>
+            )}
           </div>
 
           <div className="grid gap-3 md:grid-cols-6">
@@ -955,6 +1089,12 @@ export function Overview() {
             </div>
           </div>
 
+          {targetBaseUrl || branchName || prNumber || targetRepoPath || frontendRepo || backendRepo ? (
+            <p className="mt-3 text-xs text-[var(--text-muted)]">
+              Run context will target {targetBaseUrl || 'default local base URL'}{branchName ? `, branch ${branchName}` : ''}{prNumber ? `, PR #${prNumber}` : ''}{frontendRef ? `, frontend ${frontendRef}` : ''}{backendRef ? `, backend ${backendRef}` : ''}{targetRepoPath ? `, repo ${targetRepoPath}` : ''}.
+            </p>
+          ) : null}
+
           {startError && (
             <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
               {startError}
@@ -1047,4 +1187,53 @@ export function Overview() {
       </div>
     </motion.div>
   )
+}
+
+function buildExecutionContext(input: {
+  targetBaseUrl: string
+  branchName: string
+  prNumber: string
+  targetRepoPath: string
+  frontendRepo: string
+  frontendRef: string
+  backendRepo: string
+  backendRef: string
+}): Phase2ExecutionContext | undefined {
+  const targetBaseUrl = input.targetBaseUrl.trim()
+  const branchName = input.branchName.trim()
+  const prNumber = input.prNumber.trim()
+  const targetRepoPath = input.targetRepoPath.trim()
+  const frontendRepo = input.frontendRepo.trim()
+  const frontendRef = input.frontendRef.trim()
+  const backendRepo = input.backendRepo.trim()
+  const backendRef = input.backendRef.trim()
+
+  const previewTargets = [
+    frontendRepo || frontendRef
+      ? {
+        role: 'frontend',
+        repo: frontendRepo || undefined,
+        ref: frontendRef || undefined,
+        url: targetBaseUrl || undefined,
+      }
+      : null,
+    backendRepo || backendRef
+      ? {
+        role: 'backend',
+        repo: backendRepo || undefined,
+        ref: backendRef || undefined,
+      }
+      : null,
+  ].filter((target): target is NonNullable<typeof target> => Boolean(target))
+
+  if (!targetBaseUrl && !branchName && !prNumber && !targetRepoPath && previewTargets.length === 0) return undefined
+
+  return {
+    source: previewTargets.length > 0 ? 'pr_preview' : 'custom',
+    branchName: branchName || undefined,
+    prNumber: prNumber ? Number(prNumber) : undefined,
+    targetBaseUrl: targetBaseUrl || undefined,
+    targetRepoPath: targetRepoPath || undefined,
+    previewTargets,
+  }
 }

@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, it, expect, vi, beforeEach } from 'vitest';
 import { loadScenario, listScenarios } from '../scenarios/index.js';
 import { Orchestrator } from '../services/orchestrator.js';
@@ -73,6 +76,59 @@ describe('Scenario Loading', () => {
     expect(list).toContain('first_order');
     expect(list).toContain('first_order_multi_role');
     expect(list).toContain('quarterly_reorder_multi_role');
+  });
+
+  it('should synthesize handoff contracts for generated multi-agent scenarios', async () => {
+    const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'generated-scenarios-'));
+    const scenariosFile = path.join(fixtureRoot, 'scenarios.generated.json');
+    await writeFile(scenariosFile, JSON.stringify([{
+      id: 'generated_multi_agent',
+      title: 'Generated Multi Agent',
+      roles: ['operator', 'reviewer'],
+      steps: ['step_1', 'step_2'],
+      expectedArtifacts: ['commandResult', 'verificationResult'],
+      stepDefinitions: [
+        {
+          id: 'step_1',
+          roleId: 'operator',
+          capabilityId: 'click_iniciar_pedido',
+          producesArtifacts: ['commandResult'],
+        },
+        {
+          id: 'step_2',
+          roleId: 'reviewer',
+          capabilityId: 'assert_retail_visible_state',
+          producesArtifacts: ['verificationResult'],
+        },
+      ],
+    }]));
+
+    const previousGeneratedScenarios = process.env['PERSONA_QA_SCENARIOS_FILE'];
+    const previousLegacyFlag = process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'];
+    process.env['PERSONA_QA_SCENARIOS_FILE'] = scenariosFile;
+    process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'] = '0';
+
+    try {
+      const scenario = loadScenario('generated_multi_agent');
+      expect(scenario.steps[0]!.handoff).toEqual({
+        nextAgentId: 'reviewer',
+        reason: 'Generated handoff from operator to reviewer after step_1.',
+        requiredArtifacts: ['commandResult'],
+        expectedOutput: 'Continue execution with capability assert_retail_visible_state.',
+      });
+    } finally {
+      if (previousGeneratedScenarios === undefined) {
+        delete process.env['PERSONA_QA_SCENARIOS_FILE'];
+      } else {
+        process.env['PERSONA_QA_SCENARIOS_FILE'] = previousGeneratedScenarios;
+      }
+
+      if (previousLegacyFlag === undefined) {
+        delete process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'];
+      } else {
+        process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'] = previousLegacyFlag;
+      }
+    }
   });
 
   it('should have correct step ordering', () => {

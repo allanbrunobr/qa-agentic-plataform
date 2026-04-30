@@ -97,6 +97,60 @@ describe('AgentRuntime', () => {
       expect(result.output).toEqual({ msg: 'hello' })
       expect(provider.chat).toHaveBeenCalledTimes(2)
     })
+
+    it('scopes execution to the step capability when running a scenario step', async () => {
+      registry.register('expectedTool', async () => ({ ok: true, output: { commandResult: { completed: true } } }), {
+        name: 'expectedTool',
+        description: 'Expected tool',
+        requiresBrowser: false,
+        tags: [],
+      })
+      registry.register('otherTool', async () => ({ ok: true, output: { wrong: true } }), {
+        name: 'otherTool',
+        description: 'Other tool',
+        requiresBrowser: false,
+        tags: [],
+      })
+
+      const provider = mockProvider([{
+        text: 'Using the scoped capability.',
+        toolCalls: [{ id: 'call-1', name: 'expectedTool', input: {} }],
+        stopReason: 'tool_use',
+        usage: { inputTokens: 10, outputTokens: 8 },
+      }, {
+        text: 'done',
+        toolCalls: [],
+        stopReason: 'end_turn',
+        usage: { inputTokens: 20, outputTokens: 4 },
+      }])
+
+      const runtime = new AgentRuntime(provider, registry, sessionService)
+      runtime.registerAgent(makeProfile({
+        id: 'sales-associate',
+        toolPolicy: { browserAccess: false, allowedTools: ['expectedTool', 'otherTool'] },
+        evidencePolicy: { requireScreenshotForFinding: false, requireDomSnippetForFinding: false },
+      }))
+
+      const result = await runtime.executeStep('sales-associate', {
+        id: 'step_1',
+        name: 'Expected step',
+        agentId: 'sales-associate',
+        capabilityId: 'expectedTool',
+        order: 1,
+        requiredArtifacts: [],
+        producedArtifacts: ['commandResult'],
+      }, { sessionId: 'sess-1' })
+
+      expect(result.status).toBe('completed')
+      expect(result.output).toEqual({
+        commandResult: {
+          completed: true,
+        },
+      })
+      expect(vi.mocked(provider.chat).mock.calls[0]?.[1]).toEqual([
+        expect.objectContaining({ name: 'expectedTool' }),
+      ])
+    })
   })
 
   describe('executeStep — session events', () => {

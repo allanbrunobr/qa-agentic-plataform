@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { RepositoryClassification, RepositoryKind } from '../../../host-sdk/src/contracts.ts'
 
 type ScoreMap = Record<RepositoryKind, number>
+type PackageManifest = Record<string, unknown>
 
 const IGNORED_DIRS = new Set([
   '.agentic-qa',
@@ -16,15 +17,10 @@ const IGNORED_DIRS = new Set([
 ])
 
 export async function classifyRepository(repoPath: string): Promise<RepositoryClassification> {
-  const [packageJson, pyproject, cargoToml, goMod, files] = await Promise.all([
-    readJson(path.join(repoPath, 'package.json')),
-    readText(path.join(repoPath, 'pyproject.toml')),
-    readText(path.join(repoPath, 'Cargo.toml')),
-    readText(path.join(repoPath, 'go.mod')),
-    listRelevantFiles(repoPath),
-  ])
+  const files = await listRelevantFiles(repoPath)
 
   const relativeFiles = files.map((filePath) => path.relative(repoPath, filePath).replace(/\\/g, '/'))
+  const manifests = await readRepositoryManifests(repoPath, relativeFiles)
   const scores: ScoreMap = {
     frontend: 0,
     backend_api: 0,
@@ -37,11 +33,21 @@ export async function classifyRepository(repoPath: string): Promise<RepositoryCl
   const runtimeHints: string[] = []
   const frameworks = new Set<string>()
 
-  const deps = {
-    ...recordValue(packageJson?.['dependencies']),
-    ...recordValue(packageJson?.['devDependencies']),
-  }
-  const scripts = recordValue(packageJson?.['scripts'])
+  const deps = mergeRecords(
+    manifests.packageJsons.flatMap((packageJson) => [
+      recordValue(packageJson['dependencies']),
+      recordValue(packageJson['devDependencies']),
+    ]),
+  )
+  const scripts = mergeRecords(manifests.packageJsons.map((packageJson) => recordValue(packageJson['scripts'])))
+  const packageJson = manifests.packageJsons[0] ?? null
+  const pyproject = manifests.pyprojects[0] ?? null
+  const cargoToml = manifests.cargoTomls[0] ?? null
+  const goMod = manifests.goMods[0] ?? null
+  const backendManifestText = [
+    ...manifests.pyprojects,
+    ...manifests.requirements,
+  ].join('\n')
 
   const add = (kind: RepositoryKind, points: number, reason: string) => {
     scores[kind] += points
@@ -50,6 +56,9 @@ export async function classifyRepository(repoPath: string): Promise<RepositoryCl
 
   if (packageJson?.['workspaces'] || await pathExists(path.join(repoPath, 'pnpm-workspace.yaml'))) {
     add('monorepo', 3, 'monorepo workspace metadata detected')
+  }
+  if (manifests.packageJsons.length > 1 || manifests.pyprojects.length > 0 || manifests.cargoTomls.length > 0 || manifests.goMods.length > 0) {
+    add('monorepo', 2, 'multiple runtime manifests detected across nested directories')
   }
   if (await pathExists(path.join(repoPath, 'turbo.json'))) add('monorepo', 2, 'turbo.json detected')
   if (await pathExists(path.join(repoPath, 'nx.json'))) add('monorepo', 2, 'nx.json detected')
@@ -68,11 +77,18 @@ export async function classifyRepository(repoPath: string): Promise<RepositoryCl
     }
   }
 
-  if (relativeFiles.some((filePath) => filePath === 'index.html' || /(^|\/)(main|App)\.[jt]sx?$/.test(filePath))) {
+  if (relativeFiles.some((filePath) => (
+    filePath === 'index.html'
+    || /(^|\/)(main|App|index)\.(tsx|jsx|vue|svelte)$/.test(filePath)
+    || /(^|\/)vite\.config\.(ts|js|mts|mjs|cts|cjs)$/.test(filePath)
+  ))) {
     add('frontend', 3, 'frontend entrypoint detected')
   }
   if (relativeFiles.some((filePath) => /(^|\/)(app|pages)\/.*\.(tsx|jsx|vue|svelte)$/.test(filePath))) {
     add('frontend', 2, 'frontend route/component tree detected')
+  }
+  if (relativeFiles.some((filePath) => /(^|\/)(frontend|web|ui|client)\/.*\.(tsx|jsx|vue|svelte|html)$/.test(filePath))) {
+    add('frontend', 2, 'frontend application directory detected')
   }
 
   for (const [dep, framework] of [
@@ -88,7 +104,14 @@ export async function classifyRepository(repoPath: string): Promise<RepositoryCl
       frameworks.add(framework)
     }
   }
-  if (relativeFiles.some((filePath) => /(^|\/)(server|app|routes|router|api)\.(ts|tsx|js|mjs|cjs|py|go|rs)$/.test(filePath))) {
+  if (/\b(fastapi|flask|django|starlette|uvicorn)\b/i.test(backendManifestText)) {
+    add('backend_api', 4, 'python backend framework metadata detected')
+  }
+  if (relativeFiles.some((filePath) => (
+    /(^|\/)(server|app|routes|router|api)\.(ts|tsx|js|mjs|cjs|py|go|rs)$/.test(filePath)
+    || /(^|\/)(app|api)\/main\.(py|ts|tsx|js|mjs|cjs|go|rs)$/.test(filePath)
+    || /(^|\/)(backend|server|api)\/.*\.(py|ts|tsx|js|mjs|cjs|go|rs)$/.test(filePath)
+  ))) {
     add('backend_api', 3, 'backend route/server file detected')
   }
   if (Object.keys(scripts).some((script) => /^(serve|server|start:api|dev:api)$/.test(script))) {
@@ -149,7 +172,9 @@ export async function classifyRepository(repoPath: string): Promise<RepositoryCl
 async function listRelevantFiles(repoPath: string): Promise<string[]> {
   const files: string[] = []
   await walk(repoPath, files, repoPath)
-  return files.slice(0, 500)
+  return files
+    .sort((left, right) => filePriority(right) - filePriority(left) || left.localeCompare(right))
+    .slice(0, 800)
 }
 
 async function walk(dir: string, files: string[], root: string): Promise<void> {
@@ -186,6 +211,33 @@ async function detectPackageManager(repoPath: string): Promise<string | null> {
   if (await pathExists(path.join(repoPath, 'Cargo.lock'))) return 'cargo'
   if (await pathExists(path.join(repoPath, 'go.sum'))) return 'go'
   return null
+}
+
+async function readRepositoryManifests(
+  repoPath: string,
+  relativeFiles: string[],
+): Promise<{
+  packageJsons: PackageManifest[]
+  pyprojects: string[]
+  cargoTomls: string[]
+  goMods: string[]
+  requirements: string[]
+}> {
+  const packagePaths = relativeFiles.filter((filePath) => path.basename(filePath) === 'package.json').slice(0, 10)
+  const pyprojectPaths = relativeFiles.filter((filePath) => path.basename(filePath) === 'pyproject.toml').slice(0, 10)
+  const cargoPaths = relativeFiles.filter((filePath) => path.basename(filePath) === 'Cargo.toml').slice(0, 10)
+  const goModPaths = relativeFiles.filter((filePath) => path.basename(filePath) === 'go.mod').slice(0, 10)
+  const requirementsPaths = relativeFiles.filter((filePath) => path.basename(filePath) === 'requirements.txt').slice(0, 10)
+
+  const [packageJsons, pyprojects, cargoTomls, goMods, requirements] = await Promise.all([
+    Promise.all(packagePaths.map((filePath) => readJson(path.join(repoPath, filePath)))).then((items) => items.filter(Boolean) as PackageManifest[]),
+    Promise.all(pyprojectPaths.map((filePath) => readText(path.join(repoPath, filePath)))).then((items) => items.filter(Boolean) as string[]),
+    Promise.all(cargoPaths.map((filePath) => readText(path.join(repoPath, filePath)))).then((items) => items.filter(Boolean) as string[]),
+    Promise.all(goModPaths.map((filePath) => readText(path.join(repoPath, filePath)))).then((items) => items.filter(Boolean) as string[]),
+    Promise.all(requirementsPaths.map((filePath) => readText(path.join(repoPath, filePath)))).then((items) => items.filter(Boolean) as string[]),
+  ])
+
+  return { packageJsons, pyprojects, cargoTomls, goMods, requirements }
 }
 
 function detectPrimaryLanguage(
@@ -241,4 +293,22 @@ function recordValue(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {}
+}
+
+function mergeRecords(records: Array<Record<string, unknown>>): Record<string, unknown> {
+  return Object.assign({}, ...records)
+}
+
+function filePriority(filePath: string): number {
+  const normalized = filePath.replace(/\\/g, '/')
+
+  if (/package\.json$|pyproject\.toml$|Cargo\.toml$|go\.mod$|requirements\.txt$/.test(normalized)) return 100
+  if (/(^|\/)(vite|next|webpack|rollup)\.config\./.test(normalized)) return 95
+  if (/(^|\/)index\.html$/.test(normalized)) return 90
+  if (/(^|\/)(main|App|index)\.(tsx|jsx|vue|svelte)$/.test(normalized)) return 85
+  if (/(^|\/)(frontend|web|ui|client|backend|server|api|src|app)\//.test(normalized)) return 70
+  if (/\.(tsx|jsx|ts|js|py|go|rs)$/.test(normalized)) return 60
+  if (/\.(json|toml|yaml|yml)$/.test(normalized)) return 40
+  if (/\.md$/.test(normalized)) return 5
+  return 10
 }

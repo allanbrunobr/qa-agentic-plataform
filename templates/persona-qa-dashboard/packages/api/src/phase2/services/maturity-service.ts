@@ -1,4 +1,5 @@
 import { buildContractEvaluation } from './contract-evaluation.js'
+import { filterSessionsForAvailableScenarios } from './available-scenarios.js'
 import { L5ClosedLoopService } from './l5-closed-loop-service.js'
 import { L5LoopGuardService } from './l5-loop-guard-service.js'
 import { MetaOrchestrator } from './meta-orchestrator.js'
@@ -52,7 +53,7 @@ export interface MaturityStatus {
 }
 
 export function buildMaturityStatus(sessionService: SessionService): MaturityStatus {
-  const sessions = sessionService.getAllSessions()
+  const sessions = filterSessionsForAvailableScenarios(sessionService.getAllSessions())
   const finalSessions = sessions.filter((session) => (
     session.status === 'complete' || session.status === 'failed'
   ))

@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -24,9 +25,9 @@ const verificationEnv = {
     ? `${preferredNodeBin}${path.delimiter}${process.env.PATH ?? ''}`
     : process.env.PATH,
 }
-const targetPort = 3900 + Math.floor(Math.random() * 300)
-const apiPort = 4300 + Math.floor(Math.random() * 300)
-const webPort = 5300 + Math.floor(Math.random() * 300)
+let targetPort = 0
+let apiPort = 0
+let webPort = 0
 
 function log(message) {
   process.stdout.write(`[verify-generic-frontend] ${message}\n`)
@@ -44,6 +45,38 @@ function readJson(relativePath) {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
+}
+
+async function allocatePorts() {
+  const reserved = new Set()
+  targetPort = await getAvailablePort(reserved)
+  reserved.add(targetPort)
+  apiPort = await getAvailablePort(reserved)
+  reserved.add(apiPort)
+  webPort = await getAvailablePort(reserved)
+}
+
+async function getAvailablePort(reserved = new Set()) {
+  while (true) {
+    const port = await new Promise((resolve, reject) => {
+      const server = net.createServer()
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address()
+        if (!address || typeof address === 'string') {
+          server.close(() => reject(new Error('failed to allocate dynamic port')))
+          return
+        }
+        const nextPort = address.port
+        server.close((error) => {
+          if (error) reject(error)
+          else resolve(nextPort)
+        })
+      })
+    })
+
+    if (!reserved.has(port)) return port
+  }
 }
 
 function verifyInstalledDocs() {
@@ -161,6 +194,7 @@ function verifyGeneratedAdapter() {
   const personas = readJson('.agentic-qa/adapter/personas/personas.generated.json')
   const scenarios = readJson('.agentic-qa/adapter/scenarios/scenarios.generated.json')
   const capabilities = readJson('.agentic-qa/adapter/capabilities/capabilities.generated.json')
+  const runtimePlan = readJson('.agentic-qa/adapter/runtime/runtime-plan.generated.json')
   const contractsIndex = readJson('.agentic-qa/adapter/workflow-contracts/index.generated.json')
 
   const personaIds = personas.map((persona) => persona.id)
@@ -215,49 +249,83 @@ function verifyGeneratedAdapter() {
   )
   assert(
     codeGraph.edges.some((edge) => {
+      if (edge.type !== 'handles' || edge.metadata?.source !== 'jsx_event_handler') return false
+      const from = codeGraph.nodes.find((node) => node.id === edge.from)
+      const to = codeGraph.nodes.find((node) => node.id === edge.to)
+      return from?.type === 'function' && from.metadata?.name === 'submitOrder' && to?.type === 'button' && /submit order/i.test(to?.label ?? '')
+    }),
+    'code graph JSX event handler edge for submitOrder button missing',
+  )
+  assert(
+    codeGraph.edges.some((edge) => {
       if (edge.type !== 'supports_capability') return false
       const capability = codeGraph.nodes.find((node) => node.id === edge.to)
-      return capability?.metadata?.capabilityId === 'submitOrder'
+      return capability?.metadata?.capabilityId === 'click_submit_order'
     }),
-    'code graph submitOrder capability support edge missing',
+    'code graph click_submit_order capability support edge missing',
+  )
+  assert(
+    codeGraph.edges.some((edge) => {
+      if (edge.type !== 'supports_capability') return false
+      const capability = codeGraph.nodes.find((node) => node.id === edge.to)
+      return capability?.metadata?.capabilityId === 'click_submit_order'
+        && String(edge.metadata?.matchedBy ?? '').startsWith('frontend_surface_')
+    }),
+    'code graph click_submit_order structural surface support edge missing',
   )
   assert(
     codeGraph.nodes.some((node) => node.type === 'capability_candidate'
-      && node.metadata?.capabilityId === 'submitOrder'
-      && node.metadata?.graphMapping?.status === 'mapped'),
-    'code graph submitOrder capability mapping metadata missing',
+      && node.metadata?.capabilityId === 'click_submit_order'
+      && node.metadata?.graphMapping?.status === 'mapped'
+      && node.metadata?.graphMapping?.resolver === 'capability_surface_graph_v2'
+      && node.metadata?.graphMapping?.handlerIds?.length >= 1),
+    'code graph click_submit_order capability structural mapping metadata missing',
   )
   assert(
     codeGraph.nodes.some((node) => node.type === 'scenario_candidate'
-      && node.metadata?.scenarioId === 'checkout_smoke'
-      && node.metadata?.graphReadiness?.status === 'partially_mapped'
-      && node.metadata?.graphReadiness?.mappedCapabilityIds?.includes('submitOrder')
-      && node.metadata?.graphReadiness?.missingCapabilityIds?.includes('fillCustomerEmail')),
-    'code graph checkout scenario readiness metadata missing',
+      && node.metadata?.scenarioId === 'place_order'
+      && ['partially_mapped', 'fully_mapped'].includes(node.metadata?.graphReadiness?.status)
+      && node.metadata?.graphReadiness?.mappedCapabilityIds?.includes('click_submit_order')),
+    'code graph place_order scenario readiness metadata missing',
   )
   assert(
     codeGraph.nodes.some((node) => node.type === 'scenario_step_candidate'
-      && node.metadata?.stepId === 'submit_order'
+      && node.metadata?.stepId === 'step_2_click_submit_order'
       && node.metadata?.graphReadiness?.status === 'fully_mapped'
       && node.metadata?.graphReadiness?.supportSourceTypes?.includes('http_call')),
-    'code graph submit_order step readiness metadata missing',
+    'code graph click_submit_order step readiness metadata missing',
   )
   assert(
     codeGraph.edges.some((edge) => {
       if (edge.type !== 'related_to' || edge.metadata?.relation !== 'graph_readiness_support') return false
       const from = codeGraph.nodes.find((node) => node.id === edge.from)
       const to = codeGraph.nodes.find((node) => node.id === edge.to)
-      return from?.type === 'scenario_candidate' && from.metadata?.scenarioId === 'checkout_smoke' && ['http_call', 'endpoint'].includes(to?.type)
+      return from?.type === 'scenario_candidate' && from.metadata?.scenarioId === 'place_order' && ['http_call', 'endpoint'].includes(to?.type)
     }),
     'code graph scenario readiness support edge missing',
   )
-  assert(personaIds.includes('primary_user'), `primary_user persona missing: ${personaIds.join(', ')}`)
+  const submitOrderCapability = capabilities.find((capability) => capability.id === 'click_submit_order')
+  assert(submitOrderCapability, 'click_submit_order capability materialization missing')
+  assert(submitOrderCapability.graphHint?.status === 'mapped', 'click_submit_order capability graph hint should be mapped')
+  assert(submitOrderCapability.graphHint?.handlers?.some((hint) => hint.includes('submitOrder')), 'click_submit_order capability graph hint should expose handler')
+  assert(submitOrderCapability.graphHint?.endpoints?.includes('POST /api/orders'), 'click_submit_order capability graph hint should expose endpoint')
+  assert(submitOrderCapability.graphHint?.httpCalls?.includes('POST /api/orders'), 'click_submit_order capability graph hint should expose http call')
+  const submitOrderCoverage = runtimePlan.capabilityCoverage.find((capability) => capability.capabilityId === 'click_submit_order')
+  assert(submitOrderCoverage?.graphStatus === 'mapped', 'runtime plan capability coverage should expose mapped graph status')
+  assert(submitOrderCoverage?.graphResolver === 'capability_surface_graph_v2', 'runtime plan capability coverage should expose frontend graph resolver')
+  assert(typeof submitOrderCoverage?.graphConfidence === 'number' && submitOrderCoverage.graphConfidence > 0.4, 'runtime plan capability coverage should expose graph confidence')
+  assert(submitOrderCoverage?.endpointHints?.includes('POST /api/orders'), 'runtime plan capability coverage should expose endpoint hint')
+  assert(submitOrderCoverage?.handlerNodeIds?.length >= 1, 'runtime plan capability coverage should expose handler node ids')
+  assert(submitOrderCoverage?.endpointNodeIds?.length >= 1, 'runtime plan capability coverage should expose endpoint node ids')
+  assert(submitOrderCoverage?.httpCallNodeIds?.length >= 1, 'runtime plan capability coverage should expose http call node ids')
+  assert(personaIds.includes('shopper'), `shopper persona missing: ${personaIds.join(', ')}`)
+  assert(personaIds.includes('store_operator'), `store_operator persona missing: ${personaIds.join(', ')}`)
   assert(!personaIds.includes('sales-associate') && !personaIds.includes('fulfillment-agent'), `Reference Store personas leaked into generic adapter: ${personaIds.join(', ')}`)
-  assert(scenarioIds.includes('checkout_smoke'), `checkout_smoke scenario missing: ${scenarioIds.join(', ')}`)
+  assert(scenarioIds.includes('place_order'), `place_order scenario missing: ${scenarioIds.join(', ')}`)
   assert(!scenarioIds.includes('first_order'), `Reference Store scenario leaked into generic adapter: ${scenarioIds.join(', ')}`)
-  assert(capabilityIds.includes('fillCustomerEmail'), `fillCustomerEmail capability missing: ${capabilityIds.join(', ')}`)
-  assert(capabilityIds.includes('submitOrder'), `submitOrder capability missing: ${capabilityIds.join(', ')}`)
-  assert(contractsIndex.some((entry) => entry.scenarioId === 'checkout_smoke'), 'checkout_smoke workflow contract missing')
+  assert(capabilityIds.includes('click_submit_order'), `click_submit_order capability missing: ${capabilityIds.join(', ')}`)
+  assert(capabilityIds.includes('click_add_item_to_cart'), `click_add_item_to_cart capability missing: ${capabilityIds.join(', ')}`)
+  assert(contractsIndex.some((entry) => entry.scenarioId === 'place_order'), 'place_order workflow contract missing')
 }
 
 function writeRuntimeHtml() {
@@ -351,8 +419,16 @@ async function verifyRuntimeRun() {
   let targetServer
   let dashboard
   try {
+    await allocatePorts()
+    log(`ports target=${targetPort} api=${apiPort} web=${webPort}`)
     targetServer = await startStaticTargetServer()
     dashboard = await startDashboard()
+
+    const healthResponse = await fetch(`http://127.0.0.1:${apiPort}/health`)
+    const healthText = await healthResponse.text()
+    assert(healthResponse.status === 200, `dashboard health failed with status ${healthResponse.status}: ${healthText}`)
+    const health = JSON.parse(healthText)
+    assert(health?.status === 'ok', `dashboard health payload is invalid: ${healthText}`)
 
     const graphResponse = await fetch(`http://127.0.0.1:${apiPort}/api/p2/code-graph`)
     const graphText = await graphResponse.text()
@@ -365,15 +441,15 @@ async function verifyRuntimeRun() {
     assert(graphBody.summary.capabilitySupportEdgeCount >= 1, 'dashboard code graph summary has no capability support edges')
     assert(graphBody.summary.mappedCapabilityCount >= 1, 'dashboard code graph summary has no mapped capabilities')
     assert(
-      graphBody.summary.capabilityMappings.some((mapping) => mapping.capabilityId === 'submitOrder' && mapping.mappingStatus === 'mapped'),
-      'dashboard code graph summary does not expose submitOrder as mapped',
+      graphBody.summary.capabilityMappings.some((mapping) => mapping.capabilityId === 'click_submit_order' && mapping.mappingStatus === 'mapped'),
+      'dashboard code graph summary does not expose click_submit_order as mapped',
     )
     assert(graphBody.graph.nodes.length >= graphBody.summary.nodeCount, 'dashboard code graph payload is inconsistent')
 
     const response = await fetch(`http://127.0.0.1:${apiPort}/api/p2/runs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ scenario_id: 'checkout_smoke' }),
+      body: JSON.stringify({ scenario_id: 'place_order' }),
     })
     const responseText = await response.text()
     assert(response.status === 202, `runtime run start failed with status ${response.status}: ${responseText}`)
@@ -383,9 +459,9 @@ async function verifyRuntimeRun() {
 
     const session = await pollSession(sessionId)
     assert(session.status === 'complete', `runtime run did not complete: ${session.status} ${session.lastError ?? ''}`)
-    assert(session.artifacts?.customerEmail, 'runtime run did not produce customerEmail')
-    assert(session.artifacts?.cartItemId, 'runtime run did not produce cartItemId')
-    assert(session.artifacts?.orderSubmitted === true, 'runtime run did not produce orderSubmitted=true')
+    assert(session.contractEvaluation?.verdict === 'contract_compliant', `runtime run did not finish contract compliant: ${session.contractEvaluation?.verdict ?? 'missing'}`)
+    assert(session.artifacts?.commandResult, 'runtime run did not produce commandResult')
+    assert(session.artifacts?.verificationResult?.passed === true, 'runtime run did not produce a passing verificationResult')
     log(`PASS generic frontend runtime smoke session=${sessionId}`)
   } finally {
     stopProcessGroup(dashboard)

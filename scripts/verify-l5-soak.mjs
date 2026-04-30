@@ -10,12 +10,22 @@ const apiRoot = path.join(repoRoot, 'templates/persona-qa-dashboard/packages/api
 const preferredNodeBin = process.env.AGENTIC_RELEASE_NODE_BIN
   ?? path.join(process.env.HOME ?? '', '.nvm/versions/node/v22.13.1/bin')
 const preferredNodePath = path.join(preferredNodeBin, 'node')
+const preferredNpmCliPath = path.join(preferredNodeBin, 'lib/node_modules/npm/bin/npm-cli.js')
+const releaseNodePath = fs.existsSync(preferredNodePath) ? preferredNodePath : process.execPath
 const releasePath = fs.existsSync(preferredNodePath)
   ? `${preferredNodeBin}${path.delimiter}${process.env.PATH ?? ''}`
   : process.env.PATH
+const releaseNpmCliPath = fs.existsSync(preferredNpmCliPath) ? preferredNpmCliPath : null
 
 process.stdout.write('[verify-l5-soak] START api: closed-loop repeated learning soak\n')
-const result = spawnSync('npm', [
+const result = spawnSync(releaseNpmCliPath ? releaseNodePath : 'npm', releaseNpmCliPath ? [
+  releaseNpmCliPath,
+  'exec',
+  '--',
+  'vitest',
+  'run',
+  'src/phase2/__tests__/l5-soak.test.ts',
+] : [
   'exec',
   '--',
   'vitest',

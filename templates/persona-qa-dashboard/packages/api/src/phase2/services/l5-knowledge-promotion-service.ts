@@ -3,6 +3,7 @@ import { L5MaterializationService } from './l5-materialization-service.js'
 import { LearningControlService } from './learning-control-service.js'
 import { SelfHealingService } from './self-healing-service.js'
 import { GovernancePolicyService } from './governance-policy-service.js'
+import { ScenarioDraftPromotionReadinessService } from './scenario-draft-promotion-readiness-service.js'
 import type {
   GovernanceSubjectType,
   HealingAction,
@@ -176,10 +177,15 @@ export class L5KnowledgePromotionService {
     actor: string,
   ): Promise<Record<string, unknown>> {
     const currentDraft = this.requireScenarioDraft(draftId)
+    const readinessService = new ScenarioDraftPromotionReadinessService(this.sessionService)
+    const readinessBefore = readinessService.buildReport(currentDraft, actor)
 
     if (action === 'approve') {
+      const draft = this.transitionScenarioDraft(currentDraft, 'approved', actor)
       return {
-        draft: this.transitionScenarioDraft(currentDraft, 'approved', actor),
+        draft,
+        readinessBefore,
+        readinessAfter: readinessService.buildReport(draft, actor),
       }
     }
 
@@ -190,6 +196,8 @@ export class L5KnowledgePromotionService {
       const materialization = await new L5MaterializationService(this.sessionService).promoteScenarioDraftToRunnable(draft)
       return {
         draft,
+        readinessBefore,
+        readinessAfter: readinessService.buildReport(draft, actor),
         materialization: serializeMaterialization(materialization.manifest),
         runnableScenarioRegistry: serializeMaterialization(materialization.runnableScenarioRegistry),
       }

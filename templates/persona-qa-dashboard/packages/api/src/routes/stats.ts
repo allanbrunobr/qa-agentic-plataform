@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { sql, desc } from 'drizzle-orm';
 import { getDb, schema } from '../db/index.js';
 import { buildContractEvaluation } from '../phase2/services/contract-evaluation.js';
+import { filterSessionsForAvailableScenarios, isAvailableScenarioId } from '../phase2/services/available-scenarios.js';
 import { buildScenarioQualityGateMap } from '../phase2/services/scenario-quality-gates.js';
 import { getSessionService } from '../phase2/routes/sessions.js';
 import { loadRuntimeSettings, listRuntimeProviders } from '../services/runtime-settings.js';
@@ -135,13 +136,14 @@ export async function statsRoutes(app: FastifyInstance): Promise<void> {
       if (hasTable('p2_sessions')) {
         const activeP2 = db.all(sql`
           SELECT session_id, status, COALESCE(started_at, created_at) AS started_at
+          , scenario_id
           FROM p2_sessions
           WHERE status IN ('pending', 'running')
           ORDER BY COALESCE(started_at, created_at) DESC
           LIMIT 1
-        `) as Array<{ session_id: string; status: string; started_at: string }>;
+        `) as Array<{ session_id: string; status: string; started_at: string; scenario_id: string }>;
 
-        if (activeP2[0]) {
+        if (activeP2[0] && isAvailableScenarioId(activeP2[0].scenario_id)) {
           activeCandidates.push({
             id: activeP2[0].session_id,
             status: activeP2[0].status,
@@ -189,12 +191,12 @@ export async function statsRoutes(app: FastifyInstance): Promise<void> {
 
       if (hasTable('p2_sessions')) {
         const p2Rows = db.all(sql`
-          SELECT COALESCE(completed_at, started_at, created_at) AS last_activity_at
+          SELECT COALESCE(completed_at, started_at, created_at) AS last_activity_at, scenario_id
           FROM p2_sessions
           ORDER BY COALESCE(completed_at, started_at, created_at) DESC
-          LIMIT 1
-        `) as Array<{ last_activity_at: string | null }>;
-        const p2Activity = p2Rows[0]?.last_activity_at ?? null;
+          LIMIT 20
+        `) as Array<{ last_activity_at: string | null; scenario_id: string }>;
+        const p2Activity = p2Rows.find((row) => row.last_activity_at && isAvailableScenarioId(row.scenario_id))?.last_activity_at ?? null;
         if (p2Activity) {
           latestCandidates.push({ timestamp: p2Activity, source: 'p2_sessions' });
         }
@@ -515,7 +517,8 @@ export async function statsRoutes(app: FastifyInstance): Promise<void> {
         ? ((db.all(sql`SELECT COUNT(*) AS count FROM p2_session_findings`) as Array<{ count: number | null }>)[0]?.count ?? 0)
         : 0;
 
-      const contractAdherence = getSessionService().getAllSessions().reduce(
+      const validSessions = filterSessionsForAvailableScenarios(getSessionService().getAllSessions())
+      const contractAdherence = validSessions.reduce(
         (summary, session) => {
           const evaluation = buildContractEvaluation(session).contractEvaluation;
           const verdict = evaluation?.verdict ?? null;
