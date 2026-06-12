@@ -1,23 +1,21 @@
 /**
- * Ingestion Boundary — single seam for all untrusted external content
- * (repo source code, DOM evidence, tool outputs, etc.) before it reaches
- * LLM prompts, memory, or artifacts.
+ * Ingestion Boundary — single seam for untrusted external content before LLM prompts/memory.
  *
- * Follows .specs/agent-security/ principles:
- * - Hostilidade por padrão (treat everything external as LOW trust)
- * - Sanitize na fronteira de ingestão (this is the canonical place)
- * - Provenance + trust labeling on every piece of data
- * - Data ≠ code separation via explicit wrappers
+ * IMPORTANT (narrow first slice, Phase 1):
+ * - Currently wired only for repo file *contents* and repoPath in llm-discovery.ts buildPrompt.
+ * - File list metadata and "FILE:" path labels are sanitized in this slice (see llm-discovery.ts).
+ * - DOM evidence, tool outputs, CLI, L5 feedback etc. are still TODO (see plan).
  *
- * See: REMEDIATION_PLAN_2026-06-11.md (Phase 1, Ingestion Boundary)
- * and .specs/agent-security/security-best-practices-for-agents.md
+ * Follows .specs/agent-security/:
+ * - Hostilidade por padrão
+ * - Sanitize na fronteira de ingestão (Content Sanitizer / Context Normalizer)
+ * - Data ≠ code via explicit wrappers + provenance
+ * - Syntactic masking control
  *
- * Current wiring (first slice):
- * - llm-discovery.ts (repo files + path metadata into discovery prompts)
- *
- * TODO (next slices): wire browser-page-evidence, generated-adapter-tools outputs,
- * and any L5 memory/feedback ingestion paths.
+ * See: REMEDIATION_PLAN_2026-06-11.md and .specs/agent-security/security-best-practices-for-agents.md
  */
+
+import { createHash } from 'node:crypto'
 
 export type SourceKind =
   | 'repo_file'
@@ -31,7 +29,8 @@ export interface Provenance {
   originalPath?: string;
   trustLevel: 'LOW' | 'MEDIUM' | 'HIGH';
   ingestedAt: string;
-  // Future: contentHash, originalLength, redactedFields, etc.
+  /** Short SHA256 prefix of the original raw content (for audit/tracing). */
+  contentHash: string;
 }
 
 export interface SanitizedContent {
@@ -55,16 +54,29 @@ const END_MARKER = 'END_EXTERNAL_UNTRUSTED_CONTENT';
  * the wrapper + provenance is the real boundary.
  */
 function neutralizeSyntacticMarkers(text: string): string {
-  return text
-    // Common jailbreak / role injection patterns
-    .replace(/^\s*(System:|###\s*System|<\s*\|im_start\|>\s*system)/gmi, '[REDACTED_SYSTEM_MARKER]')
-    // More flexible "ignore previous instructions" style (with words in between)
-    .replace(/ignore[\s\S]{0,40}?previous[\s\S]{0,40}?instructions?/gi, '[REDACTED_IGNORE_INSTRUCTION]')
-    .replace(/role\s*:\s*(system|assistant|user)/gi, '[REDACTED_ROLE_MARKER]')
-    // XML / special token attempts
-    .replace(/<\s*\|im_start\|>[\s\S]*?<\s*\|im_end\|>/g, '[REDACTED_SPECIAL_TOKEN]')
-    // Very long "ignore" style instructions (heuristic)
-    .replace(/(?:(?:do not|never|ignore|disregard)[^\n]{0,80}){2,}/gi, '[REDACTED_INJECTION_ATTEMPT]');
+  let cleaned = text;
+
+  // Stronger syntactic masking / Content Injection defense (expanded from .specs/agent-security/)
+  // Non-anchored "System:" anywhere (mid-line, after newlines in paths, etc.)
+  cleaned = cleaned.replace(/(?:^|[\s\n\r])(System:|###\s*System|<\s*\|im_start\|>\s*system|System prompt|Developer Mode|override prompt)/gmi, ' [REDACTED_SYSTEM_MARKER] ');
+
+  // Broad "ignore / override previous" patterns (very large window, multiple variants)
+  cleaned = cleaned.replace(/(?:ignore|disregard|forget|override|reset|bypass|disobey)[\s\S]{0,200}?(?:previous|prior|all|above|earlier|instructions?|rules?|prompts?|guidance|context|everything|directives?)/gi, '[REDACTED_IGNORE_INSTRUCTION]');
+
+  cleaned = cleaned.replace(/role\s*:\s*(system|assistant|user)/gi, '[REDACTED_ROLE_MARKER]');
+
+  // Special tokens and XML-style
+  cleaned = cleaned.replace(/<\s*\|im_start\|>[\s\S]*?<\s*\|im_end\|>/g, '[REDACTED_SPECIAL_TOKEN]');
+
+  // Repeated "do not / never" style injection attempts (larger)
+  cleaned = cleaned.replace(/(?:(?:do not|never|ignore|disregard|override|bypass)[\s\S]{0,80}?){2,}/gi, '[REDACTED_INJECTION_ATTEMPT]');
+
+  // Control chars and zero-width that can hide instructions.
+  // Preserve structural whitespace (\t \n \r) so legitimate code/files remain usable.
+  // Only strip other C0 controls + DEL + zero-width.
+  cleaned = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u200B-\u200D\uFEFF]/g, '');
+
+  return cleaned;
 }
 
 /**
@@ -94,6 +106,8 @@ export function sanitizeExternalContent(
     raw = String(raw ?? '');
   }
 
+  const contentHash = createHash('sha256').update(raw).digest('hex').substring(0, 16);
+
   let cleaned = raw;
 
   // 1. Neutralize syntactic command injection attempts
@@ -105,8 +119,12 @@ export function sanitizeExternalContent(
   }
 
   // 3. Build the explicit untrusted wrapper with provenance
-  const pathInfo = meta.originalPath ? ` path=${meta.originalPath}` : '';
-  const wrapped = `${BEGIN_MARKER} (source=${kind}${pathInfo}, trust=LOW)
+  // Header uses only safe provenance (per adversarial review). 
+  // Do not embed attacker-controlled path text in the header line itself.
+  // The original path (if relevant) is associated via the call site (e.g. "FILE #N (hash=...)") 
+  // or lives inside the neutralized body for the data block.
+  const pathInfo = ''; // path omitted from header; use content_hash + source only for safe metadata in header.
+  const wrapped = `${BEGIN_MARKER} (source=${kind}, content_hash=${contentHash}, trust=LOW)
 ${cleaned}
 ${END_MARKER}`;
 
@@ -117,6 +135,7 @@ ${END_MARKER}`;
       originalPath: meta.originalPath,
       trustLevel: 'LOW',
       ingestedAt: new Date().toISOString(),
+      contentHash,
     },
     originalLength: raw.length,
   };
@@ -137,4 +156,13 @@ export function sanitizeRepoFileSnippet(
  */
 export function sanitizeRepoPath(repoPath: string): SanitizedContent {
   return sanitizeExternalContent(repoPath, 'repo_path', { originalPath: repoPath });
+}
+
+/**
+ * Helper specifically for the file list metadata section (which is attacker-controlled
+ * via FS readdir on the untrusted repo). Ensures the entire list is wrapped.
+ */
+export function sanitizeFileList(files: string[]): SanitizedContent {
+  const content = files.join('\n');
+  return sanitizeExternalContent(content, 'repo_path', { originalPath: 'file-list' });
 }

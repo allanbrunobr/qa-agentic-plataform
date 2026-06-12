@@ -7,6 +7,7 @@ import type {
 } from '../../../host-sdk/src/contracts.ts'
 
 import {
+  sanitizeFileList,
   sanitizeRepoFileSnippet,
   sanitizeRepoPath,
 } from '../ingestion/boundary.ts'
@@ -163,10 +164,12 @@ function scoreFile(file: string) {
 }
 
 function buildPrompt(repoPath: string, context: { files: string[]; snippets: Array<{ path: string; content: string }> }) {
-  // Ingestion Boundary: every external piece of content is wrapped + labeled
-  // before it ever reaches the LLM prompt. This is the canonical seam for
-  // SEC-001 (content injection from untrusted host repos).
+  // Ingestion Boundary applied to *all* untrusted external data that reaches the LLM prompt
+  // in this slice (repoPath, file list metadata, and file contents).
+  // This directly addresses the bypasses identified in the adversarial review (SEC-001).
+  // File list and path labels are now sanitized/wrapped (no raw FS-controlled strings outside markers).
   const sanitizedRepoPath = sanitizeRepoPath(repoPath);
+  const sanitizedFileList = sanitizeFileList(context.files);
   const sanitizedSnippets = context.snippets.map((snippet) =>
     sanitizeRepoFileSnippet(snippet.content, snippet.path)
   );
@@ -196,12 +199,14 @@ function buildPrompt(repoPath: string, context: { files: string[]; snippets: Arr
         hostNotes: ['string'],
       },
     }, null, 2),
-    `Repository path (untrusted metadata): ${sanitizedRepoPath.sanitized}`,
-    'File list (untrusted metadata):',
-    context.files.join('\n'),
-    'Important file snippets (each wrapped as untrusted external content):',
-    ...sanitizedSnippets.flatMap((s) => [
-      `FILE: ${s.provenance.originalPath ?? 'unknown'}`,
+    `Repository path (sanitized untrusted metadata): ${sanitizedRepoPath.sanitized}`,
+    'File list (sanitized untrusted metadata):',
+    sanitizedFileList.sanitized,
+    'Important file snippets (each wrapped as untrusted external content with provenance):',
+    ...sanitizedSnippets.flatMap((s, idx) => [
+      // IMPORTANT: Never put raw attacker-controlled path text in the trusted prompt scaffolding (FILE label).
+      // Use only the hash (and optional index) for the label. The original path lives *inside* the data wrapper.
+      `FILE #${idx} (hash=${s.provenance.contentHash}):`,
       s.sanitized,
       '---',
     ]),
@@ -248,3 +253,7 @@ function parseDiscoveryBundle(raw: string): DiscoveryBundle {
   }
   return parsed as DiscoveryBundle
 }
+
+// Exported *only* for adversarial red-team tests in boundary.test.ts.
+// Do not import or use in production code.
+export { buildPrompt as __testOnly_buildPrompt };
