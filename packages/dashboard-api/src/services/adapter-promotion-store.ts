@@ -1,7 +1,6 @@
 import { promises as fs } from 'node:fs'
-import path from 'node:path'
 
-const DATA_PATH = path.resolve('/path/to/projects/agentic-platform/data/adapter-promotions.json')
+import { ADAPTER_PROMOTIONS_DATA_PATH as DATA_PATH } from '../config/platform-paths.ts'
 
 export type PersistedPromotionState = 'generated' | 'reviewed' | 'certified'
 

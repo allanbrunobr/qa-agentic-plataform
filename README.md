@@ -127,7 +127,7 @@ For backend API, CLI, library, monorepo, and unknown repositories, AP now perfor
 Run locally:
 
 ```bash
-cd '/path/to/projects/agentic-platform'
+cd '/Users/bruno/0 - github projects/qa-agentic-plataform'
 npm run dev:api
 npm run dev:web
 ```
@@ -162,7 +162,7 @@ cd <repoPath>/.agentic-qa
 Run the release gate before merging installer, template, runtime, or dashboard changes:
 
 ```bash
-cd '/path/to/projects/agentic-platform'
+cd '/Users/bruno/0 - github projects/qa-agentic-plataform'
 npm run verify:release
 ```
 

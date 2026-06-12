@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import path from 'node:path'
 import { FileSessionStore, type SessionRecord } from '../../../core/src/index.ts'
 import type { ExecutionDetailResponse, ExecutionInitRequest, ExecutionInitResponse, ExecutionListResponse } from '../types/api.ts'
 import { initializeExecution } from '../services/adapter-service.ts'
 import { createExecutionRecord, getExecutionRecord, listExecutionRecords } from '../services/execution-store.ts'
 import { buildScenarioQualityGatesForAdapter } from '../services/governance-service.ts'
 import { runExecutionLifecycle } from '../services/execution-runner.ts'
+import { SESSIONS_DATA_PATH } from '../config/platform-paths.ts'
 
 const sessionStore = new FileSessionStore({
-  dataPath: path.resolve('/path/to/projects/agentic-platform/data/sessions.json'),
+  dataPath: SESSIONS_DATA_PATH,
 })
 
 export async function handleExecutionInitRequest(body: ExecutionInitRequest): Promise<ExecutionInitResponse> {

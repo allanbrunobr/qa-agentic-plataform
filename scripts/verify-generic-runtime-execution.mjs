@@ -27,6 +27,22 @@ const verificationEnv = {
   ANTHROPIC_API: '',
 }
 
+// Ensure the host-local runtime template has its dependencies (better-sqlite3 etc.)
+// so that `install-local` + materialized .agentic-qa can execute without host machine state.
+const templateDir = path.join(repoRoot, 'templates/persona-qa-dashboard')
+const templateNodeModules = path.join(templateDir, 'node_modules')
+if (!fs.existsSync(templateNodeModules) && fs.existsSync(path.join(templateDir, 'package.json'))) {
+  log('pre-installing template deps (required for generic runtime verification reproducibility)...')
+  const install = spawnSync('npm', ['install', '--legacy-peer-deps', '--no-audit', '--no-fund'], {
+    cwd: templateDir,
+    stdio: 'inherit',
+    env: process.env,
+  })
+  if (install.status !== 0) {
+    log('warning: template npm install returned non-zero (continuing; may affect some verifiers)')
+  }
+}
+
 function log(message) {
   process.stdout.write(`[verify-generic-runtime-execution] ${message}\n`)
 }

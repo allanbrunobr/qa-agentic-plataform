@@ -1,10 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import path from 'node:path'
 import type { AdapterExecutionDraft } from '../../../host-sdk/src/adapter-model.ts'
 import type { ExecutionEventRecord, ExecutionRecord } from '../types/api.ts'
-
-const DATA_PATH = path.resolve('/path/to/projects/agentic-platform/data/executions.json')
+import { EXECUTIONS_DATA_PATH as DATA_PATH } from '../config/platform-paths.ts'
 
 async function ensureStore() {
   try {

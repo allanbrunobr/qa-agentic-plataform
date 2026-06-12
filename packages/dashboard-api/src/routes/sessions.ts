@@ -1,10 +1,10 @@
-import path from 'node:path'
 import { FileSessionStore } from '../../../core/src/index.ts'
 import type { SessionDetailResponse, SessionListResponse } from '../types/api.ts'
 import { buildSessionGovernance } from '../services/governance-service.ts'
+import { SESSIONS_DATA_PATH } from '../config/platform-paths.ts'
 
 const sessionStore = new FileSessionStore({
-  dataPath: path.resolve('/path/to/projects/agentic-platform/data/sessions.json'),
+  dataPath: SESSIONS_DATA_PATH,
 })
 
 export async function handleSessionListRequest(): Promise<SessionListResponse> {

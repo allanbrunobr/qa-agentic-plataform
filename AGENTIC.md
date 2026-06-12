@@ -36,3 +36,19 @@ Execute the selected scenario faithfully. This platform is not an open-ended aut
 
 The scenario contract is the execution spec.
 Artifacts, session events, findings, and contract evaluation are the trust mechanism.
+
+## Specs obrigatórias (consultar antes de mudanças relevantes)
+
+As specs de referência vivem em `/Users/bruno/0 - github projects/.specs/`.
+Consulte a pasta relevante ANTES de abrir um PR que toque cada área (conforme how-to-use.md de cada família).
+
+- **agent-security/** (`security-best-practices-for-agents.md`, `ai-agent-traps-taxonomy.md`)
+  - Ao mexer em discovery (llm ou estático), ingestão de código/DOM de hosts, tools de execução, spawn de processos, secrets/env, ou qualquer fronteira de conteúdo não confiável.
+- **software-architecture/** (`05-decisions-and-adrs.md`, `anti-patterns.md`, `02-architecture-characteristics.md`)
+  - Ao mudar fronteiras de módulo, adicionar stores, refatorar paths/config, comunicação entre platform e template, ou qualquer decisão estrutural — exige ADR.
+- **genai-integration-patterns/** (`02-integration-framework.md`, `06-responsible-ai.md`)
+  - Ao mudar chamadas LLM (discovery, providers, instruction-layer), prompts, RAG/memory de L5, ou observabilidade de inferência.
+- **agentic-design-patterns/** (`01-foundational-patterns.md`, `03-reliability-patterns.md`)
+  - Ao tocar orchestrator, sensors, governance, L4/L5 loops, tool registry, reflection/auditor, ou evaluation de contratos.
+
+Durante code review e PRs, cite explicitamente a spec + finding quando relevante.

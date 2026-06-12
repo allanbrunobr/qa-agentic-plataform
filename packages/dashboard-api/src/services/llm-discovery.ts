@@ -6,6 +6,11 @@ import type {
   HostProjectPointer,
 } from '../../../host-sdk/src/contracts.ts'
 
+import {
+  sanitizeRepoFileSnippet,
+  sanitizeRepoPath,
+} from '../ingestion/boundary.ts'
+
 interface DiscoveryBundle {
   report: DiscoveryReport
   draft: BootstrapDraft
@@ -158,6 +163,14 @@ function scoreFile(file: string) {
 }
 
 function buildPrompt(repoPath: string, context: { files: string[]; snippets: Array<{ path: string; content: string }> }) {
+  // Ingestion Boundary: every external piece of content is wrapped + labeled
+  // before it ever reaches the LLM prompt. This is the canonical seam for
+  // SEC-001 (content injection from untrusted host repos).
+  const sanitizedRepoPath = sanitizeRepoPath(repoPath);
+  const sanitizedSnippets = context.snippets.map((snippet) =>
+    sanitizeRepoFileSnippet(snippet.content, snippet.path)
+  );
+
   return [
     'You are analyzing a software codebase to bootstrap a local agentic QA package.',
     'Return STRICT JSON only. No markdown fences. No prose outside JSON.',
@@ -183,13 +196,13 @@ function buildPrompt(repoPath: string, context: { files: string[]; snippets: Arr
         hostNotes: ['string'],
       },
     }, null, 2),
-    `Repository path: ${repoPath}`,
-    'File list:',
+    `Repository path (untrusted metadata): ${sanitizedRepoPath.sanitized}`,
+    'File list (untrusted metadata):',
     context.files.join('\n'),
-    'Important file snippets:',
-    ...context.snippets.flatMap((snippet) => [
-      `FILE: ${snippet.path}`,
-      snippet.content,
+    'Important file snippets (each wrapped as untrusted external content):',
+    ...sanitizedSnippets.flatMap((s) => [
+      `FILE: ${s.provenance.originalPath ?? 'unknown'}`,
+      s.sanitized,
       '---',
     ]),
   ].join('\n\n')

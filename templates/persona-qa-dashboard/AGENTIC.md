@@ -36,3 +36,7 @@ Execute the selected scenario faithfully. This system is not doing open-ended ex
 
 The workflow contract is the execution spec.
 The scenario runtime, sensors, artifacts, and contract evaluation are the trust mechanism.
+
+## Specs obrigatórias
+
+Antes de alterar runtime, tools, providers LLM, sensors, governance ou orquestração, consulte as specs em `/Users/bruno/0 - github projects/.specs/` (agent-security, agentic-design-patterns, genai-integration-patterns, software-architecture) conforme how-to-use.md de cada uma.

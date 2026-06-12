@@ -1,8 +1,10 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { ADAPTERS_ROOT } from '../config/platform-paths.ts'
 
-const generatedManifestPath = path.resolve(
-  '/path/to/projects/agentic-platform/adapters/reference-store/src/model/generated/manifest.generated.ts',
+const generatedManifestPath = path.join(
+  ADAPTERS_ROOT,
+  'reference-store/src/model/generated/manifest.generated.ts',
 )
 
 export async function syncAdapterBundlePromotion(

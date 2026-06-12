@@ -1,4 +1,3 @@
-import path from 'node:path'
 import {
   FileSessionStore,
   buildAdapterContractEvaluation,
@@ -11,9 +10,10 @@ import { getAdapter, listAdapterScenarios } from './adapter-service.ts'
 import { syncAdapterBundlePromotion } from './adapter-bundle-sync.ts'
 import { listExecutionRecords } from './execution-store.ts'
 import { getAdapterPromotionRecord, saveAdapterPromotionRecord } from './adapter-promotion-store.ts'
+import { SESSIONS_DATA_PATH } from '../config/platform-paths.ts'
 
 const sessionStore = new FileSessionStore({
-  dataPath: path.resolve('/path/to/projects/agentic-platform/data/sessions.json'),
+  dataPath: SESSIONS_DATA_PATH,
 })
 
 export type AdapterPromotionState = 'generated' | 'reviewed' | 'certified_candidate' | 'certified'

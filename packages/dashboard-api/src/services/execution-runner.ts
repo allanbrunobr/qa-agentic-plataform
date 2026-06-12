@@ -1,12 +1,12 @@
-import path from 'node:path'
 import { FileSessionStore, runAdapterExecutionEngine } from '../../../core/src/index.ts'
 import type { AdapterExecutionDraft } from '../../../host-sdk/src/adapter-model.ts'
 import type { AdapterRuntimeHooks } from '../../../host-sdk/src/runtime-hooks.ts'
 import { appendExecutionEvent, updateExecutionStatus } from './execution-store.ts'
 import { getAdapter } from './adapter-service.ts'
+import { SESSIONS_DATA_PATH } from '../config/platform-paths.ts'
 
 const sessionStore = new FileSessionStore({
-  dataPath: path.resolve('/path/to/projects/agentic-platform/data/sessions.json'),
+  dataPath: SESSIONS_DATA_PATH,
 })
 
 export async function runExecutionLifecycle(draft: AdapterExecutionDraft, sessionId: string) {
