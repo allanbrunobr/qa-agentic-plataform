@@ -10,9 +10,26 @@ async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
     ...init,
   })
   if (!response.ok) {
-    throw new Error(`API error ${response.status}: ${response.statusText}`)
+    const detail = await readErrorDetail(response)
+    throw new Error(`API error ${response.status}: ${detail ?? response.statusText}`)
   }
   return response.json() as Promise<T>
+}
+
+async function readErrorDetail(response: Response): Promise<string | null> {
+  try {
+    const body = await response.json() as {
+      message?: unknown
+      error?: unknown
+      details?: { message?: unknown }
+    }
+    const parts = [body.message, body.details?.message]
+      .filter((part): part is string => typeof part === 'string' && part.length > 0)
+    if (parts.length > 0) return parts.join(' ')
+    return typeof body.error === 'string' ? body.error : null
+  } catch {
+    return null
+  }
 }
 
 export interface CreatePersonaPayload {

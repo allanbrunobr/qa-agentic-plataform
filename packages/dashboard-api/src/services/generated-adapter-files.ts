@@ -4,7 +4,17 @@ import {
   resolveGeneratedFile,
 } from '../config/platform-paths.ts'
 
-// (asserts live above; duplicates removed by platform-paths integration)
+function assertGeneratedAdapter(adapterId: string) {
+  if (!adapterId.endsWith('-generated')) {
+    throw new Error(`Adapter does not support generated file editing: ${adapterId}`)
+  }
+}
+
+function assertFilename(filename: string) {
+  if (!/^[a-z0-9._-]+$/i.test(filename)) {
+    throw new Error(`Invalid generated filename: ${filename}`)
+  }
+}
 
 export async function listGeneratedAdapterFiles(adapterId: string) {
   assertGeneratedAdapter(adapterId)

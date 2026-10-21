@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
+import path from 'node:path'
 import type { AdapterExecutionDraft } from '../../../host-sdk/src/adapter-model.ts'
 import type { ExecutionEventRecord, ExecutionRecord } from '../types/api.ts'
 import { EXECUTIONS_DATA_PATH as DATA_PATH } from '../config/platform-paths.ts'
