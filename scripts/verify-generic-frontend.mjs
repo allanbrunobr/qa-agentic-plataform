@@ -299,7 +299,7 @@ function verifyGeneratedAdapter() {
   )
   assert(
     codeGraph.nodes.some((node) => node.type === 'scenario_step_candidate'
-      && node.metadata?.stepId === 'step_2_click_submit_order'
+      && /^step_\d+_click_submit_order$/.test(String(node.metadata?.stepId ?? ''))
       && node.metadata?.graphReadiness?.status === 'fully_mapped'
       && node.metadata?.graphReadiness?.supportSourceTypes?.includes('http_call')),
     'code graph click_submit_order step readiness metadata missing',

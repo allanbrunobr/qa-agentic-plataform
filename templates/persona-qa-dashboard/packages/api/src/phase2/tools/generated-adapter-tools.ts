@@ -416,30 +416,49 @@ const openPrimaryRouteHandler = async (
 
 const fillCustomerEmailHandler = async (
   input: unknown,
-  capability: { id?: string; routeHint?: string } | undefined,
+  capability: { id?: string; routeHint?: string; purpose?: string } | undefined,
   context: { page?: unknown },
 ): Promise<ToolResult> => {
   const page = requirePage(context.page)
   await ensurePageReady(page, capability?.routeHint)
   const inputRecord = asRecord(input)
-  const email = typeof inputRecord?.['email'] === 'string' ? inputRecord['email'] : 'agentic.qa@example.com'
-  await fillFirst([
-    () => page.locator?.('input[type="email"]'),
-    () => page.locator?.('input[name*="email" i]'),
-    () => page.locator?.('input'),
-    () => page.getByLabel?.(/customer\s*email|email|e-mail/i),
-    () => page.getByPlaceholder?.(/customer\s*email|email|e-mail/i),
-  ], email)
+  const fieldLabel = extractQuotedLabel(capability?.purpose)
+  const wantsEmail = !capability || /e-?mail/i.test(`${capability.id ?? ''} ${fieldLabel ?? ''}`)
+  const providedValue = typeof inputRecord?.['value'] === 'string'
+    ? inputRecord['value']
+    : typeof inputRecord?.['email'] === 'string'
+      ? inputRecord['email']
+      : null
+  const value = providedValue ?? (wantsEmail ? 'agentic.qa@example.com' : 'Agentic QA')
+  const factories: Array<() => LocatorLike | undefined> = []
+  if (fieldLabel) {
+    factories.push(
+      () => page.getByLabel?.(fieldLabel),
+      () => page.getByPlaceholder?.(fieldLabel),
+    )
+  }
+  if (wantsEmail) {
+    factories.push(
+      () => page.locator?.('input[type="email"]'),
+      () => page.locator?.('input[name*="email" i]'),
+      () => page.getByLabel?.(/customer\s*email|email|e-mail/i),
+      () => page.getByPlaceholder?.(/customer\s*email|email|e-mail/i),
+    )
+  }
+  factories.push(() => page.locator?.('input:not([type]), input[type="text"], input[type="email"], textarea'))
+  await fillFirst(factories, value, fieldLabel ?? (wantsEmail ? 'email' : 'text'))
+  const target = fieldLabel ?? (wantsEmail ? 'email' : 'text_input')
 
   return ok({
     commandResult: buildCommandResult('fill', capability, {
-      target: 'email',
+      target,
       valueProvided: true,
     }),
-    customerEmail: email,
+    ...(wantsEmail ? { customerEmail: value } : {}),
+    filledValue: value,
     interactionResult: {
       type: 'fill',
-      target: 'email',
+      target,
       valueProvided: true,
     },
   })
@@ -451,15 +470,16 @@ const addCartItemHandler = async (
 ): Promise<ToolResult> => {
   const page = requirePage(context.page)
   await ensurePageReady(page, capability?.routeHint)
-  await clickFirst(page, [
-    /add.*cart|add.*item|cart|comprar|adicionar/i,
-    capability?.purpose,
-    capability?.sourceHint,
-  ])
+  const clicked = await clickFirst(page, {
+    exactLabel: extractQuotedLabel(capability?.purpose),
+    patterns: [/add.*cart|add.*item|comprar|adicionar/i],
+    description: 'add-to-cart action',
+  })
 
   return ok({
     commandResult: buildCommandResult('click', capability, {
       target: 'cart_action',
+      clickedLabel: clicked,
       completed: true,
     }),
     cartItemId: `item-${Date.now()}`,
@@ -477,15 +497,16 @@ const submitOrderHandler = async (
 ): Promise<ToolResult> => {
   const page = requirePage(context.page)
   await ensurePageReady(page, capability?.routeHint)
-  await clickFirst(page, [
-    /submit.*order|checkout|place.*order|finalizar|confirmar|enviar|submit/i,
-    capability?.purpose,
-    capability?.sourceHint,
-  ])
+  const clicked = await clickFirst(page, {
+    exactLabel: extractQuotedLabel(capability?.purpose),
+    patterns: [/submit.*order|checkout|place.*order|finalizar|confirmar|enviar|submit/i],
+    description: 'submit action',
+  })
 
   return ok({
     commandResult: buildCommandResult('click', capability, {
       target: 'primary_submit',
+      clickedLabel: clicked,
       completed: true,
     }),
     orderSubmitted: true,
@@ -504,15 +525,16 @@ const interactWithPrimaryActionHandler = async (
 ): Promise<ToolResult> => {
   const page = requirePage(context.page)
   await ensurePageReady(page, capability?.routeHint)
-  await clickFirst(page, [
-    /continue|start|save|next|primary|submit|open|iniciar|salvar|avancar/i,
-    capability?.purpose,
-    capability?.sourceHint,
-  ])
+  const clicked = await clickFirst(page, {
+    exactLabel: extractQuotedLabel(capability?.purpose),
+    patterns: [/continue|start|save|next|primary|submit|open|iniciar|salvar|avancar/i],
+    description: 'primary action',
+  })
 
   return ok({
     commandResult: buildCommandResult('click', capability, {
       target: capability?.id ?? 'primary_action',
+      clickedLabel: clicked,
       completed: true,
     }),
     primaryActionCompleted: true,
@@ -530,22 +552,30 @@ const verifyPrimaryFeedbackHandler = async (
 ): Promise<ToolResult> => {
   const page = requirePage(context.page)
   await ensurePageReady(page, capability?.routeHint)
-  const feedback = await firstVisibleText(page, [
-    /order|success|submitted|complete|cart|done|created|saved|sucesso|concluido|salvo/i,
-    'output',
-    '[role="status"]',
-    '[data-testid*="feedback" i]',
-  ])
+  const feedback = await waitForVisibleText(page, SUCCESS_FEEDBACK_SELECTORS, FEEDBACK_WAIT_MS)
+
+  if (!feedback) {
+    // Never fall back to "the page has some text": that turns every run into a pass.
+    const errorFeedback = await waitForVisibleText(page, ERROR_FEEDBACK_SELECTORS, 0)
+    return {
+      ok: false,
+      error: {
+        code: 'verification_failed',
+        message: errorFeedback
+          ? `Expected success feedback after the interaction, but the page shows an error: "${truncate(errorFeedback, 200)}".`
+          : 'Expected visible success feedback after the interaction (e.g. "submitted", "success", "saved"), but none was found.',
+        retryable: false,
+      },
+    }
+  }
 
   return ok({
     primaryFeedbackVisible: true,
     verificationResult: {
       checked: true,
-      passed: Boolean(feedback),
-      textPreview: feedback ? truncate(feedback, 500) : null,
-      reason: feedback
-        ? 'Visible feedback was found after the generated interaction.'
-        : 'No explicit feedback text was found; the page remained reachable after the interaction.',
+      passed: true,
+      textPreview: truncate(feedback, 500),
+      reason: 'Visible success feedback was found after the generated interaction.',
     },
   })
 }
@@ -578,7 +608,9 @@ function readGeneratedCapabilities(): Array<{ id: string; routeHint?: string; pu
     if (!isRecord(item) || typeof item.id !== 'string') return []
     return [{
       id: item.id,
-      routeHint: typeof item.routeHint === 'string' ? item.routeHint : undefined,
+      // Backend route hints such as /api/orders describe the server call behind a
+      // UI action; navigating the browser there would leave the frontend.
+      routeHint: typeof item.routeHint === 'string' && !isBackendRouteHint(item.routeHint) ? item.routeHint : undefined,
       purpose: typeof item.purpose === 'string' ? item.purpose : undefined,
       sourceHint: typeof item.sourceHint === 'string' ? item.sourceHint : undefined,
     }]
@@ -596,6 +628,10 @@ function buildCommandResult(
     completed: true,
     ...details,
   }
+}
+
+function isBackendRouteHint(value: string): boolean {
+  return /^\/?api(\/|$)/i.test(value)
 }
 
 function isReadOnlyFrontendCapability(capabilityId: string): boolean {
@@ -637,39 +673,80 @@ function safeCurrentUrl(page: PageLike): string | null {
   }
 }
 
-async function clickFirst(page: PageLike, labels: Array<string | RegExp | undefined>): Promise<void> {
-  const locators = labels.flatMap((label) => {
-    if (!label) return []
-    return [
-      () => page.getByRole?.('button', { name: label }),
-      () => page.getByText?.(label),
-    ]
-  })
-  locators.push(
-    () => page.locator?.('button:not([disabled])'),
-    () => page.locator?.('a[href]'),
-  )
+const FEEDBACK_WAIT_MS = 5_000
+const SUCCESS_FEEDBACK_PATTERN = 'success|submitted|completed|confirmed|created|saved|thank you|order placed|sucesso|conclu[i\u00ed]d|salv[oa]|enviad[oa]|confirmad[oa]|criad[oa]'
+const ERROR_FEEDBACK_PATTERN = 'error|failed|invalid|required|erro|falh|inv[a\u00e1]lid|obrigat[o\u00f3]ri'
+// Controls (buttons, links, labels) are excluded so that a button reading
+// "Complete purchase" is never mistaken for a confirmation message.
+const NON_CONTROL = ':not(button):not([role="button"]):not(a):not(label):not(option):not(script):not(style):not(title)'
+const SUCCESS_FEEDBACK_SELECTORS = [`${NON_CONTROL}:text-matches("${SUCCESS_FEEDBACK_PATTERN}", "i")`]
+const ERROR_FEEDBACK_SELECTORS = [
+  `[role="alert"]:text-matches("\\S")`,
+  `${NON_CONTROL}:text-matches("${ERROR_FEEDBACK_PATTERN}", "i")`,
+]
 
-  for (const factory of locators) {
-    const candidate = factory()
-    const locator = candidate?.first?.() ?? candidate
-    if (!locator?.click) continue
-    try {
-      await locator.click({ timeout: 3_000 })
-      return
-    } catch {
-      continue
-    }
-  }
-
-  throw new Error('No clickable primary action was found on the generated target page.')
+function extractQuotedLabel(value: string | undefined): string | undefined {
+  const match = value?.match(/"([^"]{1,200})"/)
+  return match?.[1]?.trim() || undefined
 }
 
-async function fillFirst(factories: Array<() => LocatorLike | undefined>, value: string): Promise<void> {
+/**
+ * Clicks the control that matches the capability. There is intentionally no
+ * "click any enabled button" fallback: clicking the wrong control and reporting
+ * success is what produced false positives. If the matching control exists but
+ * cannot be clicked (disabled, hidden, covered), the step fails.
+ */
+async function clickFirst(
+  page: PageLike,
+  target: { exactLabel?: string; patterns: RegExp[]; description: string },
+): Promise<string> {
+  const attempts: Array<{ label: string; factory: () => LocatorLike | undefined }> = []
+  if (target.exactLabel) {
+    const label = target.exactLabel
+    attempts.push(
+      { label, factory: () => page.getByRole?.('button', { name: label, exact: true }) },
+      { label, factory: () => page.getByRole?.('link', { name: label, exact: true }) },
+    )
+  }
+  for (const pattern of target.patterns) {
+    attempts.push(
+      { label: String(pattern), factory: () => page.getByRole?.('button', { name: pattern }) },
+      { label: String(pattern), factory: () => page.getByRole?.('link', { name: pattern }) },
+    )
+  }
+
+  for (const attempt of attempts) {
+    const candidate = attempt.factory()
+    const locator = candidate?.first?.() ?? candidate
+    if (!locator?.click) continue
+    if (locator.count && (await locator.count()) < 1) continue
+    try {
+      await locator.click({ timeout: 3_000 })
+    } catch (error) {
+      const message = error instanceof Error ? error.message.split('\n')[0] : String(error)
+      throw new Error(
+        `The ${target.description} (${attempt.label}) was found but could not be clicked; it may be disabled or hidden. ${message}`,
+      )
+    }
+    return (await locatorText(locator))?.trim() || attempt.label
+  }
+
+  const expected = [target.exactLabel ? `"${target.exactLabel}"` : null, ...target.patterns.map(String)]
+    .filter(Boolean)
+    .join(' or ')
+  throw new Error(`No ${target.description} matching ${expected} was found on the page.`)
+}
+
+async function fillFirst(
+  factories: Array<() => LocatorLike | undefined>,
+  value: string,
+  description: string,
+): Promise<void> {
   for (const factory of factories) {
     const candidate = factory()
     const locator = candidate?.first?.() ?? candidate
     if (!locator?.fill) continue
+    if (locator.count && (await locator.count()) < 1) continue
     try {
       await locator.fill(value, { timeout: 3_000 })
       return
@@ -678,21 +755,22 @@ async function fillFirst(factories: Array<() => LocatorLike | undefined>, value:
     }
   }
 
-  throw new Error('No fillable email input was found on the generated target page.')
+  throw new Error(`No fillable ${description} input was found on the page.`)
 }
 
-async function firstVisibleText(page: PageLike, candidates: Array<string | RegExp>): Promise<string | null> {
-  for (const candidate of candidates) {
-    const locator = typeof candidate === 'string' && /^[.#\[]/.test(candidate)
-      ? page.locator?.(candidate)
-      : page.getByText?.(candidate)
-    const visible = await locatorVisible(locator)
-    if (!visible) continue
-    return await locatorText(locator)
-  }
-
-  const body = page.locator?.('body')
-  if (await locatorVisible(body)) return await locatorText(body)
+async function waitForVisibleText(page: PageLike, selectors: string[], timeoutMs: number): Promise<string | null> {
+  const deadline = Date.now() + timeoutMs
+  do {
+    for (const selector of selectors) {
+      const locator = page.locator?.(selector)
+      const first = locator?.first?.() ?? locator
+      if (!(await locatorVisible(first))) continue
+      const text = (await locatorText(first))?.trim()
+      if (text) return text
+    }
+    if (Date.now() >= deadline) break
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  } while (Date.now() < deadline)
   return null
 }
 

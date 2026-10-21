@@ -190,6 +190,7 @@ export const CapabilityCandidateSchema = CandidateBaseSchema.extend({
   purpose: z.string().min(1).max(1_000),
   kind: z.enum([
     'navigation',
+    'input_fill',
     'form_submit',
     'button_click',
     'assertion',

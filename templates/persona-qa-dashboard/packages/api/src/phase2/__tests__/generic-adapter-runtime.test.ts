@@ -155,6 +155,36 @@ describe('generic generated adapter runtime', () => {
       }))
     }
   })
+
+  it('fails instead of clicking another control when the submit action is disabled', async () => {
+    const registry = new ToolRegistry()
+    registerGeneratedAdapterTools(registry)
+    const page = createFakePage({ submitDisabled: true })
+    const policy = { browserAccess: true, allowedTools: ['openPrimaryRoute', 'submitOrder', 'verifyPrimaryFeedback'] }
+
+    await registry.execute('openPrimaryRoute', {}, policy, { page })
+    const submitResult = await registry.execute('submitOrder', {}, policy, { page })
+    const verifyResult = await registry.execute('verifyPrimaryFeedback', {}, policy, { page })
+
+    expect(submitResult.ok).toBe(false)
+    if (!submitResult.ok) expect(submitResult.error.message).toMatch(/could not be clicked/)
+    expect(page.clicks).toEqual([])
+    expect(verifyResult.ok).toBe(false)
+    if (!verifyResult.ok) expect(verifyResult.error.code).toBe('verification_failed')
+  }, 15_000)
+
+  it('does not treat arbitrary page text as success feedback', async () => {
+    const registry = new ToolRegistry()
+    registerGeneratedAdapterTools(registry)
+    const page = createFakePage({ feedbackText: 'Cart items: 0' })
+    const policy = { browserAccess: true, allowedTools: ['submitOrder', 'verifyPrimaryFeedback'] }
+
+    const submitResult = await registry.execute('submitOrder', {}, policy, { page })
+    const verifyResult = await registry.execute('verifyPrimaryFeedback', {}, policy, { page })
+
+    expect(submitResult.ok).toBe(true)
+    expect(verifyResult.ok).toBe(false)
+  }, 15_000)
 })
 
 function restoreEnv(key: keyof typeof ORIGINAL_ENV, value: string | undefined): void {
@@ -165,10 +195,11 @@ function restoreEnv(key: keyof typeof ORIGINAL_ENV, value: string | undefined): 
   }
 }
 
-function createFakePage() {
+function createFakePage(options: { submitDisabled?: boolean; feedbackText?: string } = {}) {
   const state = {
     currentUrl: 'about:blank',
     filledEmail: '',
+    feedback: '',
     clicks: [] as string[],
     goto: async (url: string) => {
       state.currentUrl = url
@@ -184,32 +215,43 @@ function createFakePage() {
         state.filledEmail = value
       },
     }),
-    getByRole: (_role: string, options?: Record<string, unknown>) => locator({
-      text: String(options?.name instanceof RegExp ? options.name.source : options?.name ?? 'button'),
-      click: async () => {
-        const name = options?.name instanceof RegExp
-          ? options.name.test('Add item to cart')
-            ? 'Add item to cart'
-            : 'Submit order'
-          : String(options?.name ?? 'button')
-        state.clicks.push(name)
-      },
-    }),
+    getByRole: (_role: string, roleOptions?: Record<string, unknown>) => {
+      const name = roleOptions?.name instanceof RegExp
+        ? roleOptions.name.test('Add item to cart')
+          ? 'Add item to cart'
+          : 'Submit order'
+        : String(roleOptions?.name ?? 'button')
+      return locator({
+        text: name,
+        click: async () => {
+          if (name === 'Submit order' && options.submitDisabled) {
+            throw new Error('locator.click: Timeout 3000ms exceeded. element is not enabled')
+          }
+          state.clicks.push(name)
+          if (name === 'Submit order') state.feedback = options.feedbackText ?? 'Order submitted successfully'
+        },
+      })
+    },
     getByText: (text: string | RegExp) => locator({
-      text: typeof text === 'string' ? text : 'Order submitted successfully',
-      click: async () => {
-        state.clicks.push(typeof text === 'string' ? text : 'button')
-      },
+      text: typeof text === 'string' ? text : 'unused',
     }),
-    locator: (selector: string) => locator({
-      text: selector === 'body' ? 'Generic Storefront Order submitted successfully' : selector,
-      fill: async (value: string) => {
-        state.filledEmail = value
-      },
-      click: async () => {
-        state.clicks.push(selector)
-      },
-    }),
+    locator: (selector: string) => {
+      if (selector.includes(':text-matches(')) {
+        const source = selector.match(/:text-matches\("((?:[^"\\]|\\.)*)"/)?.[1] ?? ''
+        const pattern = new RegExp(source.replace(/\\\\/g, '\\'), 'i')
+        const matches = state.feedback !== '' && pattern.test(state.feedback)
+        return locator({ text: state.feedback, count: matches ? 1 : 0 })
+      }
+      return locator({
+        text: selector,
+        fill: async (value: string) => {
+          state.filledEmail = value
+        },
+        click: async () => {
+          state.clicks.push(selector)
+        },
+      })
+    },
     screenshot: async () => new Uint8Array([1, 2, 3]),
   }
 
@@ -218,13 +260,14 @@ function createFakePage() {
 
 function locator(options: {
   text?: string
+  count?: number
   fill?: (value: string) => Promise<void>
   click?: () => Promise<void>
 }) {
   return {
     first: () => locator(options),
-    count: async () => 1,
-    isVisible: async () => true,
+    count: async () => options.count ?? 1,
+    isVisible: async () => (options.count ?? 1) > 0,
     textContent: async () => options.text ?? 'visible text',
     fill: options.fill,
     click: options.click,

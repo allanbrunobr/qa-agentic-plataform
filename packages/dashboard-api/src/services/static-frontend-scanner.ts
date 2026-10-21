@@ -331,8 +331,60 @@ function collectForms(files: ScannedFile[]) {
         extractedText: sanitizeText(body),
       })
     }
+
+    const implicitForm = collectImplicitFormFields(file, scanContent)
+    if (implicitForm) forms.push(implicitForm)
   }
   return uniqueById(forms)
+}
+
+const NON_TEXT_INPUT_TYPES = new Set(['hidden', 'submit', 'button', 'reset', 'image', 'checkbox', 'radio', 'file', 'range', 'color'])
+const FIELD_TAG_PATTERN = /<(input|select|textarea)\b((?:[^>{]|\{[^}]*\})*)>/gi
+
+/**
+ * Many apps collect user input without a <form> element (inputs wired to
+ * buttons through state). Those fields still have to be filled before the
+ * primary action becomes meaningful, so they are reported as one implicit form
+ * per file. Without this, generated scenarios skip required inputs.
+ */
+function collectImplicitFormFields(file: ScannedFile, scanContent: string): Record<string, unknown> | null {
+  const outsideForms = scanContent.replace(/<form\b[\s\S]*?<\/form>/gi, preserveMatchShape)
+  const fields: string[] = []
+  let firstIndex: number | null = null
+
+  const wrappedLabels = Array.from(outsideForms.matchAll(/<label\b[^>]*>([\s\S]*?)<\/label>/gi)).map((match) => ({
+    start: match.index ?? 0,
+    end: (match.index ?? 0) + match[0].length,
+    text: sanitizeText((match[1] ?? '').replace(FIELD_TAG_PATTERN, ' ')),
+  }))
+
+  for (const match of outsideForms.matchAll(FIELD_TAG_PATTERN)) {
+    const attrs = match[2] ?? ''
+    const type = (extractAttribute(attrs, 'type') ?? 'text').toLowerCase()
+    if (match[1]?.toLowerCase() === 'input' && NON_TEXT_INPUT_TYPES.has(type)) continue
+    const index = match.index ?? 0
+    const wrapping = wrappedLabels.find((label) => index > label.start && index < label.end)
+    const label = extractFieldLabel([
+      extractAttribute(attrs, 'aria-label'),
+      wrapping?.text,
+      extractAttribute(attrs, 'placeholder'),
+      extractAttribute(attrs, 'name'),
+    ])
+    if (!label || fields.includes(label)) continue
+    fields.push(label)
+    firstIndex ??= index
+  }
+
+  if (fields.length === 0 || firstIndex === null) return null
+  const line = lineForIndex(file.content, firstIndex)
+  return {
+    id: makeId('form', file.relativePath, line, 'implicit'),
+    kind: 'form',
+    source: { filePath: file.relativePath, line },
+    fields: fields.slice(0, 40),
+    extractedText: fields.join(', '),
+    metadata: { implicit: true },
+  }
 }
 
 function collectButtons(files: ScannedFile[]) {

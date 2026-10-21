@@ -195,7 +195,7 @@ Other verifiers are available as `npm run verify:<name>`. See the `scripts` sect
 
 ## Scope and limitations
 
-- **Frontends:** full path. Discovery maps routes and screens. Runs drive a real browser through Playwright, with selectors and UI capabilities.
+- **Frontends:** full path. Discovery maps routes, inputs, and buttons, and orders steps as open → fill → act → assert. Runs drive a real browser through Playwright. Generic capabilities fail closed: a step fails if its control is missing or disabled, and the final assertion passes only when visible success feedback appears (for example "submitted" or "saved"). For anything more specific, map selectors and assertions for that repository.
 - **Backend API, CLI, library, monorepo, unknown:** discovery classifies the repository and generates draft personas, scenarios, and capability stubs. Runs are deterministic smoke and inspection runs. They make missing mappings visible, but they **do not validate business behavior**. Business validation needs runtime URLs or commands, auth, seed data, and assertions mapped for that repository.
 - **Generated scenarios are review-gated.** They stay drafts until a person maps them.
 - **L5 loops are controlled.** The loops cover coverage gaps, scenario drafts, profile tuning, learning proposals, and self-healing. Their changes are recommendations or drafts, and self-healing is bounded and logged.

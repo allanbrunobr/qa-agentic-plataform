@@ -46,6 +46,8 @@ interface ScoredDomainProfile {
 }
 
 const DEFAULT_MAX_CAPABILITIES = 12
+const MAX_FILL_CAPABILITIES = 3
+const MAX_SCENARIO_STEPS = 7
 
 const DOMAIN_PROFILES: DomainProfile[] = [
   {
@@ -456,12 +458,21 @@ function buildScenarioSteps(
   const formCapabilities = rankScenarioCapabilities(capabilities, scenario, 'form_submit')
   const buttonCapabilities = rankScenarioCapabilities(capabilities, scenario, 'button_click')
   const assertionCapabilities = rankScenarioCapabilities(capabilities, scenario, 'assertion')
-  const interactionCandidates = [...formCapabilities, ...buttonCapabilities, ...navigationCapabilities]
+  const fillCapabilities = capabilities.filter((capability) => capability.kind === 'input_fill')
+  const actionCandidates = [...formCapabilities, ...buttonCapabilities]
+  const interactionCandidates = actionCandidates.length > 0
+    ? actionCandidates
+    : navigationCapabilities.slice(1)
 
+  // Executable order: land on the page, fill required inputs, act, then assert.
+  // Terminal actions (submit/checkout/confirm) go after preparatory ones such
+  // as "add item", otherwise the terminal control is still disabled.
   const preferredCapabilities = uniqueCapabilities([
-    ...selectScenarioSequence(interactionCandidates, scenario),
+    navigationCapabilities[0],
+    ...fillCapabilities,
+    ...orderTerminalActionsLast(selectScenarioSequence(interactionCandidates, scenario)),
     assertionCapabilities[0],
-  ].filter((capability): capability is CapabilityCandidate => Boolean(capability))).slice(0, 4)
+  ].filter((capability): capability is CapabilityCandidate => Boolean(capability))).slice(0, MAX_SCENARIO_STEPS)
 
   if (preferredCapabilities.length > 0) {
     return preferredCapabilities.map((capability, index) => ({
@@ -481,6 +492,17 @@ function buildScenarioSteps(
     capabilityId: undefined,
     evidenceRefs: fallbackEvidence,
   }]
+}
+
+const TERMINAL_ACTION_PATTERN = /\b(submit|checkout|confirm|confirmar|place order|finish|finalizar|enviar|send|pay|pagar|encerrar)\b/
+
+function orderTerminalActionsLast(capabilities: CapabilityCandidate[]) {
+  const isTerminal = (capability: CapabilityCandidate) =>
+    TERMINAL_ACTION_PATTERN.test(normalizeScenarioCapabilityText(capability))
+  return [
+    ...capabilities.filter((capability) => !isTerminal(capability)),
+    ...capabilities.filter(isTerminal),
+  ]
 }
 
 function rankScenarioCapabilities(
@@ -604,7 +626,29 @@ function buildCapabilities(
     })
   }
 
+  const fillableFields = surfaceMap.forms
+    .slice(0, 4)
+    .flatMap((form) => form.fields.map((field) => ({ form, field })))
+    .filter(({ field }) => !/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(field))
+    .slice(0, MAX_FILL_CAPABILITIES)
+
+  for (const { form, field } of fillableFields) {
+    capabilities.push({
+      id: makeId('fill', field),
+      title: `Fill ${field}`,
+      purpose: `Fill the visible "${field}" field.`,
+      kind: 'input_fill',
+      mappedSurfaceIds: [form.id],
+      selectorHints: [field],
+      confidence: 0.66,
+      evidenceRefs: [{ evidenceId: form.id, kind: 'form' }],
+      status: 'needs_human_mapping',
+      risks: [],
+    })
+  }
+
   for (const form of surfaceMap.forms.slice(0, 4)) {
+    if (form.metadata?.['implicit'] === true) continue
     capabilities.push({
       id: makeId('submit', selected.profile.domain, form.actionName ?? form.id),
       title: `Submit ${selected.profile.label} form`,
@@ -655,7 +699,12 @@ function buildCapabilities(
     })
   }
 
-  return uniqueCapabilities(capabilities).slice(0, maxCapabilities)
+  const unique = uniqueCapabilities(capabilities)
+  const limited = unique.slice(0, maxCapabilities)
+  // Scenarios need a closing assertion; never let the cap drop it.
+  const assertion = unique.find((capability) => capability.kind === 'assertion')
+  if (assertion && limited.length > 0 && !limited.includes(assertion)) limited[limited.length - 1] = assertion
+  return limited
 }
 
 function buildAudit(

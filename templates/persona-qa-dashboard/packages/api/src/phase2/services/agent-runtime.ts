@@ -319,6 +319,24 @@ export class AgentRuntime {
           })
         }
 
+        // A model that stops talking has not proven anything. When the step
+        // declares required artifacts, they must come from tool output.
+        if (expectedArtifacts.length > 0 && !this.hasExpectedArtifacts(accumulatedOutput, expectedArtifacts)) {
+          const missing = expectedArtifacts.filter(
+            (artifact) => accumulatedOutput[artifact] === undefined || accumulatedOutput[artifact] === null,
+          )
+          return this.finishStep(sessionId, profile, {
+            status: 'failed',
+            text: response.text,
+            toolCalls: response.toolCalls,
+            findings: collectedFindings,
+            output: accumulatedOutput,
+            durationMs: Date.now() - startedAt,
+            success: false,
+            error: `Step ended without producing required artifacts: ${missing.join(', ')}`,
+          })
+        }
+
         return this.finishStep(sessionId, profile, {
           status: 'completed',
           text: response.text,
