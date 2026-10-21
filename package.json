@@ -2,6 +2,16 @@
   "name": "agentic-platform",
   "private": true,
   "version": "0.1.0",
+  "description": "Installs a host-local agentic QA runtime into a target repository, discovers its surfaces, and runs multi-agent QA flows with Playwright.",
+  "license": "MIT",
+  "author": "Allan Bruno <allanbruno@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/allanbrunobr/qa-agentic-plataform.git"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "workspaces": [
     "packages/*",
     "adapters/*"
@@ -36,5 +46,8 @@
   },
   "dependencies": {
     "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
   }
 }

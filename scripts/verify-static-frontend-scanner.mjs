@@ -11,11 +11,10 @@ const fixtureRoot = path.join(os.tmpdir(), `agentic-platform-static-frontend-sca
 const tsxLoaderCandidates = [
   path.join(repoRoot, 'node_modules/tsx/dist/loader.mjs'),
   path.join(repoRoot, 'templates/persona-qa-dashboard/node_modules/tsx/dist/loader.mjs'),
-  path.join(process.env.HOME ?? '', '.nvm/versions/node/v22.13.1/lib/node_modules/tsx/dist/loader.mjs'),
 ]
 const tsxLoader = tsxLoaderCandidates.find((candidate) => fs.existsSync(candidate))
 const preferredNodeBin = process.env.AGENTIC_RELEASE_NODE_BIN
-  ?? path.join(process.env.HOME ?? '', '.nvm/versions/node/v22.13.1/bin')
+  ?? path.dirname(process.execPath)
 const preferredNodePath = path.join(preferredNodeBin, 'node')
 const nodePath = fs.existsSync(preferredNodePath) ? preferredNodePath : process.execPath
 

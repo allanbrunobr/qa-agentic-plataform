@@ -8,7 +8,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(scriptDir, '..')
 const apiRoot = path.join(repoRoot, 'templates/persona-qa-dashboard/packages/api')
 const preferredNodeBin = process.env.AGENTIC_RELEASE_NODE_BIN
-  ?? path.join(process.env.HOME ?? '', '.nvm/versions/node/v22.13.1/bin')
+  ?? path.dirname(process.execPath)
 const preferredNodePath = path.join(preferredNodeBin, 'node')
 const preferredNpmCliPath = path.join(preferredNodeBin, 'lib/node_modules/npm/bin/npm-cli.js')
 const releaseNodePath = fs.existsSync(preferredNodePath) ? preferredNodePath : process.execPath

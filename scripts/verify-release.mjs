@@ -12,7 +12,7 @@ const apiRoot = path.join(dashboardRoot, 'packages/api')
 const webRoot = path.join(dashboardRoot, 'packages/web')
 const tsxLoader = path.join(dashboardRoot, 'node_modules/tsx/dist/loader.mjs')
 const preferredNodeBin = process.env.AGENTIC_RELEASE_NODE_BIN
-  ?? path.join(process.env.HOME ?? '', '.nvm/versions/node/v22.13.1/bin')
+  ?? path.dirname(process.execPath)
 const preferredNodePath = path.join(preferredNodeBin, 'node')
 const preferredNpmCliPath = path.join(preferredNodeBin, 'lib/node_modules/npm/bin/npm-cli.js')
 const releaseNodePath = fs.existsSync(preferredNodePath) ? preferredNodePath : process.execPath
@@ -236,6 +236,10 @@ const steps = [
   },
   {
     name: 'clean-room install/runtime/dashboard smoke',
+    // Needs a real host frontend repository to copy into a clean room.
+    skipReason: () => (process.env.SOURCE_REPO
+      ? null
+      : 'SOURCE_REPO is not set; point it at a host frontend repository to run this step'),
     command: releaseNpmCliPath ? releaseNodePath : 'npm',
     args: releaseNpmCliPath
       ? [releaseNpmCliPath, 'run', 'verify:install-local:reference-store']
@@ -330,7 +334,15 @@ async function prepareReleaseEnv() {
   }
 }
 
+const skippedSteps = []
+
 function runStep(step) {
+  const skipReason = step.skipReason?.()
+  if (skipReason) {
+    skippedSteps.push(step.name)
+    log(`SKIP ${step.name}: ${skipReason}`)
+    return
+  }
   log(`START ${step.name}`)
   const startedAt = Date.now()
   const result = spawnSync(step.command, step.args, {
@@ -352,7 +364,9 @@ async function main() {
   log(`node=${releaseNodePath}`)
   log(`ports api=${releaseEnv.API_PORT} web=${releaseEnv.WEB_PORT}`)
   for (const step of steps) runStep(step)
-  log('PASS release verification')
+  log(skippedSteps.length
+    ? `PASS release verification (${skippedSteps.length} step(s) skipped: ${skippedSteps.join(', ')})`
+    : 'PASS release verification')
 }
 
 try {

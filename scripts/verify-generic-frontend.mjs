@@ -12,15 +12,24 @@ const fixtureRoot = path.join(os.tmpdir(), `agentic-platform-generic-frontend-fi
 const tsxLoaderCandidates = [
   path.join(repoRoot, 'node_modules/tsx/dist/loader.mjs'),
   path.join(repoRoot, 'templates/persona-qa-dashboard/node_modules/tsx/dist/loader.mjs'),
-  path.join(process.env.HOME ?? '', '.nvm/versions/node/v22.13.1/lib/node_modules/tsx/dist/loader.mjs'),
 ]
 const tsxLoader = tsxLoaderCandidates.find((candidate) => fs.existsSync(candidate))
 const preferredNodeBin = process.env.AGENTIC_RELEASE_NODE_BIN
-  ?? path.join(process.env.HOME ?? '', '.nvm/versions/node/v22.13.1/bin')
+  ?? path.dirname(process.execPath)
 const preferredNodePath = path.join(preferredNodeBin, 'node')
 const nodePath = fs.existsSync(preferredNodePath) ? preferredNodePath : process.execPath
+// The deterministic smoke never calls a model provider, but install-local only writes
+// .agentic-qa/.env.local when a provider key resolves. Use a placeholder when none is configured.
+const hasProviderKey = Boolean(
+  process.env.ANTHROPIC_API_KEY_OVERRIDE
+  || process.env.ANTHROPIC_API_KEY
+  || process.env.ANTHROPIC_API
+  || process.env.OPENAI_API_KEY
+  || fs.existsSync(path.join(repoRoot, '.env.local')),
+)
 const verificationEnv = {
   ...process.env,
+  ...(hasProviderKey ? {} : { ANTHROPIC_API_KEY: 'sk-ant-verification-placeholder' }),
   PATH: fs.existsSync(preferredNodePath)
     ? `${preferredNodeBin}${path.delimiter}${process.env.PATH ?? ''}`
     : process.env.PATH,

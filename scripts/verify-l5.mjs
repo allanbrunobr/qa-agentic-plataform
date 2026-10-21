@@ -10,7 +10,7 @@ const dashboardRoot = path.join(repoRoot, 'templates/persona-qa-dashboard')
 const apiRoot = path.join(dashboardRoot, 'packages/api')
 const webRoot = path.join(dashboardRoot, 'packages/web')
 const preferredNodeBin = process.env.AGENTIC_RELEASE_NODE_BIN
-  ?? path.join(process.env.HOME ?? '', '.nvm/versions/node/v22.13.1/bin')
+  ?? path.dirname(process.execPath)
 const preferredNodePath = path.join(preferredNodeBin, 'node')
 const preferredNpmCliPath = path.join(preferredNodeBin, 'lib/node_modules/npm/bin/npm-cli.js')
 const releaseNodePath = fs.existsSync(preferredNodePath) ? preferredNodePath : process.execPath
