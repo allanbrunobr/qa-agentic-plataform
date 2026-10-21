@@ -178,7 +178,7 @@ async function listRelevantFiles(repoPath: string): Promise<string[]> {
 }
 
 async function walk(dir: string, files: string[], root: string): Promise<void> {
-  let entries: Awaited<ReturnType<typeof fs.readdir>>
+  let entries: import('node:fs').Dirent[]
   try {
     entries = await fs.readdir(dir, { withFileTypes: true })
   } catch {

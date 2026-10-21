@@ -18,11 +18,18 @@ export async function runExecutionLifecycle(draft: AdapterExecutionDraft, sessio
     execution: draft,
     model: adapter.model,
     hooks: adapter.runtimeHooks as AdapterRuntimeHooks,
-    onExecutionStarted: () => appendExecutionEvent(draft.executionId, 'execution_started', { sessionId }),
-    onStepStarted: (stepId, index) => appendExecutionEvent(draft.executionId, 'step_started', { stepId, index }),
-    onStepCompleted: (stepId, index) => appendExecutionEvent(draft.executionId, 'step_completed', { stepId, index }),
-    onStepFailed: (stepId, index, errorMessage, attempt) =>
-      appendExecutionEvent(draft.executionId, 'step_failed', { stepId, index, errorMessage, attempt }),
+    onExecutionStarted: async () => {
+      await appendExecutionEvent(draft.executionId, 'execution_started', { sessionId })
+    },
+    onStepStarted: async (stepId, index) => {
+      await appendExecutionEvent(draft.executionId, 'step_started', { stepId, index })
+    },
+    onStepCompleted: async (stepId, index) => {
+      await appendExecutionEvent(draft.executionId, 'step_completed', { stepId, index })
+    },
+    onStepFailed: async (stepId, index, errorMessage, attempt) => {
+      await appendExecutionEvent(draft.executionId, 'step_failed', { stepId, index, errorMessage, attempt })
+    },
     onExecutionFailed: async (stepId, index, errorMessage) => {
       await appendExecutionEvent(draft.executionId, 'execution_failed', { sessionId, stepId, index, errorMessage })
       await updateExecutionStatus(draft.executionId, 'failed')

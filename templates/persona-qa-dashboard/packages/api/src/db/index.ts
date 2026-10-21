@@ -2,7 +2,11 @@ import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema.js';
 
-const DB_PATH = process.env['DATABASE_URL'] ?? './persona-qa.db';
+// Resolved on every initDb() call, not at import time: tests set DATABASE_URL
+// after imports are hoisted and must never touch the on-disk database.
+function resolveDbPath(): string {
+  return process.env['DATABASE_URL'] ?? './persona-qa.db';
+}
 
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 let _sqlite: Database.Database | null = null;
@@ -17,7 +21,8 @@ export function getDb() {
 export function initDb(): ReturnType<typeof drizzle<typeof schema>> {
   if (_db) return _db;
 
-  _sqlite = new Database(DB_PATH);
+  const dbPath = resolveDbPath();
+  _sqlite = new Database(dbPath);
 
   // Enable WAL mode for better concurrent read performance
   _sqlite.pragma('journal_mode = WAL');
@@ -105,7 +110,7 @@ export function initDb(): ReturnType<typeof drizzle<typeof schema>> {
     try { _sqlite.exec(sql); } catch { /* column already exists */ }
   }
 
-  console.log(`[db] Initialized SQLite database at ${DB_PATH}`);
+  console.log(`[db] Initialized SQLite database at ${dbPath}`);
   return _db;
 }
 

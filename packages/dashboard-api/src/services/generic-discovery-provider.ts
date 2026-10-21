@@ -727,7 +727,7 @@ async function listSourceFiles(
 
 async function walkSource(root: string): Promise<string[]> {
   const files: string[] = []
-  let entries: Awaited<ReturnType<typeof fs.readdir>>
+  let entries: import('node:fs').Dirent[]
   try {
     entries = await fs.readdir(root, { withFileTypes: true })
   } catch {
@@ -782,5 +782,5 @@ function fallbackGenericDraft(): BootstrapDraft {
     confidence: 0.2,
     evidence: ['fallback repository classification'],
     runtimeHints: [],
-  })
+  }, undefined, [])
 }

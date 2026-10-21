@@ -537,8 +537,9 @@ function collectAstSourceEvidence(file: SourceGraphFile, filePathSet: Set<string
       if (surfaceKind) {
         for (const attribute of node.attributes.properties) {
           if (!ts.isJsxAttribute(attribute)) continue
-          const eventName = attribute.name.text === 'onClick' || attribute.name.text === 'onSubmit'
-            ? attribute.name.text
+          const attributeName = ts.isIdentifier(attribute.name) ? attribute.name.text : null
+          const eventName = attributeName === 'onClick' || attributeName === 'onSubmit'
+            ? attributeName
             : null
           if (!eventName) continue
           const initializer = attribute.initializer

@@ -622,7 +622,7 @@ export class SessionService {
         `SELECT last_completed_step, cursor
          FROM p2_session_checkpoints
          WHERE session_id = ?
-         ORDER BY created_at DESC
+         ORDER BY created_at DESC, rowid DESC
          LIMIT 1`,
       )
       .get(sessionId) as CheckpointRow | undefined
@@ -1203,7 +1203,7 @@ export class SessionService {
                 created_at, approved_at, applied_at, rejected_at
          FROM p2_learning_proposals
          ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-         ORDER BY created_at DESC
+         ORDER BY created_at DESC, rowid DESC
          LIMIT ?`,
       )
       .all(...params, limit) as LearningProposalRow[]
@@ -1356,7 +1356,7 @@ export class SessionService {
                 gap_evidence, status, reviewed_by, reviewed_at, created_at, updated_at
          FROM p2_scenario_drafts
          ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-         ORDER BY created_at DESC
+         ORDER BY created_at DESC, rowid DESC
          LIMIT ?`,
       )
       .all(...params, limit) as ScenarioDraftRow[]
@@ -1483,7 +1483,7 @@ export class SessionService {
       .prepare(
         `SELECT action_id, action_type, target, reason, automatic, status, metadata, created_at
          FROM p2_healing_actions
-         ORDER BY created_at DESC
+         ORDER BY created_at DESC, rowid DESC
          LIMIT ?`,
       )
       .all(limit) as HealingActionRow[]
@@ -1554,7 +1554,7 @@ export class SessionService {
                 actor, requirements, metadata, created_at
          FROM p2_governance_decisions
          ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-         ORDER BY created_at DESC
+         ORDER BY created_at DESC, rowid DESC
          LIMIT ?`,
       )
       .all(...params, limit) as GovernanceDecisionRow[]
@@ -1625,7 +1625,7 @@ export class SessionService {
                 reason, target, result_json, metadata, created_at
          FROM p2_knowledge_promotion_events
          ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-         ORDER BY created_at DESC
+         ORDER BY created_at DESC, rowid DESC
          LIMIT ?`,
       )
       .all(...params, limit) as KnowledgePromotionEventRow[]
@@ -1743,7 +1743,7 @@ export class SessionService {
                 confidence, status, summary, evidence, metadata, created_at
          FROM p2_l5_learning_signals
          ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-         ORDER BY created_at DESC
+         ORDER BY created_at DESC, rowid DESC
          LIMIT ?`,
       )
       .all(...params, limit) as L5LearningSignalRow[]
@@ -1827,7 +1827,7 @@ export class SessionService {
                 file_path, checksum, metadata, created_at, rolled_back_at
          FROM p2_l5_materializations
          ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-         ORDER BY created_at DESC
+         ORDER BY created_at DESC, rowid DESC
          LIMIT ?`,
       )
       .all(...params, limit) as L5MaterializationRow[]
@@ -1927,7 +1927,7 @@ export class SessionService {
                 verification_json, summary_json, metadata, started_at, completed_at
          FROM p2_l5_closed_loop_runs
          ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-         ORDER BY completed_at DESC
+         ORDER BY completed_at DESC, rowid DESC
          LIMIT ?`,
       )
       .all(...params, limit) as L5ClosedLoopRunRow[]
@@ -1977,7 +1977,7 @@ export class SessionService {
         `SELECT review_id, run_id, status, actor, reason, metadata, created_at
          FROM p2_l5_independent_audit_reviews
          ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-         ORDER BY created_at DESC
+         ORDER BY created_at DESC, rowid DESC
          LIMIT ?`,
       )
       .all(...params, limit) as L5IndependentAuditReviewRow[]

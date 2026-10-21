@@ -621,8 +621,11 @@ function buildCapabilityGraphHintMap(codeGraph: CodeGraph) {
         .map(formatHttpCallHint),
     ])
 
-    const mapping = capabilityNode.metadata['graphMapping']
-    const mappedConfidence = mapping && typeof mapping === 'object' && !Array.isArray(mapping) && typeof mapping['confidence'] === 'number'
+    const rawMapping = capabilityNode.metadata['graphMapping']
+    const mapping = rawMapping && typeof rawMapping === 'object' && !Array.isArray(rawMapping)
+      ? rawMapping as Record<string, unknown>
+      : undefined
+    const mappedConfidence = typeof mapping?.['confidence'] === 'number'
       ? mapping['confidence']
       : Math.max(0, ...supportEdges.map((edge) => edge.confidence ?? 0), handlers.length > 0 ? 0.45 : 0)
     const hasMappedSupport = supportEdges.length > 0
@@ -797,8 +800,12 @@ function applyBackendCapabilityFallback(
     status: 'mapped',
     confidence,
     handlers: expandedHandlers,
+    resolver: existingHint?.resolver,
     endpoints: uniqueStrings([...(existingHint?.endpoints ?? []), formatEndpointHint(endpointNode)]),
     httpCalls: uniqueStrings([...(existingHint?.httpCalls ?? []), ...httpCalls]),
+    handlerIds: uniqueStrings([...(existingHint?.handlerIds ?? []), ...handlerNodeIds, ...downstream.handlerNodeIds, ...upstreamFromHttpCalls.handlerNodeIds]),
+    endpointIds: uniqueStrings([...(existingHint?.endpointIds ?? []), endpointNode.id]),
+    httpCallIds: uniqueStrings([...(existingHint?.httpCallIds ?? []), ...linkedHttpCallIds, ...downstream.httpCallNodeIds]),
   })
 }
 
