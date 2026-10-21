@@ -39,4 +39,4 @@ The scenario runtime, sensors, artifacts, and contract evaluation are the trust 
 
 ## Specs obrigatórias
 
-Antes de alterar runtime, tools, providers LLM, sensors, governance ou orquestração, consulte as specs em `/Users/bruno/0 - github projects/.specs/` (agent-security, agentic-design-patterns, genai-integration-patterns, software-architecture) conforme how-to-use.md de cada uma.
+Antes de alterar runtime, tools, providers LLM, sensors, governance ou orquestração, consulte as specs em `.specs/` (diretório externo, não versionado neste repositório) (agent-security, agentic-design-patterns, genai-integration-patterns, software-architecture) conforme how-to-use.md de cada uma.

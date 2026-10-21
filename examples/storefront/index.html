@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <body>
+    <main>
+      <h1>Generic Storefront</h1>
+      <label>
+        Customer email
+        <input id="customer-email" placeholder="customer@example.com" />
+      </label>
+      <button id="add-item">Add item to cart</button>
+      <p id="cart-count">Cart items: 0</p>
+      <button id="submit-order" disabled>Submit order</button>
+      <output id="feedback"></output>
+    </main>
+    <script>
+      let items = 0
+      const email = document.querySelector('#customer-email')
+      const addItem = document.querySelector('#add-item')
+      const submit = document.querySelector('#submit-order')
+      const count = document.querySelector('#cart-count')
+      const feedback = document.querySelector('#feedback')
+      function refresh() {
+        submit.disabled = !email.value || items === 0
+      }
+      email.addEventListener('input', refresh)
+      addItem.addEventListener('click', () => {
+        items += 1
+        count.textContent = 'Cart items: ' + items
+        refresh()
+      })
+      submit.addEventListener('click', () => {
+        feedback.textContent = 'Order submitted successfully'
+      })
+    </script>
+  </body>
+</html>

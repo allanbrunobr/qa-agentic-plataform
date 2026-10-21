@@ -39,7 +39,7 @@ Artifacts, session events, findings, and contract evaluation are the trust mecha
 
 ## Specs obrigatórias (consultar antes de mudanças relevantes)
 
-As specs de referência vivem em `/Users/bruno/0 - github projects/.specs/`.
+As specs de referência vivem em um diretório `.specs/` externo a este repositório (não versionado aqui); aponte para a sua cópia local.
 Consulte a pasta relevante ANTES de abrir um PR que toque cada área (conforme how-to-use.md de cada família).
 
 - **agent-security/** (`security-best-practices-for-agents.md`, `ai-agent-traps-taxonomy.md`)

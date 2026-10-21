@@ -10,3 +10,4 @@ templates/persona-qa-dashboard/packages/api/artifacts/
 .env
 .env.*
 !.env.example
+examples/*/.agentic-qa/

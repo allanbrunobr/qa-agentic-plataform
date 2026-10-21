@@ -1,0 +1,19 @@
+{
+  "name": "example-storefront",
+  "private": true,
+  "type": "module",
+  "description": "Minimal storefront used to try agentic-platform end to end. index.html is self-contained and can be served by any static server.",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build"
+  },
+  "dependencies": {
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.4.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.0.0"
+  }
+}
