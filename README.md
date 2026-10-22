@@ -9,7 +9,7 @@ Agentic QA for any repository, without touching its code.
 
 `agentic-platform` installs a self-contained `.agentic-qa/` runtime inside a target repository. The runtime reads the repository, infers roles, routes, and scenarios, and runs multi-agent QA flows (Playwright in a real browser for frontends). Each run is checked against deterministic workflow contracts and quality gates.
 
-![Generated dashboard: agentic overview](docs/images/dashboard-overview.png)
+![How it works: discovery, a passing run on the storefront example, then a regression caught as contract_violated](docs/images/how-it-works.gif)
 
 > **Status: alpha.** The runnable path is strongest for web frontends. Backend API, CLI, library, and unknown repositories get draft adapters and deterministic smoke runs, not product validation. See [Scope and limitations](#scope-and-limitations).
 
@@ -47,6 +47,8 @@ Agentic QA for any repository, without touching its code.
 3. **Run.** The launcher starts a local dashboard and API on isolated ports. From the dashboard you start runs. Agents drive the application at `PLAYWRIGHT_BASE_URL`. Each run records events, artifacts, findings, and a contract verdict.
 
 The host application code is never modified. Everything lives in `.agentic-qa/`, which you can delete at any time.
+
+![Generated dashboard: agentic overview](docs/images/dashboard-overview.png)
 
 ## Requirements
 
