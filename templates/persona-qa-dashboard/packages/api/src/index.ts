@@ -19,7 +19,7 @@ import { phase2SessionRoutes } from './phase2/routes/sessions.js';
 import { phase2RunnerRoutes } from './phase2/routes/runner.js';
 
 const PORT = parseInt(process.env['PORT'] ?? '3001', 10);
-const HOST = process.env['HOST'] ?? '0.0.0.0';
+const HOST = process.env['HOST'] ?? '127.0.0.1';
 
 async function buildApp() {
   const app = Fastify({

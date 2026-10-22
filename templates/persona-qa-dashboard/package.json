@@ -7,13 +7,12 @@
     "packages/api"
   ],
   "scripts": {
-    "dev": "docker compose up",
     "dev:web": "cd packages/web && npm run dev",
     "dev:api": "cd packages/api && npm run dev",
     "build": "npm run build --workspaces",
     "start": "npm run start --workspaces"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.5.0"
   }
 }
