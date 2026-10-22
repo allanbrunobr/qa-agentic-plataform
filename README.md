@@ -16,6 +16,7 @@ Agentic QA for any repository, without touching its code.
 ## Contents
 
 - [How it works](#how-it-works)
+- [Design highlights](#design-highlights)
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
@@ -49,6 +50,17 @@ Agentic QA for any repository, without touching its code.
 The host application code is never modified. Everything lives in `.agentic-qa/`, which you can delete at any time.
 
 ![Generated dashboard: agentic overview](docs/images/dashboard-overview.png)
+
+## Design highlights
+
+Some engineering decisions that shape the project:
+
+- **Verdicts come from contracts, not from the model.** Each scenario has a deterministic workflow contract (YAML) with the expected steps, order, capabilities, and artifacts. After a run, the observed run is compared with the contract ("spec vs actual"), and the verdict is `contract_compliant`, `contract_drift`, or `contract_violated`. The agent cannot declare its own success.
+- **Fail closed.** An early version reported a pass when a generic step could not find its control. Now a missing or disabled control fails the step, and the final assertion needs visible success feedback. `npm run test:e2e` guards this in CI: it runs the storefront example, then removes the app's success message and expects `contract_violated`.
+- **Reproducible without a model.** A deterministic runtime drives the same Playwright flows without an API key. CI and the demo use it, so results do not depend on model output.
+- **Non-invasive by construction.** Everything is written to `<repo>/.agentic-qa/`. The runtime binds to localhost, keeps keys in a git-ignored `.env.local` with `0600` permissions, and uses a shim over Node's built-in `node:sqlite`, so there are no native builds in the target repository.
+- **Discovery from code, reviewed by people.** A TypeScript AST scan builds a code graph (routes, forms, buttons, endpoints, HTTP calls). Personas, capabilities, and scenarios are derived from that graph. They are written as generated files, and scenarios stay drafts until a person reviews them.
+- **Governed autonomy.** Tool calls go through a registry with risk policies and a ledger. The self-improvement loops (L4/L5) only propose changes: new scenarios, prompt overlays, and healing actions need approval and are logged. See [docs/architecture.md](docs/architecture.md).
 
 ## Requirements
 
@@ -212,7 +224,6 @@ Other verifiers are available as `npm run verify:<name>`. See the `scripts` sect
 - **Backend API, CLI, library, monorepo, unknown:** discovery classifies the repository and generates draft personas, scenarios, and capability stubs. Runs are deterministic smoke and inspection runs. They make missing mappings visible, but they **do not validate business behavior**. Business validation needs runtime URLs or commands, auth, seed data, and assertions mapped for that repository.
 - **Generated scenarios are review-gated.** They stay drafts until a person maps them.
 - **L5 loops are controlled.** The loops cover coverage gaps, scenario drafts, profile tuning, learning proposals, and self-healing. Their changes are recommendations or drafts, and self-healing is bounded and logged.
-- The generated dashboard UI is partly in Portuguese.
 
 ## Repository layout
 
@@ -236,6 +247,7 @@ Other verifiers are available as `npm run verify:<name>`. See the `scripts` sect
 - [Testing](docs/testing.md): test layers and how to run each one
 - [Decision records](docs/decisions/): why the runtime is host-local, why runs are checked against deterministic contracts, why generic capabilities fail closed, how repository content is treated as untrusted
 - [Contributor and agent guidelines](AGENTIC.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 

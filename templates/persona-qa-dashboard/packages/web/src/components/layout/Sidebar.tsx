@@ -57,7 +57,7 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
         </div>
         {!collapsed && (
           <span className="ml-2.5 text-sm font-semibold text-[var(--text-primary)]">
-            Persona <span className="text-[var(--accent)]">QA</span>
+            Agentic <span className="text-[var(--accent)]">QA</span>
           </span>
         )}
       </div>
@@ -109,7 +109,7 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
       <div className="shrink-0 border-t border-[var(--border)] px-2 py-3">
         {!collapsed && (
           <p className="mb-2 px-2.5 text-[10px] text-[var(--text-muted)]">
-            v1.0.0-alpha
+            v0.1.0 · alpha
           </p>
         )}
         <button

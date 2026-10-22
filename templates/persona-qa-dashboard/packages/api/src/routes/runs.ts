@@ -449,7 +449,7 @@ export async function runsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const now = new Date().toISOString().split('T')[0];
-    let md = `# Operational report — Persona QA\n\n`;
+    let md = `# Operational report — Agentic QA\n\n`;
     md += `**Generated on:** ${now}\n\n`;
     md += `## Overview\n\n`;
     md += `| Metric | Value |\n|---|---|\n`;

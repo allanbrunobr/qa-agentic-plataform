@@ -233,7 +233,7 @@ export const fakeRegisterCustomerHandler: ToolHandler = async (
   const { name, phone } = input as RegisterCustomerInput
   const fallbackName = typeof context.artifacts?.['customerName'] === 'string' ? String(context.artifacts['customerName']) : undefined
   const fallbackPhone = typeof context.artifacts?.['customerPhone'] === 'string' ? String(context.artifacts['customerPhone']) : undefined
-  const resolvedName = name ?? fallbackName ?? 'Persona QA Customer'
+  const resolvedName = name ?? fallbackName ?? 'Agentic QA Customer'
   const resolvedPhone = phone ?? fallbackPhone ?? null
 
   return {
@@ -330,7 +330,7 @@ export const fakeCreateOrderHandler: ToolHandler = async (
     ? customerName
     : typeof context.artifacts?.['customerName'] === 'string'
       ? String(context.artifacts['customerName'])
-      : 'Persona QA Customer'
+      : 'Agentic QA Customer'
   const customerId = typeof context.artifacts?.['customerId'] === 'string'
     ? String(context.artifacts['customerId'])
     : stableFakeId('customer', resolvedCustomerName)

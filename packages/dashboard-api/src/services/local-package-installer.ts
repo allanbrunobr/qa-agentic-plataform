@@ -84,7 +84,7 @@ async function writeInstalledDocs(installedPath: string) {
     [
       '# Agentic QA Local Runtime',
       '',
-      'This directory contains host-local documentation for the generated Persona QA dashboard.',
+      'This directory contains host-local documentation for the generated Agentic QA dashboard.',
       '',
       'The runtime is generated from the target repository discovery output. Personas, scenarios, capabilities, workflow contracts, and runtime mappings live under `adapter/`.',
       '',
