@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please do not open a public issue for security problems. Use GitHub's
-[private vulnerability reporting](https://github.com/allanbrunobr/qa-agentic-plataform/security/advisories/new)
+[private vulnerability reporting](https://github.com/allanbrunobr/qa-agentic-platform/security/advisories/new)
 instead. Include the affected version or commit, steps to reproduce, and the impact you expect.
 
 You should get a first answer within 7 days.

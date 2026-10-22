@@ -1,6 +1,6 @@
 # Agentic Platform
 
-[![CI](https://github.com/allanbrunobr/qa-agentic-plataform/actions/workflows/ci.yml/badge.svg)](https://github.com/allanbrunobr/qa-agentic-plataform/actions/workflows/ci.yml)
+[![CI](https://github.com/allanbrunobr/qa-agentic-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/allanbrunobr/qa-agentic-platform/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D22.13-339933?logo=node.js&logoColor=white)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
@@ -67,8 +67,8 @@ This walkthrough uses the bundled example app in [`examples/storefront`](example
 **1. Clone and install**
 
 ```bash
-git clone https://github.com/allanbrunobr/qa-agentic-plataform.git
-cd qa-agentic-plataform
+git clone https://github.com/allanbrunobr/qa-agentic-platform.git
+cd qa-agentic-platform
 npm install
 ```
 

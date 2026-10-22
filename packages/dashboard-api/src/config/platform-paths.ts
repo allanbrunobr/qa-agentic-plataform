@@ -4,7 +4,7 @@ import path from 'node:path'
  * Portable path resolution for the agentic-platform.
  *
  * Never hardcode author machine paths. All data and adapter roots are resolved
- * relative to process.cwd() (run commands from the qa-agentic-plataform checkout)
+ * relative to process.cwd() (run commands from the qa-agentic-platform checkout)
  * or overridden via environment variables for CI / alternate layouts.
  *
  * Rationale: portability, least privilege, no personal state in source.
