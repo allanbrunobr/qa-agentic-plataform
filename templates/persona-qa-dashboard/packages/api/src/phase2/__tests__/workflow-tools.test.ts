@@ -1,16 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ToolRegistry } from '../services/tool-registry.js'
 import {
-  createCustomerHandler,
-  createCustomerMetadata,
-  completeFulfillmentHandler,
-  completeFulfillmentMetadata,
-  findBillingGuideByEventIdHandler,
-  findBillingGuideByEventIdMetadata,
+  registerCustomerHandler,
+  registerCustomerMetadata,
+  fulfillOrderHandler,
+  fulfillOrderMetadata,
+  findInvoiceByOrderIdHandler,
+  findInvoiceByOrderIdMetadata,
   openOrderDetailsHandler,
   openOrderDetailsMetadata,
-  scheduleOrderHandler,
-  scheduleOrderMetadata,
+  createOrderHandler,
+  createOrderMetadata,
   verifyFinanceDashboardHandler,
   verifyFinanceDashboardMetadata,
   verifyReportsPageHandler,
@@ -21,7 +21,7 @@ import {
   phase1OrderDetailsModuleHref,
   phase1CustomersModuleHref,
   phase1ReportsModuleHref,
-  phase1BillingModuleHref,
+  phase1InvoicesModuleHref,
   setWorkflowCapabilityImporterForTest,
 } from '../tools/workflow-tools.js'
 
@@ -42,9 +42,9 @@ describe('workflow-tools', () => {
     return module
   }
 
-  describe('createCustomerHandler', () => {
+  describe('registerCustomerHandler', () => {
     it('returns error when name is missing', async () => {
-      const result = await createCustomerHandler({}, { page: {} })
+      const result = await registerCustomerHandler({}, { page: {} })
       expect(result).toEqual({
         ok: false,
         error: { code: 'invalid_input', message: 'name is required', retryable: false },
@@ -52,39 +52,39 @@ describe('workflow-tools', () => {
     })
 
     it('returns error when page is missing from context', async () => {
-      const result = await createCustomerHandler({ name: 'Test' }, {})
+      const result = await registerCustomerHandler({ name: 'Test' }, {})
       expect(result).toEqual({
         ok: false,
         error: { code: 'missing_context', message: expect.stringContaining('page'), retryable: false },
       })
     })
 
-    it('calls Phase 1 createCustomer and returns ToolResult on success', async () => {
+    it('calls Phase 1 registerCustomer and returns ToolResult on success', async () => {
       const customers = mockCapabilityModule(phase1CustomersModuleHref, {
-        createCustomer: vi.fn().mockResolvedValue({ customerId: '42' }),
+        registerCustomer: vi.fn().mockResolvedValue({ customerId: '42' }),
       })
 
       const mockPage = { url: () => 'http://test' }
-      const result = await createCustomerHandler({ name: 'João Silva', phone: '11999990000' }, { page: mockPage })
+      const result = await registerCustomerHandler({ name: 'Alex Silva', phone: '5550100' }, { page: mockPage })
 
       expect(result).toEqual({
         ok: true,
         output: {
           customerId: '42',
-          customerName: 'João Silva',
-          customerPhone: '11999990000',
-          phone: '11999990000',
+          customerName: 'Alex Silva',
+          customerPhone: '5550100',
+          phone: '5550100',
         },
       })
-      expect(customers.createCustomer).toHaveBeenCalledWith(mockPage, { name: 'João Silva', phone: '11999990000' })
+      expect(customers.registerCustomer).toHaveBeenCalledWith(mockPage, { name: 'Alex Silva', phone: '5550100' })
     })
 
     it('catches capability errors and returns ToolResult with retryable flag', async () => {
       mockCapabilityModule(phase1CustomersModuleHref, {
-        createCustomer: vi.fn().mockRejectedValue(new Error('Timeout waiting for selector')),
+        registerCustomer: vi.fn().mockRejectedValue(new Error('Timeout waiting for selector')),
       })
 
-      const result = await createCustomerHandler({ name: 'Test' }, { page: {} })
+      const result = await registerCustomerHandler({ name: 'Test' }, { page: {} })
       expect(result).toEqual({
         ok: false,
         error: { code: 'capability_error', message: 'Timeout waiting for selector', retryable: true },
@@ -93,8 +93,8 @@ describe('workflow-tools', () => {
 
     it('recovers customerId when Phase 1 saved but read the URL too early', async () => {
       const customers = mockCapabilityModule(phase1CustomersModuleHref, {
-        createCustomer: vi.fn().mockRejectedValue(new Error(
-          'Failed to extract customerId after creating customer "Maria". URL: http://localhost:3012/customers/adicionar/1/',
+        registerCustomer: vi.fn().mockRejectedValue(new Error(
+          'Failed to extract customerId after creating customer "Maria". URL: http://localhost:3012/customers/new/1/',
         )),
         findCustomerByName: vi.fn().mockResolvedValue('77'),
       })
@@ -104,7 +104,7 @@ describe('workflow-tools', () => {
         waitForURL: vi.fn().mockResolvedValue(undefined),
         waitForLoadState: vi.fn().mockResolvedValue(undefined),
       }
-      const result = await createCustomerHandler({ name: 'Maria' }, { page: mockPage })
+      const result = await registerCustomerHandler({ name: 'Maria' }, { page: mockPage })
 
       expect(result).toEqual({
         ok: true,
@@ -116,14 +116,14 @@ describe('workflow-tools', () => {
           recoveredFrom: 'customer_id_extraction_failure',
         },
       })
-      expect(customers.createCustomer).toHaveBeenCalledWith(mockPage, { name: 'Maria', phone: undefined })
+      expect(customers.registerCustomer).toHaveBeenCalledWith(mockPage, { name: 'Maria', phone: undefined })
       expect(customers.findCustomerByName).toHaveBeenCalledWith(mockPage, 'Maria')
     })
   })
 
-  describe('scheduleOrderHandler', () => {
+  describe('createOrderHandler', () => {
     it('returns error when customerName is missing', async () => {
-      const result = await scheduleOrderHandler({}, { page: {} })
+      const result = await createOrderHandler({}, { page: {} })
       expect(result).toEqual({
         ok: false,
         error: { code: 'invalid_input', message: 'customerName is required', retryable: false },
@@ -131,36 +131,36 @@ describe('workflow-tools', () => {
     })
 
     it('returns error when page is missing', async () => {
-      const result = await scheduleOrderHandler({ customerName: 'Test' }, {})
+      const result = await createOrderHandler({ customerName: 'Test' }, {})
       expect(result).toEqual({
         ok: false,
         error: { code: 'missing_context', message: expect.stringContaining('page'), retryable: false },
       })
     })
 
-    it('calls Phase 1 scheduleOrder and returns ToolResult on success', async () => {
+    it('calls Phase 1 createOrder and returns ToolResult on success', async () => {
       const orders = mockCapabilityModule(phase1OrdersModuleHref, {
-        scheduleOrder: vi.fn().mockResolvedValue({ eventId: '99' }),
+        createOrder: vi.fn().mockResolvedValue({ orderId: '99' }),
       })
 
       const mockPage = { url: () => 'http://test' }
-      const result = await scheduleOrderHandler(
-        { customerName: 'João Silva', date: '2026-04-15' },
+      const result = await createOrderHandler(
+        { customerName: 'Alex Silva', date: '2026-04-15' },
         { page: mockPage },
       )
 
       expect(result).toEqual({
         ok: true,
         output: {
-          eventId: '99',
-          customerName: 'João Silva',
+          orderId: '99',
+          customerName: 'Alex Silva',
           orderDate: '2026-04-15',
           orderTime: null,
           orderType: null,
         },
       })
-      expect(orders.scheduleOrder).toHaveBeenCalledWith(mockPage, {
-        customerName: 'João Silva',
+      expect(orders.createOrder).toHaveBeenCalledWith(mockPage, {
+        customerName: 'Alex Silva',
         date: '2026-04-15',
         time: undefined,
         type: undefined,
@@ -169,30 +169,30 @@ describe('workflow-tools', () => {
 
     it('falls back to customerName from artifacts when model sends a generic placeholder', async () => {
       const orders = mockCapabilityModule(phase1OrdersModuleHref, {
-        scheduleOrder: vi.fn().mockResolvedValue({ eventId: '100' }),
+        createOrder: vi.fn().mockResolvedValue({ orderId: '100' }),
       })
 
       const mockPage = { url: () => 'http://test' }
-      const result = await scheduleOrderHandler(
+      const result = await createOrderHandler(
         { customerName: 'Customer' },
-        { page: mockPage, artifacts: { customerName: 'Maria Fase 2', orderType: 'Primeira Pedido' } },
+        { page: mockPage, artifacts: { customerName: 'Phase 2 Customer', orderType: 'standard' } },
       )
 
       expect(result).toEqual({
         ok: true,
         output: {
-          eventId: '100',
-          customerName: 'Maria Fase 2',
+          orderId: '100',
+          customerName: 'Phase 2 Customer',
           orderDate: null,
           orderTime: null,
-          orderType: 'Primeira Pedido',
+          orderType: 'standard',
         },
       })
-      expect(orders.scheduleOrder).toHaveBeenCalledWith(mockPage, {
-        customerName: 'Maria Fase 2',
+      expect(orders.createOrder).toHaveBeenCalledWith(mockPage, {
+        customerName: 'Phase 2 Customer',
         date: undefined,
         time: undefined,
-        type: 'Primeira Pedido',
+        type: 'standard',
       })
     })
   })
@@ -209,17 +209,17 @@ describe('workflow-tools', () => {
     it('opens order details using Phase 1 capability', async () => {
       const orderDetails = mockCapabilityModule(phase1OrderDetailsModuleHref, {
         openOrderDetails: vi.fn().mockResolvedValue(undefined),
-        completeFulfillment: vi.fn().mockResolvedValue(undefined),
+        fulfillOrder: vi.fn().mockResolvedValue(undefined),
       })
 
       const mockPage = { url: () => 'http://test' }
-      const result = await openOrderDetailsHandler({ customerId: '42', eventId: '99' }, { page: mockPage })
+      const result = await openOrderDetailsHandler({ customerId: '42', orderId: '99' }, { page: mockPage })
 
       expect(result).toEqual({
         ok: true,
         output: {
           customerId: '42',
-          eventId: '99',
+          orderId: '99',
           orderDetailsOpened: true,
         },
       })
@@ -227,83 +227,83 @@ describe('workflow-tools', () => {
     })
   })
 
-  describe('completeFulfillmentHandler', () => {
-    it('falls back to artifacts and completes fulfillment', async () => {
+  describe('fulfillOrderHandler', () => {
+    it('falls back to artifacts and fulfills the order', async () => {
       const orderDetails = mockCapabilityModule(phase1OrderDetailsModuleHref, {
         openOrderDetails: vi.fn().mockResolvedValue(undefined),
-        completeFulfillment: vi.fn().mockResolvedValue(undefined),
+        fulfillOrder: vi.fn().mockResolvedValue(undefined),
       })
 
       const mockPage = { url: () => 'http://test' }
-      const result = await completeFulfillmentHandler(
+      const result = await fulfillOrderHandler(
         {},
-        { page: mockPage, artifacts: { customerId: '123', eventId: '456' } },
+        { page: mockPage, artifacts: { customerId: '123', orderId: '456' } },
       )
 
       expect(result).toEqual({
         ok: true,
         output: {
           customerId: '123',
-          eventId: '456',
+          orderId: '456',
           orderDetailsOpened: true,
-          fulfillmentCompleted: true,
+          orderFulfilled: true,
         },
       })
       expect(orderDetails.openOrderDetails).toHaveBeenCalledWith(mockPage, '123', '456')
-      expect(orderDetails.completeFulfillment).toHaveBeenCalledWith(mockPage)
+      expect(orderDetails.fulfillOrder).toHaveBeenCalledWith(mockPage)
     })
   })
 
-  describe('findBillingGuideByEventIdHandler', () => {
-    it('returns error when eventId is missing', async () => {
-      const result = await findBillingGuideByEventIdHandler({}, { page: {} })
+  describe('findInvoiceByOrderIdHandler', () => {
+    it('returns error when orderId is missing', async () => {
+      const result = await findInvoiceByOrderIdHandler({}, { page: {} })
       expect(result).toEqual({
         ok: false,
-        error: { code: 'invalid_input', message: 'eventId is required', retryable: false },
+        error: { code: 'invalid_input', message: 'orderId is required', retryable: false },
       })
     })
 
     it('returns review output even when no guide exists', async () => {
-      mockCapabilityModule(phase1BillingModuleHref, {
-        findGuideByEventId: vi.fn().mockResolvedValue(null),
+      mockCapabilityModule(phase1InvoicesModuleHref, {
+        findInvoiceByOrderId: vi.fn().mockResolvedValue(null),
       })
 
-      const result = await findBillingGuideByEventIdHandler({}, {
+      const result = await findInvoiceByOrderIdHandler({}, {
         page: {},
-        artifacts: { eventId: 'evt-1' },
+        artifacts: { orderId: 'evt-1' },
       })
 
       expect(result).toEqual({
         ok: true,
         output: {
-          eventId: 'evt-1',
-          billingGuideReviewed: true,
-          billingGuideFound: false,
-          billingGuideId: null,
-          billingGuideText: null,
+          orderId: 'evt-1',
+          invoiceReviewed: true,
+          invoiceFound: false,
+          invoiceId: null,
+          invoiceText: null,
         },
       })
     })
 
     it('returns guide details when a guide is found', async () => {
-      mockCapabilityModule(phase1BillingModuleHref, {
-        findGuideByEventId: vi.fn().mockResolvedValue({
+      mockCapabilityModule(phase1InvoicesModuleHref, {
+        findInvoiceByOrderId: vi.fn().mockResolvedValue({
           id: 'guide-1',
-          eventId: 'evt-2',
+          orderId: 'evt-2',
           text: 'Guide row',
         }),
       })
 
-      const result = await findBillingGuideByEventIdHandler({ eventId: 'evt-2' }, { page: {} })
+      const result = await findInvoiceByOrderIdHandler({ orderId: 'evt-2' }, { page: {} })
 
       expect(result).toEqual({
         ok: true,
         output: {
-          eventId: 'evt-2',
-          billingGuideReviewed: true,
-          billingGuideFound: true,
-          billingGuideId: 'guide-1',
-          billingGuideText: 'Guide row',
+          orderId: 'evt-2',
+          invoiceReviewed: true,
+          invoiceFound: true,
+          invoiceId: 'guide-1',
+          invoiceText: 'Guide row',
         },
       })
     })
@@ -316,12 +316,12 @@ describe('workflow-tools', () => {
         assertDashboardLoaded: vi.fn().mockResolvedValue(undefined),
       })
 
-      const result = await verifyFinanceDashboardHandler({ eventId: 'evt-3' }, { page: {} })
+      const result = await verifyFinanceDashboardHandler({ orderId: 'evt-3' }, { page: {} })
 
       expect(result).toEqual({
         ok: true,
         output: {
-          eventId: 'evt-3',
+          orderId: 'evt-3',
           financeValidated: true,
         },
       })
@@ -335,12 +335,12 @@ describe('workflow-tools', () => {
         assertReportsPageLoaded: vi.fn().mockResolvedValue(undefined),
       })
 
-      const result = await verifyReportsPageHandler({ eventId: 'evt-4' }, { page: {} })
+      const result = await verifyReportsPageHandler({ orderId: 'evt-4' }, { page: {} })
 
       expect(result).toEqual({
         ok: true,
         output: {
-          eventId: 'evt-4',
+          orderId: 'evt-4',
           reportsValidated: true,
         },
       })
@@ -352,11 +352,11 @@ describe('workflow-tools', () => {
       const registry = new ToolRegistry()
       registerWorkflowTools(registry)
 
-      expect(registry.has('createCustomer')).toBe(true)
-      expect(registry.has('scheduleOrder')).toBe(true)
+      expect(registry.has('registerCustomer')).toBe(true)
+      expect(registry.has('createOrder')).toBe(true)
       expect(registry.has('openOrderDetails')).toBe(true)
-      expect(registry.has('completeFulfillment')).toBe(true)
-      expect(registry.has('findBillingGuideByEventId')).toBe(true)
+      expect(registry.has('fulfillOrder')).toBe(true)
+      expect(registry.has('findInvoiceByOrderId')).toBe(true)
       expect(registry.has('verifyFinanceDashboard')).toBe(true)
       expect(registry.has('verifyReportsPage')).toBe(true)
 
@@ -367,16 +367,16 @@ describe('workflow-tools', () => {
   })
 
   describe('integration: execute through registry', () => {
-    it('executes createCustomer through registry with policy check', async () => {
+    it('executes registerCustomer through registry with policy check', async () => {
       mockCapabilityModule(phase1CustomersModuleHref, {
-        createCustomer: vi.fn().mockResolvedValue({ customerId: '7' }),
+        registerCustomer: vi.fn().mockResolvedValue({ customerId: '7' }),
       })
 
       const registry = new ToolRegistry()
       registerWorkflowTools(registry)
 
       const result = await registry.execute(
-        'createCustomer',
+        'registerCustomer',
         { name: 'Maria' },
         { browserAccess: true },
         { page: {} },
@@ -393,12 +393,12 @@ describe('workflow-tools', () => {
       })
     })
 
-    it('blocks createCustomer when browser access denied by policy', async () => {
+    it('blocks registerCustomer when browser access denied by policy', async () => {
       const registry = new ToolRegistry()
       registerWorkflowTools(registry)
 
       const result = await registry.execute(
-        'createCustomer',
+        'registerCustomer',
         { name: 'Maria' },
         { browserAccess: false },
         { page: {} },

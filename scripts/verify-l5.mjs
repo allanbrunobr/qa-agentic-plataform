@@ -61,7 +61,7 @@ const steps = [
       ],
     cwd: apiRoot,
     env: {
-      PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS: '1',
+      PERSONA_QA_USE_REFERENCE_SCENARIOS: '1',
     },
   },
   {
@@ -72,7 +72,7 @@ const steps = [
       : ['run', 'verify:l5:soak'],
     cwd: repoRoot,
     env: {
-      PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS: '1',
+      PERSONA_QA_USE_REFERENCE_SCENARIOS: '1',
     },
   },
   {

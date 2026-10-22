@@ -7,19 +7,19 @@ export const referenceStoreGeneratedRoutes: AdapterRouteModel[] = [
     "purpose": "module: Customers"
   },
   {
-    "id": "schedule",
+    "id": "orders",
     "path": "/TODO",
-    "purpose": "module: Schedule"
+    "purpose": "module: Orders"
   },
   {
     "id": "order-details",
     "path": "/TODO",
-    "purpose": "module: Order details"
+    "purpose": "module: Order Details"
   },
   {
-    "id": "billing",
+    "id": "invoices",
     "path": "/TODO",
-    "purpose": "module: Billing"
+    "purpose": "module: Invoices"
   },
   {
     "id": "finance",

@@ -8,26 +8,13 @@ export async function runDiscoverLocalCommand(args: string[]) {
     throw new Error('discover-local requires <repoPath> [adapterHint]')
   }
 
-  const previousLegacyStoreFallback = process.env.AGENTIC_PLATFORM_ENABLE_LEGACY_STORE_FALLBACK
-  if (adapterHint === 'reference-store') {
-    process.env.AGENTIC_PLATFORM_ENABLE_LEGACY_STORE_FALLBACK = '1'
-  }
+  const bootstrap = await runBootstrap({ repoPath, adapterHint })
+  const local = await materializeLocalDiscovery({
+    repoPath,
+    report: bootstrap.report,
+    draft: bootstrap.draft,
+  })
 
-  try {
-    const bootstrap = await runBootstrap({ repoPath, adapterHint })
-    const local = await materializeLocalDiscovery({
-      repoPath,
-      report: bootstrap.report,
-      draft: bootstrap.draft,
-    })
-
-    process.stdout.write(`${JSON.stringify({ ...bootstrap, ...local }, null, 2)}
+  process.stdout.write(`${JSON.stringify({ ...bootstrap, ...local }, null, 2)}
 `)
-  } finally {
-    if (previousLegacyStoreFallback === undefined) {
-      delete process.env.AGENTIC_PLATFORM_ENABLE_LEGACY_STORE_FALLBACK
-    } else {
-      process.env.AGENTIC_PLATFORM_ENABLE_LEGACY_STORE_FALLBACK = previousLegacyStoreFallback
-    }
-  }
 }

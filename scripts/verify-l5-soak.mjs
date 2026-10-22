@@ -37,7 +37,7 @@ const result = spawnSync(releaseNpmCliPath ? releaseNodePath : 'npm', releaseNpm
     ...process.env,
     NODE_NO_WARNINGS: process.env.NODE_NO_WARNINGS ?? '1',
     PATH: releasePath,
-    PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS: '1',
+    PERSONA_QA_USE_REFERENCE_SCENARIOS: '1',
   },
   stdio: 'inherit',
 })

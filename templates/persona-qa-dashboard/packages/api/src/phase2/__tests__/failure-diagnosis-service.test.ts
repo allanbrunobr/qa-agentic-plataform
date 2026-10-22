@@ -10,7 +10,7 @@ describe('FailureDiagnosisService', () => {
       retryable: false,
     })
 
-    expect(diagnoseFailureMessage('Login timeout para dev@reference-store.example')).toMatchObject({
+    expect(diagnoseFailureMessage('Login timeout para dev@example.test')).toMatchObject({
       rootCause: 'application_login',
       failureCategory: 'auth',
       retryable: true,
@@ -21,10 +21,10 @@ describe('FailureDiagnosisService', () => {
     expect(diagnoseFailureMessage('net::ERR_CONNECTION_REFUSED at http://localhost:3012')).toMatchObject({
       rootCause: 'backend_unavailable',
     })
-    expect(diagnoseFailureMessage("Locator: getByRole('button', { name: 'Finalizar atendimento' }) Expected: visible")).toMatchObject({
+    expect(diagnoseFailureMessage("Locator: getByRole('button', { name: 'Finalizar pedido' }) Expected: visible")).toMatchObject({
       rootCause: 'ui_selector',
     })
-    expect(diagnoseFailureMessage('Missing handoff contract for step create_customer')).toMatchObject({
+    expect(diagnoseFailureMessage('Missing handoff contract for step register_customer')).toMatchObject({
       rootCause: 'workflow_contract',
     })
     expect(diagnoseFailureMessage("TypeError: Cannot read properties of undefined (reading 'startedAt')")).toMatchObject({
@@ -37,13 +37,13 @@ describe('FailureDiagnosisService', () => {
     const service = new SessionService(':memory:')
     const session = service.createSession('first_order')
 
-    service.addEvent(session.id, 'step_completed', { stepId: 'create_customer' })
+    service.addEvent(session.id, 'step_completed', { stepId: 'register_customer' })
     service.addEvent(session.id, 'tool_result', {
-      toolName: 'completeFulfillment',
+      toolName: 'fulfillOrder',
       ok: false,
       error: { code: 'capability_error', message: 'Cannot find module support/auth/login.ts' },
-      stepId: 'complete_fulfillment',
-      agentId: 'fulfillment-agent',
+      stepId: 'fulfill_order',
+      agentId: 'fulfillment_agent',
     })
 
     const diagnosis = diagnoseSessionFailure(service.getSession(session.id)!)
@@ -52,8 +52,8 @@ describe('FailureDiagnosisService', () => {
       rootCause: 'capability_module',
       failureCategory: 'capability',
       sourceEventType: 'tool_result',
-      sourceStepId: 'complete_fulfillment',
-      sourceAgentId: 'fulfillment-agent',
+      sourceStepId: 'fulfill_order',
+      sourceAgentId: 'fulfillment_agent',
     })
   })
 })

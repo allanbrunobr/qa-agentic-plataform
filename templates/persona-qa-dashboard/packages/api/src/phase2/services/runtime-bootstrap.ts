@@ -44,7 +44,11 @@ export function createPhase2Runtime(options: Phase2RuntimeOptions = {}) {
   }
   const toolRegistry = new ToolRegistry()
 
-  registerWorkflowTools(toolRegistry)
+  // Reference-domain workflow tools are only used by the bundled reference
+  // scenarios (and deterministic fake verification); generic runtimes skip them.
+  if (process.env.PERSONA_QA_USE_REFERENCE_SCENARIOS === '1' || process.env.AGENTIC_QA_FAKE_WORKFLOW_TOOLS === '1') {
+    registerWorkflowTools(toolRegistry)
+  }
   registerEvidenceTools(toolRegistry, sessionService)
   registerGeneratedAdapterTools(toolRegistry)
 

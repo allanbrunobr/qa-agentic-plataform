@@ -11,3 +11,6 @@ templates/persona-qa-dashboard/packages/api/artifacts/
 .env.*
 !.env.example
 examples/*/.agentic-qa/
+*.db
+*.db-shm
+*.db-wal

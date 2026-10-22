@@ -95,8 +95,8 @@ export interface Insight {
 // --- Persona colors lookup ---
 
 export const PERSONA_COLORS: Record<string, string> = {
-  'Dr. Carlos': '#3b82f6',
-  'Dr. Carlos Mendes': '#3b82f6',
+  'Carlos': '#3b82f6',
+  'Carlos Mendes': '#3b82f6',
   'Ana Silva': '#a855f7',
   'Roberto Costa': '#22c55e',
   'Fernanda Lima': '#f97316',

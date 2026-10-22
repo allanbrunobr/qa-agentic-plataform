@@ -95,7 +95,7 @@ function detectFramework(
 function buildGenericDraft(
   sourceText: string,
   repository: RepositoryClassification,
-  inferredDomain: string | undefined,
+  _inferredDomain: string | undefined,
   backendEndpointCandidates: Array<{ method: string; path: string }>,
 ): BootstrapDraft {
   if (repository.kind === 'backend_api') {
@@ -242,33 +242,6 @@ function buildGenericDraft(
       hostNotes: [
         'Fallback adapter generated because repository type is ambiguous or unsupported.',
         'No scenario should be promoted to runnable until a concrete runtime is selected.',
-      ],
-    }
-  }
-
-  if (inferredDomain === 'retail') {
-    return {
-      personas: [
-        {
-          id: 'care_coordinator',
-          title: 'Care Coordinator',
-          rationale: 'Validates the primary operational workflow surfaced by the detected retail UI.',
-          allowedTools: ['startFulfillment', 'generateDispatchReport', 'endFulfillment', 'captureScreenshot'],
-        },
-      ],
-      scenarios: [
-        {
-          id: 'operational_fulfillment_smoke',
-          title: 'Operational fulfillment smoke flow',
-          participatingRoles: ['care_coordinator'],
-          rationale: 'Generated from retail-specific UI evidence and domain inference.',
-          candidateSteps: ['start_fulfillment', 'generate_dispatch_report', 'end_fulfillment'],
-        },
-      ],
-      capabilityCandidates: ['startFulfillment', 'generateDispatchReport', 'endFulfillment', 'captureScreenshot'],
-      hostNotes: [
-        'Generic frontend adapter generated from retail-specific static evidence.',
-        'Replace generated capability stubs with host-specific Playwright actions before certifying this adapter.',
       ],
     }
   }

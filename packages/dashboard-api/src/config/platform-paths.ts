@@ -7,8 +7,8 @@ import path from 'node:path'
  * relative to process.cwd() (run commands from the qa-agentic-plataform checkout)
  * or overridden via environment variables for CI / alternate layouts.
  *
- * See AGENTIC.md and docs/SPEC_ADHERENCE_AUDIT_2026-06-11.md for rationale
- * (ARCH-004 portability, least-privilege, no personal state in source).
+ * Rationale: portability, least privilege, no personal state in source.
+ * See AGENTIC.md and docs/architecture.md.
  */
 
 export const PLATFORM_ROOT =

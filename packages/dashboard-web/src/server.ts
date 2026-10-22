@@ -450,7 +450,7 @@ const html = `<!doctype html>
           </div>
           <div>
             <label for="simulateRetryStep">Simulate retry on step</label>
-            <input id="simulateRetryStep" placeholder="example: create_customer" />
+            <input id="simulateRetryStep" placeholder="example: register_customer" />
           </div>
           <div class="actions">
             <button id="initializeBtn">Start Run</button>

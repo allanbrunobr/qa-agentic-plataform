@@ -13,7 +13,7 @@ function makeContext(overrides?: Partial<SensorContext>): SensorContext {
   const step: ScenarioStep = {
     id: 'step_1',
     name: 'Create Customer',
-    agentId: 'sales-associate',
+    agentId: 'sales_associate',
     order: 0,
     requiredArtifacts: [],
     producedArtifacts: ['customerId'],
@@ -23,10 +23,10 @@ function makeContext(overrides?: Partial<SensorContext>): SensorContext {
   return {
     sessionId: 'session_1',
     step,
-    agentId: 'sales-associate',
+    agentId: 'sales_associate',
     stepOutput: {
       stepIndex: 0,
-      agentId: 'sales-associate',
+      agentId: 'sales_associate',
       output: { customerId: '123' },
       toolCalls: [],
       durationMs: 100,
@@ -38,7 +38,7 @@ function makeContext(overrides?: Partial<SensorContext>): SensorContext {
       status: 'running',
       startedAt: new Date().toISOString(),
       events: [],
-      artifacts: { customerId: '123', eventId: '456' },
+      artifacts: { customerId: '123', orderId: '456' },
       findings: [],
       checkpoint: { lastCompletedStep: -1, cursor: 0 },
     },
@@ -47,7 +47,7 @@ function makeContext(overrides?: Partial<SensorContext>): SensorContext {
       name: 'Test',
       steps: [step],
       roles: [],
-      requiredArtifacts: ['customerId', 'eventId'],
+      requiredArtifacts: ['customerId', 'orderId'],
       allowedTools: [],
     },
     ...overrides,
@@ -69,16 +69,16 @@ describe('ArtifactSensor', () => {
       step: {
         id: 'step_2',
         name: 'Schedule Order',
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         order: 1,
         requiredArtifacts: ['customerId'],
-        producedArtifacts: ['eventId'],
+        producedArtifacts: ['orderId'],
         timeoutMs: 30000,
       },
       stepOutput: {
         stepIndex: 1,
-        agentId: 'sales-associate',
-        output: { eventId: '456' },
+        agentId: 'sales_associate',
+        output: { orderId: '456' },
         toolCalls: [],
         durationMs: 100,
         success: true,
@@ -110,9 +110,9 @@ describe('ArtifactSensor', () => {
       step: {
         id: 'step_2',
         name: 'Schedule Order',
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         order: 1,
-        requiredArtifacts: ['customerId', 'eventId'],
+        requiredArtifacts: ['customerId', 'orderId'],
         producedArtifacts: [],
         timeoutMs: 30000,
       },
@@ -122,7 +122,7 @@ describe('ArtifactSensor', () => {
         status: 'running',
         startedAt: new Date().toISOString(),
         events: [],
-        artifacts: { customerId: '123' }, // missing eventId
+        artifacts: { customerId: '123' }, // missing orderId
         findings: [],
         checkpoint: { lastCompletedStep: -1, cursor: 0 },
       },
@@ -130,7 +130,7 @@ describe('ArtifactSensor', () => {
 
     const result = await artifactSensor(context);
     expect(result.status).toBe('fail');
-    expect(result.details['missing']).toContain('eventId');
+    expect(result.details['missing']).toContain('orderId');
   });
 
   it('should fail when no required step artifacts are available', async () => {
@@ -138,9 +138,9 @@ describe('ArtifactSensor', () => {
       step: {
         id: 'step_2',
         name: 'Schedule Order',
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         order: 1,
-        requiredArtifacts: ['customerId', 'eventId'],
+        requiredArtifacts: ['customerId', 'orderId'],
         producedArtifacts: [],
         timeoutMs: 30000,
       },
@@ -158,7 +158,7 @@ describe('ArtifactSensor', () => {
 
     const result = await artifactSensor(context);
     expect(result.status).toBe('fail');
-    expect(result.details['missing']).toEqual(['eventId']);
+    expect(result.details['missing']).toEqual(['orderId']);
   });
 });
 
@@ -175,9 +175,9 @@ describe('ToolPolicySensor', () => {
     const context = makeContext({
       stepOutput: {
         stepIndex: 0,
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         output: { customerId: '123' },
-        toolCalls: [{ tool: 'createCustomer', args: {} }],
+        toolCalls: [{ tool: 'registerCustomer', args: {} }],
         durationMs: 100,
         success: true,
       },
@@ -243,7 +243,7 @@ describe('TimeoutSensor', () => {
     const context = makeContext({
       stepOutput: {
         stepIndex: 0,
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         output: {},
         toolCalls: [],
         durationMs: 35000,
@@ -261,7 +261,7 @@ describe('TimeoutSensor', () => {
       step: {
         id: 'step_1',
         name: 'Test',
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         order: 0,
         requiredArtifacts: [],
         producedArtifacts: [],

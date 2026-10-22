@@ -119,7 +119,6 @@ export function Overview() {
   const [selectedClosedLoopRunId, setSelectedClosedLoopRunId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedScenario, setSelectedScenario] = useState<string>(initialScenarioFromHash ?? '')
-  const [customerName, setCustomerName] = useState('')
   const [targetBaseUrl, setTargetBaseUrl] = useState('')
   const [branchName, setBranchName] = useState('')
   const [prNumber, setPrNumber] = useState('')
@@ -357,7 +356,6 @@ export function Overview() {
     try {
       const result = await api.startPhase2Run({
         scenario_id: selectedScenario,
-        customer_name: customerName.trim() || undefined,
         execution_context: buildExecutionContext({
           targetBaseUrl,
           branchName,
@@ -1065,17 +1063,7 @@ export function Overview() {
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
-            <div>
-              <label className="mb-2 block text-xs uppercase tracking-wide text-[var(--text-muted)]">Customer name</label>
-              <input
-                value={customerName}
-                onChange={(event) => setCustomerName(event.target.value)}
-                placeholder="Opcional; gera nome único se vazio"
-                className="h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]/50 focus:outline-none"
-              />
-            </div>
-
+          <div className="flex justify-end">
             <div className="flex items-end">
               <Button
                 variant="primary"

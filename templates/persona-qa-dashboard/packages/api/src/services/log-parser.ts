@@ -16,7 +16,7 @@ export interface LogEvent {
   raw: string;
 }
 
-const PERSONA_NAMES = ['Ana', 'Dr. Carlos', 'Roberto', 'Fernanda', 'Juliana'] as const;
+const PERSONA_NAMES = ['Ana', 'Carlos', 'Roberto', 'Fernanda', 'Juliana'] as const;
 
 const TIMESTAMP_RE = /^\[(\d{2}:\d{2}:\d{2})\]/;
 const DURATION_SECONDS_RE = /\((\d+\.?\d*)s\)/;

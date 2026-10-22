@@ -2,26 +2,26 @@ import type { AdapterPersonaModel } from '../../../../packages/host-sdk/src/adap
 
 export const referenceStorePersonasModel: AdapterPersonaModel[] = [
   {
-    id: 'sales-associate',
+    id: 'sales_associate',
     title: 'Sales Associate',
-    goal: 'Register customers and schedule orders with evidence.',
-    allowedCapabilities: ['createCustomer', 'scheduleOrder'],
+    goal: 'Register customers and create orders with evidence.',
+    allowedCapabilities: ['registerCustomer', 'createOrder'],
   },
   {
-    id: 'fulfillment-agent',
+    id: 'fulfillment_agent',
     title: 'Fulfillment Agent',
-    goal: 'Complete fulfillment and operational documentation.',
-    allowedCapabilities: ['openOrderDetails', 'completeFulfillment'],
+    goal: 'Fulfill orders and complete order details.',
+    allowedCapabilities: ['openOrderDetails', 'fulfillOrder'],
   },
   {
     id: 'billing_clerk',
-    title: 'Billing clerk',
-    goal: 'Review insurance guide and Billing state.',
-    allowedCapabilities: ['findBillingGuideByEventId'],
+    title: 'Billing Clerk',
+    goal: 'Review invoices and billing state.',
+    allowedCapabilities: ['findInvoiceByOrderId'],
   },
   {
     id: 'store_manager',
-    title: 'Gestor da Storea',
+    title: 'Store Manager',
     goal: 'Validate finance and reporting closure.',
     allowedCapabilities: ['verifyFinanceDashboard', 'verifyReportsPage'],
   },

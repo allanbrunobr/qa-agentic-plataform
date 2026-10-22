@@ -95,9 +95,9 @@ describe('parseLogExcerpt', () => {
   })
 
   it('detects persona actions', () => {
-    const events = parseLogExcerpt('[10:00:00] Agent Dr. Carlos: Navigating to customers page')
+    const events = parseLogExcerpt('[10:00:00] Agent Carlos: Navigating to customers page')
     expect(events[0].type).toBe('persona_action')
-    expect(events[0].persona).toBe('Dr. Carlos')
+    expect(events[0].persona).toBe('Carlos')
   })
 
   it('detects findings', () => {

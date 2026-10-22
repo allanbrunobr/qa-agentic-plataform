@@ -3,11 +3,11 @@ import { ToolPolicySchema, ToolRiskLevelSchema } from './tool-types.js'
 
 export const AgentRoleSchema = z.enum([
   'orchestrator',
-  'sales-associate',
-  'fulfillment-agent',
+  'sales_associate',
+  'fulfillment_agent',
   'billing_clerk',
   'store_manager',
-  'financeiro',
+  'finance_reviewer',
   'auditor',
 ])
 

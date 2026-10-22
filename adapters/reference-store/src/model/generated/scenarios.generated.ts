@@ -5,42 +5,42 @@ export const referenceStoreGeneratedScenarios: AdapterScenarioModel[] = [
     "id": "first_order_multi_role",
     "title": "First order multi-role",
     "roles": [
-      "sales-associate",
-      "fulfillment-agent"
+      "sales_associate",
+      "fulfillment_agent"
     ],
     "steps": [
-      "create_customer",
-      "schedule_order",
-      "complete_fulfillment"
+      "register_customer",
+      "create_order",
+      "fulfill_order"
     ],
     "expectedArtifacts": [
       "customerId",
-      "eventId",
-      "fulfillmentCompleted"
+      "orderId",
+      "orderFulfilled"
     ],
     "stepDefinitions": [
       {
-        "id": "create_customer",
-        "roleId": "sales-associate",
-        "capabilityId": "createCustomer",
+        "id": "register_customer",
+        "roleId": "sales_associate",
+        "capabilityId": "registerCustomer",
         "producesArtifacts": [
           "customerId"
         ]
       },
       {
-        "id": "schedule_order",
-        "roleId": "sales-associate",
-        "capabilityId": "scheduleOrder",
+        "id": "create_order",
+        "roleId": "sales_associate",
+        "capabilityId": "createOrder",
         "producesArtifacts": [
-          "eventId"
+          "orderId"
         ]
       },
       {
-        "id": "complete_fulfillment",
-        "roleId": "fulfillment-agent",
-        "capabilityId": "completeFulfillment",
+        "id": "fulfill_order",
+        "roleId": "fulfillment_agent",
+        "capabilityId": "fulfillOrder",
         "producesArtifacts": [
-          "fulfillmentCompleted"
+          "orderFulfilled"
         ]
       }
     ]
@@ -49,53 +49,53 @@ export const referenceStoreGeneratedScenarios: AdapterScenarioModel[] = [
     "id": "quarterly_reorder_multi_role",
     "title": "Quarterly reorder multi-role",
     "roles": [
-      "sales-associate",
-      "fulfillment-agent",
+      "sales_associate",
+      "fulfillment_agent",
       "billing_clerk"
     ],
     "steps": [
-      "create_customer",
-      "schedule_return",
-      "complete_return_fulfillment",
-      "review_billing_guide"
+      "register_customer",
+      "create_reorder",
+      "fulfill_reorder",
+      "review_invoice"
     ],
     "expectedArtifacts": [
       "customerId",
-      "eventId",
-      "fulfillmentCompleted",
-      "billingGuideValidated"
+      "orderId",
+      "orderFulfilled",
+      "invoiceValidated"
     ],
     "stepDefinitions": [
       {
-        "id": "create_customer",
-        "roleId": "sales-associate",
-        "capabilityId": "createCustomer",
+        "id": "register_customer",
+        "roleId": "sales_associate",
+        "capabilityId": "registerCustomer",
         "producesArtifacts": [
           "customerId"
         ]
       },
       {
-        "id": "schedule_return",
-        "roleId": "sales-associate",
-        "capabilityId": "scheduleOrder",
+        "id": "create_reorder",
+        "roleId": "sales_associate",
+        "capabilityId": "createOrder",
         "producesArtifacts": [
-          "eventId"
+          "orderId"
         ]
       },
       {
-        "id": "complete_return_fulfillment",
-        "roleId": "fulfillment-agent",
-        "capabilityId": "completeFulfillment",
+        "id": "fulfill_reorder",
+        "roleId": "fulfillment_agent",
+        "capabilityId": "fulfillOrder",
         "producesArtifacts": [
-          "fulfillmentCompleted"
+          "orderFulfilled"
         ]
       },
       {
-        "id": "review_billing_guide",
+        "id": "review_invoice",
         "roleId": "billing_clerk",
-        "capabilityId": "findBillingGuideByEventId",
+        "capabilityId": "findInvoiceByOrderId",
         "producesArtifacts": [
-          "billingGuideValidated"
+          "invoiceValidated"
         ]
       }
     ]
@@ -104,57 +104,57 @@ export const referenceStoreGeneratedScenarios: AdapterScenarioModel[] = [
     "id": "quarterly_reorder_closure_multi_role",
     "title": "Quarterly reorder closure multi-role",
     "roles": [
-      "sales-associate",
-      "fulfillment-agent",
+      "sales_associate",
+      "fulfillment_agent",
       "billing_clerk",
       "store_manager"
     ],
     "steps": [
-      "create_customer",
-      "schedule_return",
-      "complete_return_fulfillment",
-      "review_billing_guide",
+      "register_customer",
+      "create_reorder",
+      "fulfill_reorder",
+      "review_invoice",
       "validate_closure"
     ],
     "expectedArtifacts": [
       "customerId",
-      "eventId",
-      "fulfillmentCompleted",
-      "billingGuideValidated",
+      "orderId",
+      "orderFulfilled",
+      "invoiceValidated",
       "financeValidated",
       "reportsValidated"
     ],
     "stepDefinitions": [
       {
-        "id": "create_customer",
-        "roleId": "sales-associate",
-        "capabilityId": "createCustomer",
+        "id": "register_customer",
+        "roleId": "sales_associate",
+        "capabilityId": "registerCustomer",
         "producesArtifacts": [
           "customerId"
         ]
       },
       {
-        "id": "schedule_return",
-        "roleId": "sales-associate",
-        "capabilityId": "scheduleOrder",
+        "id": "create_reorder",
+        "roleId": "sales_associate",
+        "capabilityId": "createOrder",
         "producesArtifacts": [
-          "eventId"
+          "orderId"
         ]
       },
       {
-        "id": "complete_return_fulfillment",
-        "roleId": "fulfillment-agent",
-        "capabilityId": "completeFulfillment",
+        "id": "fulfill_reorder",
+        "roleId": "fulfillment_agent",
+        "capabilityId": "fulfillOrder",
         "producesArtifacts": [
-          "fulfillmentCompleted"
+          "orderFulfilled"
         ]
       },
       {
-        "id": "review_billing_guide",
+        "id": "review_invoice",
         "roleId": "billing_clerk",
-        "capabilityId": "findBillingGuideByEventId",
+        "capabilityId": "findInvoiceByOrderId",
         "producesArtifacts": [
-          "billingGuideValidated"
+          "invoiceValidated"
         ]
       },
       {

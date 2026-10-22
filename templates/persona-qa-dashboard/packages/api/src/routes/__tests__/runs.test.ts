@@ -18,8 +18,8 @@ describe('GET /api/runs/:id', () => {
     const db = getDb();
     db.insert(schema.scenarios).values({
       scenario_id: 'first_order',
-      name: 'First order',
-      description: 'Cenário de cadastro e pedido',
+      name: 'First Order',
+      description: 'Customer registration and order scenario',
       step_count: 4,
       agent_count: 2,
       last_run_at: '2026-04-10T10:00:00Z',
@@ -28,7 +28,7 @@ describe('GET /api/runs/:id', () => {
 
     db.insert(schema.runs).values({
       scenario_id: 'first_order',
-      scenario_name: 'First order',
+      scenario_name: 'First Order',
       session_id: 'session-123',
       status: 'complete',
       started_at: '2026-04-10T10:00:00Z',
@@ -44,8 +44,8 @@ describe('GET /api/runs/:id', () => {
       run_source: 'cli',
       artifacts: JSON.stringify({
         customer_id: 'customer-1',
-        event_id: 'event-1',
-        receipt_id: 'rx-1',
+        order_id: 'order-1',
+        shipment_id: 'shipment-1',
       }),
       suite_type: 'single',
       clean_db_before_run: true,
@@ -64,24 +64,24 @@ describe('GET /api/runs/:id', () => {
       {
         run_id: run.id,
         finding_id: 'F-001',
-        agent: 'sales-associate',
+        agent: 'sales_associate',
         step: 'create customer',
         severity: 'high',
-        title: 'Customer com campo obrigatório ausente',
-        expected: 'cpf preenchido',
-        actual: 'cpf vazio',
+        title: 'Customer missing required field',
+        expected: 'tax id filled',
+        actual: 'tax id empty',
         screenshot_path: 'test-results/runs/session-123/findings/f-001.png',
         timestamp: '2026-04-10T10:01:00Z',
       },
       {
         run_id: run.id,
         finding_id: 'F-002',
-        agent: 'fulfillment-agent',
+        agent: 'fulfillment_agent',
         step: 'close order',
         severity: 'critical',
-        title: 'Erro ao finalizar atendimento',
-        expected: 'status concluído',
-        actual: 'status falhou',
+        title: 'Error closing order',
+        expected: 'status completed',
+        actual: 'status failed',
         screenshot_path: null,
         timestamp: '2026-04-10T10:02:00Z',
       },
@@ -126,7 +126,7 @@ describe('GET /api/runs/:id', () => {
     assert.equal(body.findings_summary.total, 2);
     assert.equal(body.findings_summary.by_severity.critical, 1);
     assert.equal(body.findings_summary.by_severity.high, 1);
-    assert.deepEqual(body.findings_summary.agents, ['fulfillment-agent', 'sales-associate']);
+    assert.deepEqual(body.findings_summary.agents, ['fulfillment_agent', 'sales_associate']);
     assert.equal(body.findings_summary.first_finding_at, '2026-04-10T10:01:00Z');
     assert.equal(body.findings_summary.last_finding_at, '2026-04-10T10:02:00Z');
 
@@ -143,7 +143,7 @@ describe('GET /api/runs/:id', () => {
     assert.equal(body.findings.length, 2);
     assert.equal(body.pr_links.length, 1);
     assert.equal(body.artifacts.customer_id, 'customer-1');
-    assert.equal(body.artifacts.event_id, 'event-1');
+    assert.equal(body.artifacts.order_id, 'order-1');
 
     const timelineTypes = body.timeline.map((event: { type: string }) => event.type);
     assert.ok(timelineTypes.includes('started'));

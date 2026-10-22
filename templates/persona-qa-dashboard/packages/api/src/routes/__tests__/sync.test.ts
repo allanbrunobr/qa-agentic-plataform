@@ -115,6 +115,17 @@ describe('GET /api/sync/summary', () => {
 });
 
 describe('getLastSyncSummary', () => {
+  // getLastSyncSummary reads from the DB, which the previous suite closed.
+  before(() => {
+    closeDb();
+    process.env['DATABASE_URL'] = ':memory:';
+    initDb();
+  });
+
+  after(() => {
+    closeDb();
+  });
+
   it('returns SyncSummary or null', () => {
     const summary = getLastSyncSummary();
     // Can be null (no sync yet in this import context) or a valid summary

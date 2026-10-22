@@ -8,7 +8,7 @@ import {
 } from '../../../../adapters/reference-store/src/generated.ts'
 
 const adapters: Record<string, { model: AdapterModelBundle; initialize: (input: AdapterExecutionInit) => AdapterExecutionDraft; runtimeHooks: AdapterRuntimeHooks }> = {
-  reference-store: {
+  'reference-store': {
     model: referenceStoreAdapterModel,
     initialize: initializeReferenceStoreExecution,
     runtimeHooks: referenceStoreRuntimeHooks,

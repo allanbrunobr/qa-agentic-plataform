@@ -9,7 +9,7 @@ async function main(): Promise<void> {
   const scenarioId = args[0] ?? 'first_order'
   const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3012'
   const uniqueSuffix = Date.now().toString().slice(-6)
-  const customerName = process.env.PHASE2_CUSTOMER_NAME ?? `Maria Fase 2 ${uniqueSuffix}`
+  const customerName = process.env.PHASE2_CUSTOMER_NAME ?? `Phase 2 Customer ${uniqueSuffix}`
   const runtimeSettings = loadRuntimeSettings()
 
   const providerValidation = await validateProviderCredentials(runtimeSettings.provider)
@@ -29,8 +29,8 @@ async function main(): Promise<void> {
     const result = await orchestrator.executeRun(scenario, {
       page,
       customerName,
-      customerPhone: process.env.PHASE2_CUSTOMER_PHONE ?? '11999990000',
-      orderType: process.env.PHASE2_ORDER_TYPE ?? 'Primeira Pedido',
+      customerPhone: process.env.PHASE2_CUSTOMER_PHONE ?? '5550100',
+      orderType: process.env.PHASE2_ORDER_TYPE ?? 'standard',
     })
 
     console.log(JSON.stringify({

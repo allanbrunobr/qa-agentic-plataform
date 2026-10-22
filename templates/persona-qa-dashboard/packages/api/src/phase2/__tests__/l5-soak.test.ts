@@ -1,9 +1,25 @@
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { L5ClosedLoopService } from '../services/l5-closed-loop-service.js'
 import { MetaOrchestrator } from '../services/meta-orchestrator.js'
 import { SessionService } from '../services/session-service.js'
 
 describe('L5 closed-loop soak', () => {
+  // The soak replays the bundled reference scenario contract.
+  let previousReferenceFlag: string | undefined
+
+  beforeAll(() => {
+    previousReferenceFlag = process.env.PERSONA_QA_USE_REFERENCE_SCENARIOS
+    process.env.PERSONA_QA_USE_REFERENCE_SCENARIOS = '1'
+  })
+
+  afterAll(() => {
+    if (previousReferenceFlag === undefined) {
+      delete process.env.PERSONA_QA_USE_REFERENCE_SCENARIOS
+    } else {
+      process.env.PERSONA_QA_USE_REFERENCE_SCENARIOS = previousReferenceFlag
+    }
+  })
+
   it('keeps replay learning bounded across repeated autonomous cycles', async () => {
     const service = new SessionService(':memory:')
 
@@ -75,29 +91,29 @@ describe('L5 closed-loop soak', () => {
 function recordCompliantFirstOrderSession(service: SessionService, cycle: number) {
   const session = service.createSession('first_order')
   const steps = [
-    { stepId: 'create_customer', artifact: 'customerId', value: `customer-${cycle}` },
-    { stepId: 'schedule_order', artifact: 'eventId', value: `event-${cycle}` },
+    { stepId: 'register_customer', artifact: 'customerId', value: `customer-${cycle}` },
+    { stepId: 'create_order', artifact: 'orderId', value: `order-${cycle}` },
   ]
 
   for (const step of steps) {
     service.appendEvent(session.id, {
       type: 'step_started',
-      payload: { stepId: step.stepId, agentId: 'sales-associate', attempt: 1 },
+      payload: { stepId: step.stepId, agentId: 'sales_associate', attempt: 1 },
     })
     service.appendEvent(session.id, {
       type: 'agent_started',
-      agentRole: 'sales-associate',
-      payload: { agentId: 'sales-associate', stepId: step.stepId, attempt: 1 },
+      agentRole: 'sales_associate',
+      payload: { agentId: 'sales_associate', stepId: step.stepId, attempt: 1 },
     })
     service.appendEvent(session.id, {
       type: 'agent_stopped',
-      agentRole: 'sales-associate',
-      payload: { agentId: 'sales-associate', stepId: step.stepId, attempt: 1 },
+      agentRole: 'sales_associate',
+      payload: { agentId: 'sales_associate', stepId: step.stepId, attempt: 1 },
     })
     service.setArtifact(session.id, step.artifact, step.value)
     service.appendEvent(session.id, {
       type: 'step_completed',
-      payload: { stepId: step.stepId, agentId: 'sales-associate', durationMs: 1000 },
+      payload: { stepId: step.stepId, agentId: 'sales_associate', durationMs: 1000 },
     })
   }
 

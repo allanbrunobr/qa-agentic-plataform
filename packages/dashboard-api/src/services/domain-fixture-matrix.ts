@@ -9,7 +9,7 @@ export type DomainFixtureId =
   | 'education_learning'
   | 'commerce_checkout'
   | 'support_service'
-  | 'retail_care'
+  | 'logistics_dispatch'
   | 'technology_delivery'
 
 export interface DomainFixtureExpectation {
@@ -122,20 +122,20 @@ export const DOMAIN_FIXTURE_MATRIX: DomainFixtureExpectation[] = [
     expectedCapabilityKinds: ['navigation', 'form_submit', 'assertion'],
   },
   {
-    id: 'retail_care',
-    domain: 'retail',
-    label: 'Retail care frontend',
-    description: 'Care plan and order workflow for operational staff.',
+    id: 'logistics_dispatch',
+    domain: 'logistics',
+    label: 'Logistics dispatch frontend',
+    description: 'Shipment creation and tracking workflow for warehouse and dispatch teams.',
     requiredFrameworks: ['angular'],
     requiredPackages: ['@angular/core'],
-    requiredNavigationTargets: ['/records'],
-    requiredButtonTexts: ['Schedule order'],
-    requiredTextIncludes: ['care plan workspace', 'customer records'],
-    requiredTestIncludes: ['schedule order'],
-    requiredFormFieldGroups: [['customerName', 'orderDate']],
+    requiredNavigationTargets: ['/shipments'],
+    requiredButtonTexts: ['Create shipment'],
+    requiredTextIncludes: ['dispatch workspace', 'warehouse shipments'],
+    requiredTestIncludes: ['create shipment'],
+    requiredFormFieldGroups: [['recipientName', 'dispatchDate']],
     minCounts: { form: 1, button: 1, text: 2, navigation: 1, test: 1 },
-    expectedPersonaSeeds: ['care_coordinator', 'customer'],
-    expectedScenarioSeeds: ['review_care_plan', 'schedule_order'],
+    expectedPersonaSeeds: ['dispatcher', 'warehouse_operator'],
+    expectedScenarioSeeds: ['create_shipment', 'track_shipment'],
     expectedCapabilityKinds: ['navigation', 'form_submit', 'assertion'],
   },
   {

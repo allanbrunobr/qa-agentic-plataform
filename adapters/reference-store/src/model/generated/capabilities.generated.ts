@@ -2,12 +2,12 @@ import type { AdapterCapabilityModel } from '../../../../../packages/host-sdk/sr
 
 export const referenceStoreGeneratedCapabilities: AdapterCapabilityModel[] = [
   {
-    "id": "createCustomer",
+    "id": "registerCustomer",
     "purpose": "Generated from discovery/bootstrap draft",
     "sourceHint": "Review and map this capability to host-specific automation"
   },
   {
-    "id": "scheduleOrder",
+    "id": "createOrder",
     "purpose": "Generated from discovery/bootstrap draft",
     "sourceHint": "Review and map this capability to host-specific automation"
   },
@@ -17,12 +17,12 @@ export const referenceStoreGeneratedCapabilities: AdapterCapabilityModel[] = [
     "sourceHint": "Review and map this capability to host-specific automation"
   },
   {
-    "id": "completeFulfillment",
+    "id": "fulfillOrder",
     "purpose": "Generated from discovery/bootstrap draft",
     "sourceHint": "Review and map this capability to host-specific automation"
   },
   {
-    "id": "findBillingGuideByEventId",
+    "id": "findInvoiceByOrderId",
     "purpose": "Generated from discovery/bootstrap draft",
     "sourceHint": "Review and map this capability to host-specific automation"
   },

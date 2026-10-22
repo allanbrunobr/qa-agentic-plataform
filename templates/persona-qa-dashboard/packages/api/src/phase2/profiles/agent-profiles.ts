@@ -32,16 +32,16 @@ const ORCHESTRATOR_PROFILE: AgentProfile = {
   ].join('\n'),
 }
 
-const LEGACY_TEST_PROFILES: Record<string, AgentProfile> = {
-  sales-associate: buildStaticProfile('sales-associate', 'Sales Associate', ['createCustomer', 'scheduleOrder'], {
+const REFERENCE_PROFILES: Record<string, AgentProfile> = {
+  sales_associate: buildStaticProfile('sales_associate', 'Sales Associate', ['registerCustomer', 'createOrder'], {
     model: 'claude-haiku-4-5-20251001',
     timeoutMs: 90_000,
   }),
-  fulfillment-agent: buildStaticProfile('fulfillment-agent', 'Fulfillment Agent', ['openOrderDetails', 'completeFulfillment'], {
+  fulfillment_agent: buildStaticProfile('fulfillment_agent', 'Fulfillment Agent', ['openOrderDetails', 'fulfillOrder'], {
     timeoutMs: 180_000,
   }),
-  billing_clerk: buildStaticProfile('billing_clerk', 'Billing clerk', ['findBillingGuideByEventId']),
-  store_manager: buildStaticProfile('store_manager', 'Gestor da Storea', [
+  billing_clerk: buildStaticProfile('billing_clerk', 'Billing Clerk', ['findInvoiceByOrderId']),
+  store_manager: buildStaticProfile('store_manager', 'Store Manager', [
     'verifyFinanceDashboard',
     'verifyReportsPage',
   ]),
@@ -169,8 +169,8 @@ function profileFromGeneratedPersona(persona: AdapterPersonaModel): AgentProfile
   }
 }
 
-function legacyProfilesEnabled(): boolean {
-  return process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'] === '1'
+function referenceProfilesEnabled(): boolean {
+  return process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'] === '1'
 }
 
 function generatedProfilesByRole(): Map<string, AgentProfile> {
@@ -183,11 +183,11 @@ export function getProfile(role: AgentRole | string): AgentProfile {
   const generated = generatedProfilesByRole().get(role)
   if (generated) return cloneProfile(generated)
 
-  const legacy = legacyProfilesEnabled() ? LEGACY_TEST_PROFILES[role] : undefined
-  if (legacy) return cloneProfile(legacy)
+  const reference = referenceProfilesEnabled() ? REFERENCE_PROFILES[role] : undefined
+  if (reference) return cloneProfile(reference)
 
   const generatedRoles = [...generatedProfilesByRole().keys()]
-  const available = ['orchestrator', ...generatedRoles, ...(legacyProfilesEnabled() ? Object.keys(LEGACY_TEST_PROFILES) : [])]
+  const available = ['orchestrator', ...generatedRoles, ...(referenceProfilesEnabled() ? Object.keys(REFERENCE_PROFILES) : [])]
   throw new Error(`Unknown agent profile: "${role}". Available: ${available.join(', ')}`)
 }
 
@@ -195,8 +195,8 @@ export function listProfiles(): AgentProfile[] {
   const generated = [...generatedProfilesByRole().values()]
   const targetProfiles = generated.length > 0
     ? generated
-    : legacyProfilesEnabled()
-      ? Object.values(LEGACY_TEST_PROFILES)
+    : referenceProfilesEnabled()
+      ? Object.values(REFERENCE_PROFILES)
       : []
 
   return [

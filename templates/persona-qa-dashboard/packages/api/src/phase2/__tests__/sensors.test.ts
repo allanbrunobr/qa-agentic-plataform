@@ -10,7 +10,7 @@ function makeContext(overrides?: Partial<SensorContext>): SensorContext {
   const step: ScenarioStep = {
     id: 'step_1',
     name: 'Create Customer',
-    agentId: 'sales-associate',
+    agentId: 'sales_associate',
     order: 0,
     requiredArtifacts: [],
     producedArtifacts: ['customerId'],
@@ -18,7 +18,7 @@ function makeContext(overrides?: Partial<SensorContext>): SensorContext {
 
   const stepOutput: AgentStepOutput = {
     stepIndex: 0,
-    agentId: 'sales-associate',
+    agentId: 'sales_associate',
     output: { customerId: '123' },
     toolCalls: [],
     durationMs: 100,
@@ -48,7 +48,7 @@ function makeContext(overrides?: Partial<SensorContext>): SensorContext {
   return {
     sessionId: 'session_1',
     step,
-    agentId: 'sales-associate',
+    agentId: 'sales_associate',
     stepOutput,
     session,
     scenario,
@@ -61,10 +61,10 @@ describe('SchemaSensor', () => {
     const context = makeContext({
       stepOutput: {
         stepIndex: 0,
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         output: { customerId: '123' },
         toolCalls: [
-          { tool: 'createCustomer', args: { name: 'João' }, result: { id: '123', name: 'João' } },
+          { tool: 'registerCustomer', args: { name: 'Alex' }, result: { id: '123', name: 'Alex' } },
         ],
         durationMs: 100,
         success: true,
@@ -88,7 +88,7 @@ describe('SchemaSensor', () => {
     const context = makeContext({
       stepOutput: {
         stepIndex: 0,
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         output: {},
         toolCalls: [{ tool: 'noop', args: {} }],
         durationMs: 50,
@@ -114,7 +114,7 @@ describe('OutputSensor', () => {
     const context = makeContext({
       stepOutput: {
         stepIndex: 0,
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         output: {}, // missing customerId
         toolCalls: [],
         durationMs: 100,
@@ -132,7 +132,7 @@ describe('OutputSensor', () => {
     const context = makeContext({
       stepOutput: {
         stepIndex: 0,
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         output: { artifactId: 'artifact_1', type: 'customerId' },
         toolCalls: [],
         durationMs: 100,
@@ -160,7 +160,7 @@ describe('OutputSensor', () => {
     const context = makeContext({
       stepOutput: {
         stepIndex: 0,
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         output: {},
         toolCalls: [],
         durationMs: 100,
@@ -194,7 +194,7 @@ describe('OutputSensor', () => {
     const context = makeContext({
       stepOutput: {
         stepIndex: 0,
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         output: {},
         toolCalls: [],
         durationMs: 50,
@@ -214,14 +214,14 @@ describe('OutputSensor', () => {
       step: {
         id: 'step_1',
         name: 'Test',
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         order: 0,
         requiredArtifacts: [],
         producedArtifacts: [],
       },
       stepOutput: {
         stepIndex: 0,
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         output: {},
         toolCalls: [],
         durationMs: 50,

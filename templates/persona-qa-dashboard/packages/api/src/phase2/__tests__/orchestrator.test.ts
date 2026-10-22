@@ -14,7 +14,7 @@ function makeScenario(overrides?: Partial<ScenarioContract>): ScenarioContract {
       {
         id: 'step_1',
         name: 'Create Customer',
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         order: 0,
         requiredArtifacts: [],
         producedArtifacts: ['customerId'],
@@ -22,15 +22,15 @@ function makeScenario(overrides?: Partial<ScenarioContract>): ScenarioContract {
       {
         id: 'step_2',
         name: 'Schedule Order',
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         order: 1,
         requiredArtifacts: ['customerId'],
-        producedArtifacts: ['eventId'],
+        producedArtifacts: ['orderId'],
       },
     ],
-    roles: ['sales-associate'],
-    requiredArtifacts: ['customerId', 'eventId'],
-    allowedTools: ['createCustomer', 'scheduleOrder'],
+    roles: ['sales_associate'],
+    requiredArtifacts: ['customerId', 'orderId'],
+    allowedTools: ['registerCustomer', 'createOrder'],
     ...overrides,
   };
 }
@@ -38,8 +38,8 @@ function makeScenario(overrides?: Partial<ScenarioContract>): ScenarioContract {
 function makeSuccessOutput(stepIndex: number): AgentStepOutput {
   return {
     stepIndex,
-    agentId: 'sales-associate',
-    output: { customerId: '123', eventId: '456' },
+    agentId: 'sales_associate',
+    output: { customerId: '123', orderId: '456' },
     toolCalls: [],
     durationMs: 100,
     success: true,
@@ -49,7 +49,7 @@ function makeSuccessOutput(stepIndex: number): AgentStepOutput {
 function makeFailOutput(stepIndex: number, error?: string): AgentStepOutput {
   return {
     stepIndex,
-    agentId: 'sales-associate',
+    agentId: 'sales_associate',
     output: {},
     toolCalls: [],
     durationMs: 50,
@@ -140,12 +140,12 @@ describe('Orchestrator', () => {
       expect(agentStarted).toHaveLength(2);
       expect(agentStopped).toHaveLength(2);
       expect(agentStarted[0]?.payload).toMatchObject({
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         stepId: 'step_1',
         attempt: 1,
       });
       expect(agentStopped[0]?.payload).toMatchObject({
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         stepId: 'step_1',
         attempt: 1,
         status: 'completed',
@@ -181,44 +181,44 @@ describe('Orchestrator', () => {
           {
             id: 'step_1',
             name: 'Recepcao',
-            agentId: 'sales-associate',
+            agentId: 'sales_associate',
             order: 0,
             requiredArtifacts: [],
-            producedArtifacts: ['customerId', 'eventId'],
+            producedArtifacts: ['customerId', 'orderId'],
             handoff: {
-              nextAgentId: 'fulfillment-agent',
-              reason: 'Transfer to fulfillment-agent',
-              requiredArtifacts: ['customerId', 'eventId'],
-              expectedOutput: 'Pedido concluida',
+              nextAgentId: 'fulfillment_agent',
+              reason: 'Transfer to fulfillment',
+              requiredArtifacts: ['customerId', 'orderId'],
+              expectedOutput: 'Order fulfilled',
             },
           },
           {
             id: 'step_2',
-            name: 'Pedido',
-            agentId: 'fulfillment-agent',
+            name: 'Fulfill Order',
+            agentId: 'fulfillment_agent',
             order: 1,
-            requiredArtifacts: ['customerId', 'eventId'],
-            producedArtifacts: ['fulfillmentCompleted'],
+            requiredArtifacts: ['customerId', 'orderId'],
+            producedArtifacts: ['orderFulfilled'],
           },
         ],
-        roles: ['sales-associate', 'fulfillment-agent'],
-        requiredArtifacts: ['customerId', 'eventId', 'fulfillmentCompleted'],
-        allowedTools: ['createCustomer', 'completeFulfillment'],
+        roles: ['sales_associate', 'fulfillment_agent'],
+        requiredArtifacts: ['customerId', 'orderId', 'orderFulfilled'],
+        allowedTools: ['registerCustomer', 'fulfillOrder'],
       })
 
       vi.spyOn(agentRuntime, 'executeStep')
         .mockResolvedValueOnce({
           stepIndex: 0,
-          agentId: 'sales-associate',
-          output: { customerId: '123', eventId: '456' },
+          agentId: 'sales_associate',
+          output: { customerId: '123', orderId: '456' },
           toolCalls: [],
           durationMs: 100,
           success: true,
         })
         .mockResolvedValueOnce({
           stepIndex: 1,
-          agentId: 'fulfillment-agent',
-          output: { fulfillmentCompleted: true },
+          agentId: 'fulfillment_agent',
+          output: { orderFulfilled: true },
           toolCalls: [],
           durationMs: 100,
           success: true,
@@ -239,27 +239,27 @@ describe('Orchestrator', () => {
           {
             id: 'step_1',
             name: 'Recepcao',
-            agentId: 'sales-associate',
+            agentId: 'sales_associate',
             order: 0,
             requiredArtifacts: [],
-            producedArtifacts: ['customerId', 'eventId'],
+            producedArtifacts: ['customerId', 'orderId'],
           },
           {
             id: 'step_2',
-            name: 'Pedido',
-            agentId: 'fulfillment-agent',
+            name: 'Fulfill Order',
+            agentId: 'fulfillment_agent',
             order: 1,
-            requiredArtifacts: ['customerId', 'eventId'],
-            producedArtifacts: ['fulfillmentCompleted'],
+            requiredArtifacts: ['customerId', 'orderId'],
+            producedArtifacts: ['orderFulfilled'],
           },
         ],
-        roles: ['sales-associate', 'fulfillment-agent'],
+        roles: ['sales_associate', 'fulfillment_agent'],
       })
 
       vi.spyOn(agentRuntime, 'executeStep').mockResolvedValue({
         stepIndex: 0,
-        agentId: 'sales-associate',
-        output: { customerId: '123', eventId: '456' },
+        agentId: 'sales_associate',
+        output: { customerId: '123', orderId: '456' },
         toolCalls: [],
         durationMs: 100,
         success: true,
@@ -290,7 +290,7 @@ describe('Orchestrator', () => {
           {
             id: 'step_retry',
             name: 'Retry Step',
-            agentId: 'sales-associate',
+            agentId: 'sales_associate',
             order: 0,
             requiredArtifacts: [],
             producedArtifacts: [],
@@ -315,7 +315,7 @@ describe('Orchestrator', () => {
           {
             id: 'step_flaky',
             name: 'Flaky Step',
-            agentId: 'sales-associate',
+            agentId: 'sales_associate',
             order: 0,
             requiredArtifacts: [],
             producedArtifacts: [],
@@ -382,7 +382,7 @@ describe('Orchestrator', () => {
       orchestrator = new Orchestrator(agentRuntime, sessionService, sensorRunner);
       vi.spyOn(agentRuntime, 'executeStep').mockResolvedValue({
         stepIndex: 0,
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         output: {},
         toolCalls: [],
         durationMs: 100,
@@ -417,7 +417,7 @@ describe('Orchestrator', () => {
         });
         return {
           stepIndex: 0,
-          agentId: 'sales-associate',
+          agentId: 'sales_associate',
           output: { customerId: '123', customerName: 'Maria Teste' },
           toolCalls: [],
           durationMs: 100,
@@ -439,8 +439,8 @@ describe('Orchestrator', () => {
           {
             id: 'step_1',
             name: 'Create Customer',
-            agentId: 'sales-associate',
-            capabilityId: 'createCustomer',
+            agentId: 'sales_associate',
+            capabilityId: 'registerCustomer',
             order: 0,
             requiredArtifacts: [],
             producedArtifacts: ['customerId'],
@@ -448,11 +448,11 @@ describe('Orchestrator', () => {
           {
             id: 'step_2',
             name: 'Schedule Order',
-            agentId: 'sales-associate',
-            capabilityId: 'scheduleOrder',
+            agentId: 'sales_associate',
+            capabilityId: 'createOrder',
             order: 1,
             requiredArtifacts: ['customerId'],
-            producedArtifacts: ['eventId'],
+            producedArtifacts: ['orderId'],
           },
         ],
         workflowContract: {
@@ -462,7 +462,7 @@ describe('Orchestrator', () => {
             {
               id: 'step_1',
               order: 0,
-              agentId: 'sales-associate',
+              agentId: 'sales_associate',
               capabilityId: 'wrongCapability',
               requiredArtifacts: [],
               producedArtifacts: ['customerId'],
@@ -470,10 +470,10 @@ describe('Orchestrator', () => {
             {
               id: 'step_2',
               order: 1,
-              agentId: 'sales-associate',
-              capabilityId: 'scheduleOrder',
+              agentId: 'sales_associate',
+              capabilityId: 'createOrder',
               requiredArtifacts: ['customerId'],
-              producedArtifacts: ['eventId'],
+              producedArtifacts: ['orderId'],
             },
           ],
         },
@@ -490,7 +490,7 @@ describe('Orchestrator', () => {
           {
             id: 'step_1',
             name: 'Create Customer',
-            agentId: 'sales-associate',
+            agentId: 'sales_associate',
             order: 0,
             requiredArtifacts: [],
             producedArtifacts: ['customerId'],
@@ -503,8 +503,8 @@ describe('Orchestrator', () => {
             {
               id: 'step_1',
               order: 0,
-              agentId: 'sales-associate',
-              capabilityId: 'createCustomer',
+              agentId: 'sales_associate',
+              capabilityId: 'registerCustomer',
               requiredArtifacts: [],
               producedArtifacts: ['customerId'],
               timeoutMs: 12345,
@@ -520,10 +520,10 @@ describe('Orchestrator', () => {
 
       expect(result.status).toBe('complete');
       expect(executeSpy).toHaveBeenCalledWith(
-        'sales-associate',
+        'sales_associate',
         expect.objectContaining({
           id: 'step_1',
-          capabilityId: 'createCustomer',
+          capabilityId: 'registerCustomer',
           timeoutMs: 12345,
           producedArtifacts: ['customerId'],
         }),

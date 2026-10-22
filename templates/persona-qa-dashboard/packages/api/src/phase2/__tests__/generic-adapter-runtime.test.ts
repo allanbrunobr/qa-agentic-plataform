@@ -47,17 +47,17 @@ describe('generic generated adapter runtime', () => {
     const response = await provider.chat([{
       role: 'user',
       content: JSON.stringify({
-        scenarioStep: 'click_iniciar_pedido',
+        scenarioStep: 'click_start_session',
         producedArtifacts: ['commandResult'],
       }),
     }], [
-      { name: 'click_iniciar_pedido', description: 'start fulfillment', inputSchema: {} },
-      { name: 'click_copiar_intake', description: 'copy history', inputSchema: {} },
+      { name: 'click_start_session', description: 'start session', inputSchema: {} },
+      { name: 'click_copy_summary', description: 'copy summary', inputSchema: {} },
     ])
 
     expect(response.stopReason).toBe('tool_use')
     expect(response.toolCalls[0]).toEqual(expect.objectContaining({
-      name: 'click_iniciar_pedido',
+      name: 'click_start_session',
     }))
   })
 

@@ -67,7 +67,7 @@ describe('L5RunAuditPanel', () => {
     const historicalRun = closedLoopRun({
       id: 'run-historical',
       status: 'completed',
-      scenarioId: 'retorno',
+      scenarioId: 'reorder',
       actions: [],
       summary: {
         statusReason: 'Historical closed loop completed.',
@@ -89,7 +89,7 @@ describe('L5RunAuditPanel', () => {
     )
 
     expect(screen.getByText('Histórico L5')).toBeInTheDocument()
-    fireEvent.click(screen.getByText('retorno').closest('button')!)
+    fireEvent.click(screen.getByText('reorder').closest('button')!)
 
     expect(onSelectRun).toHaveBeenCalledWith('run-historical')
   })
@@ -252,7 +252,7 @@ describe('L5RunAuditPanel', () => {
     expect(screen.getByText('Replay seguro')).toBeInTheDocument()
     expect(screen.getByText('Replay bloqueia aplicação automática e geração de cenários; apenas reavalia o loop.')).toBeInTheDocument()
     expect(screen.getByText('Promoção de conhecimento')).toBeInTheDocument()
-    expect(screen.getByText('Prompt patch for create_customer')).toBeInTheDocument()
+    expect(screen.getByText('Prompt patch for register_customer')).toBeInTheDocument()
     expect(screen.getByText('next: approve')).toBeInTheDocument()
     expect(screen.getByText('v abc123def456')).toBeInTheDocument()
     expect(screen.getByText('Histórico de promoções')).toBeInTheDocument()
@@ -393,8 +393,8 @@ function promotionPreview(): Phase2ClosedLoopAuditBundle['promotion'] {
         promotionType: 'learning_overlay',
         status: 'requires_review',
         version: 'abc123def4567890abc123def4567890abc123def4567890abc123def4567890',
-        title: 'Prompt patch for create_customer',
-        target: 'agent:sales-associate',
+        title: 'Prompt patch for register_customer',
+        target: 'agent:sales_associate',
         reason: 'Step success rate is below the adaptive threshold.',
         priority: 'high',
         approvalRequired: true,
@@ -402,7 +402,7 @@ function promotionPreview(): Phase2ClosedLoopAuditBundle['promotion'] {
         nextAction: 'approve',
         evidence: {
           scenarioId: 'first_order',
-          stepId: 'create_customer',
+          stepId: 'register_customer',
           governanceEvidence: 1,
         },
       },
@@ -423,7 +423,7 @@ function promotionEvent(): Phase2KnowledgePromotionEvent {
     action: 'approve',
     status: 'completed',
     actor: 'qa_lead',
-    target: 'agent:sales-associate',
+    target: 'agent:sales_associate',
     result: {
       proposalStatus: 'approved',
       postPromotionVerification: {

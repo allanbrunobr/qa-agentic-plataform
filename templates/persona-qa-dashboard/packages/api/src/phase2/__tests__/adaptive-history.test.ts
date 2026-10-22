@@ -13,8 +13,8 @@ function recordStep(
   return service.recordStepPerformance({
     sessionId: session.id,
     scenarioId: 'first_order',
-    stepId: 'create_customer',
-    agentId: 'sales-associate',
+    stepId: 'register_customer',
+    agentId: 'sales_associate',
     status: 'completed',
     success: true,
     attempt: 1,
@@ -25,10 +25,10 @@ function recordStep(
 
 function step(overrides: Partial<ScenarioStep> = {}): ScenarioStep {
   return {
-    id: 'create_customer',
+    id: 'register_customer',
     name: 'Create customer',
     order: 0,
-    agentId: 'sales-associate',
+    agentId: 'sales_associate',
     requiredArtifacts: [],
     producedArtifacts: ['customerId'],
     timeoutMs: 1000,
@@ -55,7 +55,7 @@ describe('Adaptive history foundation', () => {
       attempt: 2,
     })
 
-    const stats = service.getStepHistoryStats('first_order', 'create_customer')
+    const stats = service.getStepHistoryStats('first_order', 'register_customer')
 
     expect(stats.totalExecutions).toBe(4)
     expect(stats.successRate).toBe(0.75)
@@ -81,7 +81,7 @@ describe('Adaptive history foundation', () => {
 
     const patterns = new FailurePatternService(service).analyzeStep(
       'first_order',
-      'create_customer',
+      'register_customer',
     )
 
     expect(patterns).toHaveLength(1)
@@ -124,7 +124,7 @@ describe('Adaptive history foundation', () => {
     })
     const adaptations = service.listAdaptationEvents({
       scenarioId: 'first_order',
-      stepId: 'create_customer',
+      stepId: 'register_customer',
     })
 
     expect(decision.historicalContext?.totalExecutions).toBe(5)

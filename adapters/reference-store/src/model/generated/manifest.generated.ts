@@ -2,7 +2,7 @@ import type { AdapterManifestModel } from '../../../../../packages/host-sdk/src/
 
 export const referenceStoreGeneratedManifest: AdapterManifestModel = {
   "id": "reference-store",
-  "label": "reference-store",
+  "label": "Reference Store",
   "hostProduct": "reference-store",
   "framework": "nextjs",
   "status": "certified"

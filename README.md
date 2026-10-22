@@ -1,5 +1,6 @@
 # Agentic Platform
 
+[![CI](https://github.com/allanbrunobr/qa-agentic-plataform/actions/workflows/ci.yml/badge.svg)](https://github.com/allanbrunobr/qa-agentic-plataform/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D22.13-339933?logo=node.js&logoColor=white)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
@@ -19,7 +20,7 @@ Agentic QA for any repository, without touching its code.
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
 - [Platform dashboard (optional)](#platform-dashboard-optional)
-- [Verification](#verification)
+- [Development and verification](#development-and-verification)
 - [Scope and limitations](#scope-and-limitations)
 - [Repository layout](#repository-layout)
 - [Documentation](#documentation)
@@ -161,7 +162,23 @@ npm run dev:api   # http://localhost:3101
 npm run dev:web   # http://localhost:4177
 ```
 
-## Verification
+## Development and verification
+
+The runtime template has its own lockfile. Install it once, next to the root dependencies:
+
+```bash
+npm install
+npm run setup:runtime   # npm ci in templates/persona-qa-dashboard
+```
+
+| Command | What it checks | Time |
+| --- | --- | --- |
+| `npm run typecheck` | TypeScript for the platform packages, the runtime API, and the runtime web app | ~1 min |
+| `npm test` | Unit and discovery verifiers, runtime API Vitest suite and route tests, runtime web Vitest suite | ~2 min |
+| `npm run test:e2e` | The quick start end to end: install and discover on a temp copy of `examples/storefront`, start the launcher, run `place_order` in real Chromium (expects `contract_compliant`), then break the app and expect `contract_violated` | ~3 min (first run longer) |
+| `npm run verify:release` | Release gate (below) | ~5 min |
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs all four on every push and pull request, plus a secret scan.
 
 Run the release gate before you merge changes to the installer, template, runtime, or dashboard:
 
@@ -175,15 +192,9 @@ The gate runs these checks:
 - domain discovery contracts and static frontend scanner checks
 - domain fixture matrix and domain specialist service checks
 - install, discovery, and deterministic runtime smokes against generated frontend, backend API, CLI, library, and unknown repository fixtures
-- the API L4/L5 Vitest suite, the web Vitest suite, and the web production build
+- the runtime API route tests and full Vitest suite, the web Vitest suite, and the web production build
 
 The gate does not need an API key or network access to an application. If local ports are busy, override `API_PORT`, `WEB_PORT`, or `RELEASE_PORT_SEED`.
-
-The **clean-room smoke** copies a real frontend repository to `/tmp`, installs `.agentic-qa` into the copy, and runs a session through the dashboard. Without a host repository, this step is skipped. To enable it, set `SOURCE_REPO`:
-
-```bash
-SOURCE_REPO=/absolute/path/to/frontend npm run verify:release
-```
 
 A passing run ends with:
 
@@ -191,7 +202,7 @@ A passing run ends with:
 [verify-release] PASS release verification
 ```
 
-Other verifiers are available as `npm run verify:<name>`. See the `scripts` section of `package.json`. Real-target integration (`verify:real-reference-store`) can create or change data in the target environment. For this reason, it is not part of the release gate.
+Other verifiers are available as `npm run verify:<name>`. See the `scripts` section of `package.json` and [docs/testing.md](docs/testing.md).
 
 ## Scope and limitations
 
@@ -210,18 +221,19 @@ Other verifiers are available as `npm run verify:<name>`. See the `scripts` sect
 | `packages/core/` | Shared runtime pieces |
 | `packages/host-sdk/` | Host adapter contracts |
 | `templates/persona-qa-dashboard/` | Runtime template copied into `<repo>/.agentic-qa/` |
-| `adapters/` | Reference adapters (`template`, plus `reference-store`, a fictitious example host) |
+| `adapters/` | Reference adapters: `template` (starting point for a host) and `reference-store` (fictitious order-fulfilment host used by the built-in reference scenarios) |
 | `examples/storefront/` | Minimal app for the quick start |
 | `scripts/` | Verifiers used by `verify:*` and the release gate |
-| `docs/` | Architecture notes, plans, and audits |
+| `docs/` | Architecture, generated files, testing, and decision records |
+| `.github/workflows/` | CI |
 
 ## Documentation
 
-- [Architecture: host-local adapter runtime](docs/ARCHITECTURE_HOST_LOCAL_ADAPTER_RUNTIME.md)
-- [Installer flow](docs/AGENTIC_QA_INSTALLER_FLOW.md)
-- [Generated `.agentic-qa` package structure](docs/AGENTIC_QA_LOCAL_PACKAGE_STRUCTURE.md)
-- [Generated adapter files](docs/AGENTIC_QA_GENERATED_ADAPTER_FILES.md)
-- [Agent/contributor guidelines](AGENTIC.md)
+- [Architecture](docs/architecture.md): components, data flow, maturity levels L1–L5, security boundaries
+- [Generated files](docs/generated-files.md): what `install-local` and `discover-local` write, and what to review
+- [Testing](docs/testing.md): test layers and how to run each one
+- [Decision records](docs/decisions/): why the runtime is host-local, why runs are checked against deterministic contracts, why generic capabilities fail closed, how repository content is treated as untrusted
+- [Contributor and agent guidelines](AGENTIC.md)
 
 ## License
 

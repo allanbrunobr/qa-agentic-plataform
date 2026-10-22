@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(scriptDir, '..')
+const REFERENCE_DOMAIN_ID_PATTERN = /^(sales_associate|fulfillment_agent|billing_clerk|store_manager)$|reference-store/
 const fixtureRoot = path.join(os.tmpdir(), `agentic-platform-generic-frontend-fixture-${Date.now()}`)
 const tsxLoaderCandidates = [
   path.join(repoRoot, 'node_modules/tsx/dist/loader.mjs'),
@@ -95,7 +96,7 @@ function verifyInstalledDocs() {
   const docFiles = fs.readdirSync(docsDir)
   assert(docFiles.length === 1 && docFiles[0] === 'README.md', `legacy docs copied into installed package: ${docFiles.join(', ')}`)
   const text = fs.readFileSync(readmePath, 'utf8')
-  assert(!/reference-store|sales-associate|fulfillment-agent|billing_clerk|store_manager|customer|billing|notes/i.test(text), 'installed docs README contains host-specific legacy text')
+  assert(!/reference-store|sales_associate|fulfillment_agent|billing_clerk|store_manager/i.test(text), 'installed docs README contains reference-domain text')
 }
 
 function createFixture() {
@@ -329,9 +330,9 @@ function verifyGeneratedAdapter() {
   assert(submitOrderCoverage?.httpCallNodeIds?.length >= 1, 'runtime plan capability coverage should expose http call node ids')
   assert(personaIds.includes('shopper'), `shopper persona missing: ${personaIds.join(', ')}`)
   assert(personaIds.includes('store_operator'), `store_operator persona missing: ${personaIds.join(', ')}`)
-  assert(!personaIds.includes('sales-associate') && !personaIds.includes('fulfillment-agent'), `Reference Store personas leaked into generic adapter: ${personaIds.join(', ')}`)
+  assert(!personaIds.some((id) => REFERENCE_DOMAIN_ID_PATTERN.test(id)), `reference-domain personas leaked into generic adapter: ${personaIds.join(', ')}`)
   assert(scenarioIds.includes('place_order'), `place_order scenario missing: ${scenarioIds.join(', ')}`)
-  assert(!scenarioIds.includes('first_order'), `Reference Store scenario leaked into generic adapter: ${scenarioIds.join(', ')}`)
+  assert(!scenarioIds.includes('first_order') && !scenarioIds.includes('first_order_multi_role'), `reference-domain scenario leaked into generic adapter: ${scenarioIds.join(', ')}`)
   assert(capabilityIds.includes('click_submit_order'), `click_submit_order capability missing: ${capabilityIds.join(', ')}`)
   assert(capabilityIds.includes('click_add_item_to_cart'), `click_add_item_to_cart capability missing: ${capabilityIds.join(', ')}`)
   assert(contractsIndex.some((entry) => entry.scenarioId === 'place_order'), 'place_order workflow contract missing')

@@ -7,7 +7,7 @@ const mockFinding: ApiFinding = {
   id: 1,
   run_id: 1,
   finding_id: 'F001',
-  agent: 'Dr. Carlos',
+  agent: 'Carlos',
   step: 'Navigate to customers',
   severity: 'high',
   title: 'Customer record not accessible',

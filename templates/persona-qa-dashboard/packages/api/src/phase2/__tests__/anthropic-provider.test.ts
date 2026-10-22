@@ -48,26 +48,26 @@ describe('AnthropicProvider', () => {
     mockCreate.mockResolvedValue({
       content: [
         { type: 'text', text: 'I will create a customer.' },
-        { type: 'tool_use', id: 'call-1', name: 'createCustomer', input: { name: 'João' } },
+        { type: 'tool_use', id: 'call-1', name: 'registerCustomer', input: { name: 'Alex' } },
       ],
       stop_reason: 'tool_use',
       usage: { input_tokens: 20, output_tokens: 15 },
     })
 
     const tools: ToolDefinition[] = [{
-      name: 'createCustomer',
+      name: 'registerCustomer',
       description: 'Create a customer',
       inputSchema: { type: 'object', properties: { name: { type: 'string' } } },
     }]
 
     const result = await provider.chat(
-      [{ role: 'user', content: 'Create customer João' }],
+      [{ role: 'user', content: 'Create customer Alex' }],
       tools,
     )
 
     expect(result.text).toBe('I will create a customer.')
     expect(result.toolCalls).toEqual([
-      { id: 'call-1', name: 'createCustomer', input: { name: 'João' } },
+      { id: 'call-1', name: 'registerCustomer', input: { name: 'Alex' } },
     ])
     expect(result.stopReason).toBe('tool_use')
   })
@@ -107,7 +107,7 @@ describe('AnthropicProvider', () => {
 
     await provider.chat(
       [
-        { role: 'system', content: 'You are sales-associate' },
+        { role: 'system', content: 'You are sales_associate' },
         { role: 'user', content: 'Hello' },
       ],
       [],
@@ -115,7 +115,7 @@ describe('AnthropicProvider', () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        system: 'You are sales-associate',
+        system: 'You are sales_associate',
         messages: [{ role: 'user', content: 'Hello' }],
       }),
     )

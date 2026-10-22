@@ -8,15 +8,15 @@ interface ArtifactsSectionProps {
   defaultOpen?: boolean
 }
 
-const STUB_VALUES = ['rx-engine-managed', 'engine-managed', 'auto-generated']
+const STUB_VALUES = ['shipping-engine-managed', 'engine-managed', 'auto-generated']
 
 const ARTIFACT_LABELS: Record<string, string> = {
-  customer_id: 'ID Customer',
-  event_id: 'ID Evento',
-  cancelled_event_id: 'ID Evento Cancelado',
-  rescheduled_event_id: 'ID Evento Reagendado',
-  receipt_id: 'ID Recibo',
-  billing_guide_id: 'ID Guia Billing',
+  customer_id: 'Customer ID',
+  order_id: 'Order ID',
+  cancelled_order_id: 'Cancelled Order ID',
+  modified_order_id: 'Modified Order ID',
+  shipment_id: 'Shipment ID',
+  invoice_id: 'Invoice ID',
 }
 
 function isStubValue(value: unknown): boolean {

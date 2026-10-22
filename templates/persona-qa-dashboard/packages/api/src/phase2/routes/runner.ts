@@ -20,9 +20,7 @@ import { validateProviderCredentials } from '../providers/provider-factory.js'
 
 const StartAgenticRunBody = z.object({
   scenario_id: z.string(),
-  customer_name: z.string().optional(),
-  customer_phone: z.string().optional(),
-  order_type: z.string().optional(),
+  seed_artifacts: z.record(z.string()).optional(),
   execution_context: z.unknown().optional(),
 })
 
@@ -114,8 +112,7 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
 
     const executionContext = parseExecutionContext(parsed.data.execution_context)
     const baseUrl = resolveExecutionBaseUrl(executionContext) ?? process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3012'
-    const uniqueSuffix = Date.now().toString().slice(-6)
-    const customerName = parsed.data.customer_name ?? `Maria Agentic ${uniqueSuffix}`
+    const seedArtifacts = parsed.data.seed_artifacts ?? {}
 
     const runtime = useDeterministicProvider
       ? createPhase2Runtime({ deterministic: true })
@@ -136,6 +133,7 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
       try {
         if (useGeneratedNonFrontendRuntime) {
           await runtime.orchestrator.executeRunInSession(session.id, scenario, {
+            ...seedArtifacts,
             targetRepoPath: executionContext?.targetRepoPath ?? resolveGeneratedTargetRepoPath(),
             runtimeMode: 'generated_non_browser',
           })
@@ -147,10 +145,8 @@ export async function phase2RunnerRoutes(app: FastifyInstance): Promise<void> {
         page = await browser.newPage({ baseURL: baseUrl })
 
         await runtime.orchestrator.executeRunInSession(session.id, scenario, {
+          ...seedArtifacts,
           page,
-          customerName,
-          customerPhone: parsed.data.customer_phone ?? '11999990000',
-          orderType: parsed.data.order_type ?? 'Primeira Pedido',
         })
       } catch (error) {
         runtime.sessionService.updateStatus(session.id, 'failed')

@@ -6,13 +6,13 @@
  * - File list metadata and "FILE:" path labels are sanitized in this slice (see llm-discovery.ts).
  * - DOM evidence, tool outputs, CLI, L5 feedback etc. are still TODO (see plan).
  *
- * Follows .specs/agent-security/:
- * - Hostilidade por padrão
- * - Sanitize na fronteira de ingestão (Content Sanitizer / Context Normalizer)
- * - Data ≠ code via explicit wrappers + provenance
+ * Principles:
+ * - Treat repository content as hostile by default
+ * - Sanitize at the ingestion boundary (content sanitizer / context normalizer)
+ * - Data is not code: explicit wrappers plus provenance
  * - Syntactic masking control
  *
- * See: REMEDIATION_PLAN_2026-06-11.md and .specs/agent-security/security-best-practices-for-agents.md
+ * See docs/decisions/0004-untrusted-repository-content.md
  */
 
 import { createHash } from 'node:crypto'

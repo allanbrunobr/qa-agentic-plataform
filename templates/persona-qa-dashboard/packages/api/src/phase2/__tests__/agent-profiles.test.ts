@@ -1,49 +1,49 @@
 import { afterAll, beforeAll, describe, it, expect } from 'vitest'
 import { getProfile, listProfiles } from '../profiles/agent-profiles.js'
 
-const previousLegacyScenarioFlag = process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS']
+const previousReferenceScenarioFlag = process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS']
 
 beforeAll(() => {
-  process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'] = '1'
+  process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'] = '1'
 })
 
 afterAll(() => {
-  if (previousLegacyScenarioFlag === undefined) {
-    delete process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS']
+  if (previousReferenceScenarioFlag === undefined) {
+    delete process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS']
   } else {
-    process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'] = previousLegacyScenarioFlag
+    process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'] = previousReferenceScenarioFlag
   }
 })
 
 describe('agent-profiles', () => {
-  describe('getProfile — sales-associate', () => {
+  describe('getProfile — sales_associate', () => {
     it('returns profile with Claude Haiku model', () => {
-      const p = getProfile('sales-associate')
+      const p = getProfile('sales_associate')
       expect(p.model).toBe('claude-haiku-4-5-20251001')
     })
 
     it('has 90s timeout', () => {
-      const p = getProfile('sales-associate')
+      const p = getProfile('sales_associate')
       expect(p.timeoutMs).toBe(90_000)
     })
 
     it('has 2 retry attempts', () => {
-      const p = getProfile('sales-associate')
+      const p = getProfile('sales_associate')
       expect(p.retryPolicy.maxAttempts).toBe(2)
     })
 
     it('has browser access enabled', () => {
-      const p = getProfile('sales-associate')
+      const p = getProfile('sales_associate')
       expect(p.toolPolicy.browserAccess).toBe(true)
     })
 
     it('requires screenshot for finding', () => {
-      const p = getProfile('sales-associate')
+      const p = getProfile('sales_associate')
       expect(p.evidencePolicy.requireScreenshotForFinding).toBe(true)
     })
 
     it('cannot block run', () => {
-      const p = getProfile('sales-associate')
+      const p = getProfile('sales_associate')
       expect(p.canBlockRun).toBe(false)
     })
   })
@@ -70,34 +70,34 @@ describe('agent-profiles', () => {
     })
   })
 
-  describe('getProfile — fulfillment-agent', () => {
+  describe('getProfile — fulfillment_agent', () => {
     it('returns profile with Claude Sonnet model', () => {
-      const p = getProfile('fulfillment-agent')
+      const p = getProfile('fulfillment_agent')
       expect(p.model).toBe('claude-sonnet-4-6')
     })
 
     it('has browser access enabled', () => {
-      const p = getProfile('fulfillment-agent')
+      const p = getProfile('fulfillment_agent')
       expect(p.toolPolicy.browserAccess).toBe(true)
     })
 
     it('restricts tools to order-details workflow and evidence tools', () => {
-      const p = getProfile('fulfillment-agent')
+      const p = getProfile('fulfillment_agent')
       expect(p.toolPolicy.allowedTools).toEqual([
         'openOrderDetails',
-        'completeFulfillment',
+        'fulfillOrder',
       ])
     })
 
-    it('has extended timeout for real registro flow', () => {
-      const p = getProfile('fulfillment-agent')
+    it('has extended timeout for real order fulfillment flow', () => {
+      const p = getProfile('fulfillment_agent')
       expect(p.timeoutMs).toBe(180_000)
     })
 
     it('uses generated runtime prompt identity without template agent files', () => {
-      const p = getProfile('fulfillment-agent')
+      const p = getProfile('fulfillment_agent')
       expect(p.promptPath).toBeUndefined()
-      expect(p.systemPrompt).toContain('fulfillment-agent')
+      expect(p.systemPrompt).toContain('fulfillment_agent')
     })
   })
 
@@ -107,9 +107,9 @@ describe('agent-profiles', () => {
       expect(p.toolPolicy.browserAccess).toBe(true)
     })
 
-    it('restricts tools to the Billing review workflow', () => {
+    it('restricts tools to the invoice review workflow', () => {
       const p = getProfile('billing_clerk')
-      expect(p.toolPolicy.allowedTools).toEqual(['findBillingGuideByEventId'])
+      expect(p.toolPolicy.allowedTools).toEqual(['findInvoiceByOrderId'])
     })
 
     it('uses generated runtime prompt identity without template agent files', () => {
@@ -144,13 +144,13 @@ describe('agent-profiles', () => {
   })
 
   describe('listProfiles', () => {
-    it('returns at least orchestrator, sales-associate, fulfillment-agent, billing_clerk, and store_manager', () => {
+    it('returns at least orchestrator, sales_associate, fulfillment_agent, billing_clerk, and store_manager', () => {
       const profiles = listProfiles()
       expect(profiles.length).toBeGreaterThanOrEqual(5)
       const roles = profiles.map((p) => p.role)
       expect(roles).toContain('orchestrator')
-      expect(roles).toContain('sales-associate')
-      expect(roles).toContain('fulfillment-agent')
+      expect(roles).toContain('sales_associate')
+      expect(roles).toContain('fulfillment_agent')
       expect(roles).toContain('billing_clerk')
       expect(roles).toContain('store_manager')
     })

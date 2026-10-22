@@ -18,18 +18,18 @@ import { ToolRegistry } from '../services/tool-registry.js'
 import { registerWorkflowTools } from '../tools/workflow-tools.js'
 
 describe('L5 controlled feedback services', () => {
-  let previousLegacyScenarios: string | undefined
+  let previousReferenceScenarios: string | undefined
 
   beforeAll(() => {
-    previousLegacyScenarios = process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS
-    process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS = '1'
+    previousReferenceScenarios = process.env.PERSONA_QA_USE_REFERENCE_SCENARIOS
+    process.env.PERSONA_QA_USE_REFERENCE_SCENARIOS = '1'
   })
 
   afterAll(() => {
-    if (previousLegacyScenarios === undefined) {
-      delete process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS
+    if (previousReferenceScenarios === undefined) {
+      delete process.env.PERSONA_QA_USE_REFERENCE_SCENARIOS
     } else {
-      process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS = previousLegacyScenarios
+      process.env.PERSONA_QA_USE_REFERENCE_SCENARIOS = previousReferenceScenarios
     }
   })
 
@@ -108,7 +108,7 @@ describe('L5 controlled feedback services', () => {
     const proposal = service.createLearningProposal({
       recommendationId: 'overlay-materialization',
       scenarioId: 'first_visit',
-      stepId: 'create_customer',
+      stepId: 'register_customer',
       agentId: 'front_desk',
       type: 'prompt_patch',
       severity: 'medium',
@@ -148,7 +148,7 @@ describe('L5 controlled feedback services', () => {
     const proposal = service.createLearningProposal({
       recommendationId: 'ungoverned-materialization',
       scenarioId: 'first_visit',
-      stepId: 'create_customer',
+      stepId: 'register_customer',
       agentId: 'front_desk',
       type: 'prompt_patch',
       severity: 'medium',
@@ -170,8 +170,8 @@ describe('L5 controlled feedback services', () => {
     service.recordStepPerformance({
       sessionId: session.id,
       scenarioId: 'first_order',
-      stepId: 'create_customer',
-      agentId: 'sales-associate',
+      stepId: 'register_customer',
+      agentId: 'sales_associate',
       status: 'completed',
       success: true,
       attempt: 1,
@@ -180,7 +180,7 @@ describe('L5 controlled feedback services', () => {
 
     const recommendations = new ProfileTuningService(service).generateRecommendations()
     expect(recommendations).toContainEqual(expect.objectContaining({
-      agentId: 'sales-associate',
+      agentId: 'sales_associate',
       field: 'timeoutMs',
     }))
   })
@@ -199,8 +199,8 @@ describe('L5 controlled feedback services', () => {
     service.recordStepPerformance({
       sessionId: session.id,
       scenarioId: 'first_order',
-      stepId: 'create_customer',
-      agentId: 'sales-associate',
+      stepId: 'register_customer',
+      agentId: 'sales_associate',
       status: 'failed',
       success: false,
       attempt: 1,
@@ -397,8 +397,8 @@ describe('L5 controlled feedback services', () => {
       signalType: 'promotion_verified',
       sourceRunId: 'loop-policy-promotion',
       scenarioId: 'first_order',
-      stepId: 'create_customer',
-      agentId: 'sales-associate',
+      stepId: 'register_customer',
+      agentId: 'sales_associate',
       version: 'promotion:warning',
       confidence: 0.75,
       summary: 'Verified with warning.',
@@ -410,8 +410,8 @@ describe('L5 controlled feedback services', () => {
       signalType: 'promotion_verified',
       sourceRunId: 'loop-policy-passed',
       scenarioId: 'first_order',
-      stepId: 'schedule_order',
-      agentId: 'sales-associate',
+      stepId: 'create_order',
+      agentId: 'sales_associate',
       version: 'promotion:passed',
       confidence: 1,
       summary: 'Verified as passed.',
@@ -531,8 +531,8 @@ describe('L5 controlled feedback services', () => {
       service.recordStepPerformance({
         sessionId: session.id,
         scenarioId: 'first_order',
-        stepId: 'create_customer',
-        agentId: 'sales-associate',
+        stepId: 'register_customer',
+        agentId: 'sales_associate',
         status: 'failed',
         success: false,
         attempt,
@@ -902,8 +902,8 @@ describe('L5 controlled feedback services', () => {
         service.recordStepPerformance({
           sessionId: session.id,
           scenarioId: 'first_order',
-          stepId: 'create_customer',
-          agentId: 'sales-associate',
+          stepId: 'register_customer',
+          agentId: 'sales_associate',
           status: 'failed',
           success: false,
           attempt,
@@ -963,8 +963,8 @@ describe('L5 controlled feedback services', () => {
       service.recordStepPerformance({
         sessionId: session.id,
         scenarioId: 'first_order',
-        stepId: 'create_customer',
-        agentId: 'sales-associate',
+        stepId: 'register_customer',
+        agentId: 'sales_associate',
         status: 'failed',
         success: false,
         attempt,
@@ -1025,10 +1025,10 @@ describe('L5 controlled feedback services', () => {
     const session = service.createSession('first_order')
     service.appendEvent(session.id, {
       type: 'agent_started',
-      agentRole: 'sales-associate',
+      agentRole: 'sales_associate',
       payload: {
-        agentId: 'sales-associate',
-        stepId: 'create_customer',
+        agentId: 'sales_associate',
+        stepId: 'register_customer',
         attempt: 1,
       },
     })
@@ -1122,8 +1122,8 @@ describe('L5 controlled feedback services', () => {
       service.recordStepPerformance({
         sessionId: session.id,
         scenarioId: 'first_order',
-        stepId: 'create_customer',
-        agentId: 'sales-associate',
+        stepId: 'register_customer',
+        agentId: 'sales_associate',
         status: 'timeout',
         success: false,
         attempt,
@@ -1159,8 +1159,8 @@ describe('L5 controlled feedback services', () => {
       registerWorkflowTools(registry)
 
       const result = await registry.execute(
-        'createCustomer',
-        { name: 'Maria Fake' },
+        'registerCustomer',
+        { name: 'Alex Fake' },
         { browserAccess: true },
         {},
       )
@@ -1169,7 +1169,7 @@ describe('L5 controlled feedback services', () => {
         ok: true,
         output: expect.objectContaining({
           customerId: expect.stringMatching(/^customer-/),
-          customerName: 'Maria Fake',
+          customerName: 'Alex Fake',
           fakeWorkflowTool: true,
         }),
       })
@@ -1186,7 +1186,7 @@ describe('L5 controlled feedback services', () => {
     const service = new SessionService(':memory:')
     const action = service.recordHealingAction({
       type: 'quarantine_step',
-      target: 'first_order:create_customer',
+      target: 'first_order:register_customer',
       reason: 'Manual quarantine validation',
       automatic: false,
       status: 'proposed',
@@ -1237,8 +1237,8 @@ describe('L5 controlled feedback services', () => {
       service.recordStepPerformance({
         sessionId: session.id,
         scenarioId: 'first_order',
-        stepId: 'create_customer',
-        agentId: 'sales-associate',
+        stepId: 'register_customer',
+        agentId: 'sales_associate',
         status: 'timeout',
         success: false,
         attempt,
@@ -1271,8 +1271,8 @@ describe('L5 controlled feedback services', () => {
       service.recordStepPerformance({
         sessionId: session.id,
         scenarioId: 'first_order',
-        stepId: 'schedule_order',
-        agentId: 'sales-associate',
+        stepId: 'create_order',
+        agentId: 'sales_associate',
         status: attempt <= 4 ? 'failed' : 'completed',
         success: attempt > 4,
         attempt,
@@ -1306,8 +1306,8 @@ describe('L5 controlled feedback services', () => {
       service.recordStepPerformance({
         sessionId: session.id,
         scenarioId: 'first_order',
-        stepId: 'create_customer',
-        agentId: 'sales-associate',
+        stepId: 'register_customer',
+        agentId: 'sales_associate',
         status: 'timeout',
         success: false,
         attempt,
@@ -1354,29 +1354,29 @@ function makeLearningSignal(overrides: Partial<L5LearningSignal> = {}): L5Learni
 function recordCompliantFirstOrderSession(service: SessionService) {
   const session = service.createSession('first_order')
   const steps = [
-    { stepId: 'create_customer', artifact: 'customerId', value: 'customer-123' },
-    { stepId: 'schedule_order', artifact: 'eventId', value: 'event-456' },
+    { stepId: 'register_customer', artifact: 'customerId', value: 'customer-123' },
+    { stepId: 'create_order', artifact: 'orderId', value: 'order-456' },
   ]
 
   for (const step of steps) {
     service.appendEvent(session.id, {
       type: 'step_started',
-      payload: { stepId: step.stepId, agentId: 'sales-associate', attempt: 1 },
+      payload: { stepId: step.stepId, agentId: 'sales_associate', attempt: 1 },
     })
     service.appendEvent(session.id, {
       type: 'agent_started',
-      agentRole: 'sales-associate',
-      payload: { agentId: 'sales-associate', stepId: step.stepId, attempt: 1 },
+      agentRole: 'sales_associate',
+      payload: { agentId: 'sales_associate', stepId: step.stepId, attempt: 1 },
     })
     service.appendEvent(session.id, {
       type: 'agent_stopped',
-      agentRole: 'sales-associate',
-      payload: { agentId: 'sales-associate', stepId: step.stepId, attempt: 1 },
+      agentRole: 'sales_associate',
+      payload: { agentId: 'sales_associate', stepId: step.stepId, attempt: 1 },
     })
     service.setArtifact(session.id, step.artifact, step.value)
     service.appendEvent(session.id, {
       type: 'step_completed',
-      payload: { stepId: step.stepId, agentId: 'sales-associate', durationMs: 1000 },
+      payload: { stepId: step.stepId, agentId: 'sales_associate', durationMs: 1000 },
     })
   }
 
@@ -1391,29 +1391,29 @@ function recordCompliantFirstOrderSession(service: SessionService) {
 function recordWarningReplaySession(service: SessionService) {
   const session = service.createSession('first_order')
   const steps = [
-    { stepId: 'create_customer', artifact: 'customerId', value: 'customer-warning' },
-    { stepId: 'schedule_order', artifact: 'eventId', value: 'event-warning' },
+    { stepId: 'register_customer', artifact: 'customerId', value: 'customer-warning' },
+    { stepId: 'create_order', artifact: 'orderId', value: 'order-warning' },
   ]
 
   for (const step of steps) {
     service.appendEvent(session.id, {
       type: 'step_started',
-      payload: { stepId: step.stepId, agentId: 'sales-associate', attempt: 1 },
+      payload: { stepId: step.stepId, agentId: 'sales_associate', attempt: 1 },
     })
     service.appendEvent(session.id, {
       type: 'agent_started',
-      agentRole: 'sales-associate',
-      payload: { agentId: 'sales-associate', stepId: step.stepId, attempt: 1 },
+      agentRole: 'sales_associate',
+      payload: { agentId: 'sales_associate', stepId: step.stepId, attempt: 1 },
     })
     service.appendEvent(session.id, {
       type: 'agent_stopped',
-      agentRole: 'sales-associate',
-      payload: { agentId: 'sales-associate', stepId: step.stepId, attempt: 1 },
+      agentRole: 'sales_associate',
+      payload: { agentId: 'sales_associate', stepId: step.stepId, attempt: 1 },
     })
     service.setArtifact(session.id, step.artifact, step.value)
     service.appendEvent(session.id, {
       type: 'step_completed',
-      payload: { stepId: step.stepId, agentId: 'sales-associate', durationMs: 1000 },
+      payload: { stepId: step.stepId, agentId: 'sales_associate', durationMs: 1000 },
     })
   }
 
@@ -1425,12 +1425,12 @@ function recordFailedReplaySession(service: SessionService) {
   const session = service.createSession('first_order')
   service.appendEvent(session.id, {
     type: 'step_started',
-    payload: { stepId: 'create_customer', agentId: 'sales-associate', attempt: 1 },
+    payload: { stepId: 'register_customer', agentId: 'sales_associate', attempt: 1 },
   })
   service.appendEvent(session.id, {
     type: 'agent_started',
-    agentRole: 'sales-associate',
-    payload: { agentId: 'sales-associate', stepId: 'create_customer', attempt: 1 },
+    agentRole: 'sales_associate',
+    payload: { agentId: 'sales_associate', stepId: 'register_customer', attempt: 1 },
   })
   service.appendEvent(session.id, {
     type: 'session_completed',

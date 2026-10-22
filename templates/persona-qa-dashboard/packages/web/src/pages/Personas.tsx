@@ -137,7 +137,7 @@ function CreatePersonaModal({
                 type="text"
                 value={form.name}
                 onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="e.g. Dr. Maria Santos"
+                placeholder="e.g. Maria Santos"
                 className={inputClasses}
               />
             </div>

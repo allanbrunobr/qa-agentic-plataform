@@ -123,8 +123,8 @@ describe('GovernancePolicyService', () => {
       service.recordStepPerformance({
         sessionId: session.id,
         scenarioId: 'first_order',
-        stepId: 'create_customer',
-        agentId: 'sales-associate',
+        stepId: 'register_customer',
+        agentId: 'sales_associate',
         status: 'timeout',
         success: false,
         attempt,
@@ -161,8 +161,8 @@ function createProposal(
   return service.createLearningProposal({
     recommendationId,
     scenarioId: 'first_order',
-    stepId: 'create_customer',
-    agentId: 'sales-associate',
+    stepId: 'register_customer',
+    agentId: 'sales_associate',
     type: patchKind === 'capability_patch' ? 'capability_patch' : 'prompt_patch',
     severity: 'medium',
     recommendation: {
@@ -171,7 +171,7 @@ function createProposal(
       suggestedAction: 'test action',
     },
     patchKind,
-    target: 'agent:sales-associate',
+    target: 'agent:sales_associate',
     patchContent: patchKind === 'prompt_overlay' ? '[LEARNING OVERLAY]' : undefined,
   })
 }

@@ -13,6 +13,12 @@ import Fastify from 'fastify';
 import { sql } from 'drizzle-orm';
 import { initDb, closeDb, getDb } from '../../db/index.js';
 import { statsRoutes, setLastSync, getLastSyncInfo } from '../stats.js';
+import { setSessionService } from '../../phase2/routes/sessions.js';
+import { SessionService } from '../../phase2/services/session-service.js';
+
+// /api/status treats running sessions older than one hour as stale, so active
+// fixtures must be relative to the current time.
+const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 
 describe('/api/status', () => {
   const app = Fastify();
@@ -61,7 +67,7 @@ describe('/api/status', () => {
     `);
     db.run(sql`
       INSERT INTO p2_sessions (session_id, run_id, scenario_id, status, created_at, started_at, completed_at)
-      VALUES ('p2-active-1', NULL, 'first_order_multi_role', 'running', '2026-04-13T14:00:00Z', '2026-04-13T14:00:00Z', NULL)
+      VALUES ('p2-active-1', NULL, 'first_order_multi_role', 'running', ${minutesAgo(1)}, ${minutesAgo(1)}, NULL)
     `);
 
     const res = await app.inject({ method: 'GET', url: '/api/status' });
@@ -76,7 +82,7 @@ describe('/api/status', () => {
     db.run(sql`DELETE FROM p2_sessions`);
     db.run(sql`
       INSERT INTO p2_sessions (session_id, run_id, scenario_id, status, created_at, started_at, completed_at)
-      VALUES ('p2-stale-1', NULL, 'first_order_multi_role', 'running', '2026-04-10T10:00:00Z', '2026-04-10T10:00:00Z', NULL)
+      VALUES ('p2-stale-1', NULL, 'first_order_multi_role', 'running', ${minutesAgo(120)}, ${minutesAgo(120)}, NULL)
     `);
 
     const res = await app.inject({ method: 'GET', url: '/api/status' });
@@ -131,8 +137,33 @@ describe('getLastSyncInfo hydration', () => {
 
 describe('/api/stats', () => {
   const app = Fastify();
+  // Contract adherence is evaluated against the bundled reference scenarios.
+  let previousReferenceFlag: string | undefined;
 
   before(async () => {
+    previousReferenceFlag = process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'];
+    process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'] = '1';
+
+    const sessionService = new SessionService(':memory:');
+    setSessionService(sessionService);
+    const compliant = sessionService.createSession('first_order_multi_role');
+    for (const [stepId, toolName] of [
+      ['register_customer', 'registerCustomer'],
+      ['create_order', 'createOrder'],
+      ['fulfill_order', 'fulfillOrder'],
+    ]) {
+      sessionService.addEvent(compliant.id, 'step_started', { stepId });
+      sessionService.addEvent(compliant.id, 'tool_call', { toolName });
+      sessionService.addEvent(compliant.id, 'step_completed', { stepId });
+    }
+    sessionService.setArtifact(compliant.id, 'customerId', 'customer-1');
+    sessionService.setArtifact(compliant.id, 'orderId', 'order-1');
+    sessionService.setArtifact(compliant.id, 'orderFulfilled', true);
+    sessionService.updateStatus(compliant.id, 'complete');
+    // Completed without running any step: 3 never-started steps + 3 missing artifacts.
+    const violated = sessionService.createSession('first_order_multi_role');
+    sessionService.updateStatus(violated.id, 'complete');
+
     closeDb();
     process.env['DATABASE_URL'] = ':memory:';
     initDb();
@@ -178,6 +209,12 @@ describe('/api/stats', () => {
   after(async () => {
     await app.close();
     closeDb();
+    setSessionService(new SessionService(':memory:'));
+    if (previousReferenceFlag === undefined) {
+      delete process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'];
+    } else {
+      process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'] = previousReferenceFlag;
+    }
   });
 
   it('returns agentic aggregate stats', async () => {
@@ -191,11 +228,11 @@ describe('/api/stats', () => {
     assert.equal(body.agentic.total_findings, 1);
     assert.equal(body.agentic.last_activity_at, '2026-04-13T15:00:00Z');
     assert.deepEqual(body.agentic.contract_adherence, {
-      violated: 2,
+      violated: 1,
       drift: 0,
-      compliant: 0,
+      compliant: 1,
       no_contract: 0,
-      hard_violations: 2,
+      hard_violations: 6,
       drift_signals: 0,
     });
   });

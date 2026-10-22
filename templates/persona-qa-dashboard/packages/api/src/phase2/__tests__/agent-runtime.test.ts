@@ -7,7 +7,7 @@ import type { SessionService } from '../services/session-service.js'
 
 function makeProfile(overrides: Partial<AgentProfile> = {}): AgentProfile {
   return {
-    role: 'sales-associate',
+    role: 'sales_associate',
     model: 'claude-haiku-4-5-20251001',
     timeoutMs: 30000,
     retryPolicy: { maxAttempts: 1, backoffMs: 0 },
@@ -21,7 +21,7 @@ function makeProfile(overrides: Partial<AgentProfile> = {}): AgentProfile {
 function makeStepContext(overrides: Partial<StepContext> = {}): StepContext {
   return {
     sessionId: 'sess-1',
-    messages: [{ role: 'user', content: 'Create a customer named João' }],
+    messages: [{ role: 'user', content: 'Create a customer named Alex' }],
     ...overrides,
   }
 }
@@ -126,15 +126,15 @@ describe('AgentRuntime', () => {
 
       const runtime = new AgentRuntime(provider, registry, sessionService)
       runtime.registerAgent(makeProfile({
-        id: 'sales-associate',
+        id: 'sales_associate',
         toolPolicy: { browserAccess: false, allowedTools: ['expectedTool', 'otherTool'] },
         evidencePolicy: { requireScreenshotForFinding: false, requireDomSnippetForFinding: false },
       }))
 
-      const result = await runtime.executeStep('sales-associate', {
+      const result = await runtime.executeStep('sales_associate', {
         id: 'step_1',
         name: 'Expected step',
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         capabilityId: 'expectedTool',
         order: 1,
         requiredArtifacts: [],
@@ -216,8 +216,8 @@ describe('AgentRuntime', () => {
         signalType: 'audit_reviewed',
         sourceRunId: 'loop-create-customer',
         scenarioId: 'first_order',
-        stepId: 'create_customer',
-        agentId: 'sales-associate',
+        stepId: 'register_customer',
+        agentId: 'sales_associate',
         version: 'audit_reviewed:loop-create-customer:review-create-customer',
         confidence: 0.86,
         summary: 'Prior audit accepted the customer id extraction risk and requires URL confirmation.',
@@ -232,15 +232,15 @@ describe('AgentRuntime', () => {
       }])
       const runtime = new AgentRuntime(provider, registry, sessionService)
       runtime.registerAgent(makeProfile({
-        id: 'sales-associate',
+        id: 'sales_associate',
         evidencePolicy: { requireScreenshotForFinding: false, requireDomSnippetForFinding: false },
       }))
 
-      await runtime.executeStep('sales-associate', {
-        id: 'create_customer',
+      await runtime.executeStep('sales_associate', {
+        id: 'register_customer',
         name: 'Create customer',
-        agentId: 'sales-associate',
-        capabilityId: 'createCustomer',
+        agentId: 'sales_associate',
+        capabilityId: 'registerCustomer',
         order: 1,
         requiredArtifacts: [],
         producedArtifacts: ['customerId'],
@@ -253,7 +253,7 @@ describe('AgentRuntime', () => {
       expect(systemMessage).toContain('Prior audit accepted the customer id extraction risk')
       expect(systemMessage).toContain(`Version: ${signal.version}`)
       expect(systemMessage).toContain('Confidence: 0.86')
-      expect(systemMessage).toContain('Scope: scenario=first_order, step=create_customer, agent=sales-associate')
+      expect(systemMessage).toContain('Scope: scenario=first_order, step=register_customer, agent=sales_associate')
 
       const events = sessionService.getSession(session.id)?.events ?? []
       expect(events).toEqual(expect.arrayContaining([
@@ -262,7 +262,7 @@ describe('AgentRuntime', () => {
           payload: expect.objectContaining({
             event: 'l5_learning_signals_loaded',
             scenarioId: 'first_order',
-            stepId: 'create_customer',
+            stepId: 'register_customer',
             signalCount: 1,
             signals: [expect.objectContaining({ id: signal.id, signalType: 'audit_reviewed' })],
           }),
@@ -278,8 +278,8 @@ describe('AgentRuntime', () => {
         signalType: 'audit_reviewed',
         sourceRunId: 'loop-runtime-filter',
         scenarioId: 'first_order',
-        stepId: 'create_customer',
-        agentId: 'sales-associate',
+        stepId: 'register_customer',
+        agentId: 'sales_associate',
         version: 'audit_reviewed:loop-runtime-filter:review-stale',
         confidence: 0.2,
         summary: 'Stale signal must not reach the model.',
@@ -290,8 +290,8 @@ describe('AgentRuntime', () => {
         signalType: 'audit_reviewed',
         sourceRunId: 'loop-runtime-filter',
         scenarioId: 'first_order',
-        stepId: 'create_customer',
-        agentId: 'sales-associate',
+        stepId: 'register_customer',
+        agentId: 'sales_associate',
         version: 'audit_reviewed:loop-runtime-filter:review-current',
         confidence: 0.9,
         summary: 'Current retained signal should reach the model.',
@@ -302,8 +302,8 @@ describe('AgentRuntime', () => {
         signalType: 'audit_reviewed',
         sourceRunId: 'loop-other-step',
         scenarioId: 'first_order',
-        stepId: 'complete_fulfillment',
-        agentId: 'sales-associate',
+        stepId: 'fulfill_order',
+        agentId: 'sales_associate',
         version: 'audit_reviewed:loop-other-step:review-other-step',
         confidence: 0.9,
         summary: 'Other step signal must not reach the model.',
@@ -314,8 +314,8 @@ describe('AgentRuntime', () => {
         signalType: 'promotion_verified',
         sourceRunId: 'loop-other-agent',
         scenarioId: 'first_order',
-        stepId: 'create_customer',
-        agentId: 'fulfillment-agent',
+        stepId: 'register_customer',
+        agentId: 'fulfillment_agent',
         version: 'promotion_verified:loop-other-agent:promotion-other-agent',
         confidence: 0.9,
         summary: 'Other agent signal must not reach the model.',
@@ -329,15 +329,15 @@ describe('AgentRuntime', () => {
       }])
       const runtime = new AgentRuntime(provider, registry, sessionService)
       runtime.registerAgent(makeProfile({
-        id: 'sales-associate',
+        id: 'sales_associate',
         evidencePolicy: { requireScreenshotForFinding: false, requireDomSnippetForFinding: false },
       }))
 
-      await runtime.executeStep('sales-associate', {
-        id: 'create_customer',
+      await runtime.executeStep('sales_associate', {
+        id: 'register_customer',
         name: 'Create customer',
-        agentId: 'sales-associate',
-        capabilityId: 'createCustomer',
+        agentId: 'sales_associate',
+        capabilityId: 'registerCustomer',
         order: 1,
         requiredArtifacts: [],
         producedArtifacts: ['customerId'],
@@ -356,13 +356,13 @@ describe('AgentRuntime', () => {
       const proposal = sessionService.createLearningProposal({
         recommendationId: 'runtime-overlay-create-customer',
         scenarioId: 'first_order',
-        stepId: 'create_customer',
-        agentId: 'sales-associate',
+        stepId: 'register_customer',
+        agentId: 'sales_associate',
         type: 'prompt_patch',
         severity: 'medium',
         recommendation: { reason: 'previous run failed to persist customer id' },
         patchKind: 'prompt_overlay',
-        target: 'agent:sales-associate',
+        target: 'agent:sales_associate',
         patchContent: 'Before reporting success, confirm the customer id is present in the current URL or tool output.',
       })
       sessionService.updateLearningProposalStatus(proposal.id, 'approved')
@@ -375,9 +375,9 @@ describe('AgentRuntime', () => {
         checksum: 'runtime-overlay-checksum',
         metadata: {
           scenarioId: 'first_order',
-          stepId: 'create_customer',
-          agentId: 'sales-associate',
-          target: 'agent:sales-associate',
+          stepId: 'register_customer',
+          agentId: 'sales_associate',
+          target: 'agent:sales_associate',
           independentAudit: { verdict: 'passed' },
           postWriteVerification: { checksumMatches: true },
         },
@@ -391,15 +391,15 @@ describe('AgentRuntime', () => {
       }])
       const runtime = new AgentRuntime(provider, registry, sessionService)
       runtime.registerAgent(makeProfile({
-        id: 'sales-associate',
+        id: 'sales_associate',
         evidencePolicy: { requireScreenshotForFinding: false, requireDomSnippetForFinding: false },
       }))
 
-      await runtime.executeStep('sales-associate', {
-        id: 'create_customer',
+      await runtime.executeStep('sales_associate', {
+        id: 'register_customer',
         name: 'Create customer',
-        agentId: 'sales-associate',
-        capabilityId: 'createCustomer',
+        agentId: 'sales_associate',
+        capabilityId: 'registerCustomer',
         order: 1,
         requiredArtifacts: [],
         producedArtifacts: ['customerId'],
@@ -420,7 +420,7 @@ describe('AgentRuntime', () => {
           payload: expect.objectContaining({
             event: 'l5_runtime_learning_loaded',
             overlayCount: 1,
-            stepId: 'create_customer',
+            stepId: 'register_customer',
           }),
         }),
       ]))
@@ -431,13 +431,13 @@ describe('AgentRuntime', () => {
       const proposal = sessionService.createLearningProposal({
         recommendationId: 'runtime-overlay-without-materialization',
         scenarioId: 'first_order',
-        stepId: 'create_customer',
-        agentId: 'sales-associate',
+        stepId: 'register_customer',
+        agentId: 'sales_associate',
         type: 'prompt_patch',
         severity: 'medium',
         recommendation: { reason: 'candidate learning only' },
         patchKind: 'prompt_overlay',
-        target: 'agent:sales-associate',
+        target: 'agent:sales_associate',
         patchContent: 'This unmaterialized overlay must not reach the model.',
       })
       sessionService.updateLearningProposalStatus(proposal.id, 'applied')
@@ -450,15 +450,15 @@ describe('AgentRuntime', () => {
       }])
       const runtime = new AgentRuntime(provider, registry, sessionService)
       runtime.registerAgent(makeProfile({
-        id: 'sales-associate',
+        id: 'sales_associate',
         evidencePolicy: { requireScreenshotForFinding: false, requireDomSnippetForFinding: false },
       }))
 
-      await runtime.executeStep('sales-associate', {
-        id: 'create_customer',
+      await runtime.executeStep('sales_associate', {
+        id: 'register_customer',
         name: 'Create customer',
-        agentId: 'sales-associate',
-        capabilityId: 'createCustomer',
+        agentId: 'sales_associate',
+        capabilityId: 'registerCustomer',
         order: 1,
         requiredArtifacts: [],
         producedArtifacts: ['customerId'],
@@ -502,11 +502,11 @@ describe('AgentRuntime', () => {
     })
 
     it('completes from tool output when required produced artifacts exist', async () => {
-      registry.register('createCustomer', async () => ({
+      registry.register('registerCustomer', async () => ({
         ok: true,
         output: { customerId: 'customer-1', customerName: 'Maria' },
       }), {
-        name: 'createCustomer',
+        name: 'registerCustomer',
         description: 'Create customer',
         requiresBrowser: true,
         tags: [],
@@ -514,13 +514,13 @@ describe('AgentRuntime', () => {
 
       const provider: ModelProvider = {
         chat: vi.fn(async () => ({
-          toolCalls: [{ id: 'c1', name: 'createCustomer', input: { name: 'Maria' } }],
+          toolCalls: [{ id: 'c1', name: 'registerCustomer', input: { name: 'Maria' } }],
           stopReason: 'tool_use' as const,
           usage: { inputTokens: 5, outputTokens: 3 },
         })),
       }
       vi.mocked(provider.chat).mockImplementationOnce(async () => ({
-        toolCalls: [{ id: 'c1', name: 'createCustomer', input: { name: 'Maria' } }],
+        toolCalls: [{ id: 'c1', name: 'registerCustomer', input: { name: 'Maria' } }],
         stopReason: 'tool_use',
         usage: { inputTokens: 5, outputTokens: 3 },
       }))
@@ -528,17 +528,17 @@ describe('AgentRuntime', () => {
 
       const runtime = new AgentRuntime(provider, registry, sessionService)
       runtime.registerAgent(makeProfile({
-        id: 'sales-associate',
+        id: 'sales_associate',
         timeoutMs: 500,
-        toolPolicy: { browserAccess: true, allowedTools: ['createCustomer'] },
+        toolPolicy: { browserAccess: true, allowedTools: ['registerCustomer'] },
         evidencePolicy: { requireScreenshotForFinding: false, requireDomSnippetForFinding: false },
       }))
 
-      const result = await runtime.executeStep('sales-associate', {
-        id: 'create_customer',
+      const result = await runtime.executeStep('sales_associate', {
+        id: 'register_customer',
         name: 'Create customer',
-        agentId: 'sales-associate',
-        capabilityId: 'createCustomer',
+        agentId: 'sales_associate',
+        capabilityId: 'registerCustomer',
         order: 1,
         requiredArtifacts: [],
         producedArtifacts: ['customerId'],

@@ -22,15 +22,15 @@ interface AdapterScenarioModel {
   stepDefinitions?: AdapterScenarioStepModel[]
 }
 
-const LEGACY_SCENARIOS: Record<string, ScenarioContract> = {
+const REFERENCE_SCENARIOS: Record<string, ScenarioContract> = {
   first_order: firstOrder,
   first_order_multi_role: firstOrderMultiRole,
   quarterly_reorder_multi_role: quarterlyReorderMultiRole,
   quarterly_reorder_closure_multi_role: quarterlyReorderClosureMultiRole,
 }
 
-function legacyScenariosEnabled(): boolean {
-  return process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'] === '1'
+function referenceScenariosEnabled(): boolean {
+  return process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'] === '1'
 }
 
 function getGeneratedScenariosCandidates(): string[] {
@@ -179,9 +179,9 @@ export function loadScenario(scenarioId: string): ScenarioContract {
   const scenario = generated[scenarioId]
   if (scenario) return scenario
 
-  if (legacyScenariosEnabled()) {
-    const legacyScenario = LEGACY_SCENARIOS[scenarioId]
-    if (legacyScenario) return ScenarioContractSchema.parse(legacyScenario)
+  if (referenceScenariosEnabled()) {
+    const referenceScenario = REFERENCE_SCENARIOS[scenarioId]
+    if (referenceScenario) return ScenarioContractSchema.parse(referenceScenario)
   }
 
   const available = listScenarios()
@@ -193,5 +193,5 @@ export function listScenarios(): string[] {
   const generatedIds = Object.keys(generated)
   if (generatedIds.length > 0) return generatedIds
 
-  return legacyScenariosEnabled() ? Object.keys(LEGACY_SCENARIOS) : []
+  return referenceScenariosEnabled() ? Object.keys(REFERENCE_SCENARIOS) : []
 }

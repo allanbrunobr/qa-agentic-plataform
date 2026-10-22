@@ -27,9 +27,9 @@ function buildStepArtifacts(context: AdapterStepExecutionContext): AdapterStepEx
   const nextArtifacts: Record<string, unknown> = {}
   for (const artifactId of definition?.producesArtifacts ?? []) {
     if (artifactId === 'customerId') nextArtifacts.customerId = `customer-${context.execution.executionId.slice(0, 8)}`
-    if (artifactId === 'eventId') nextArtifacts.eventId = `event-${context.execution.executionId.slice(0, 8)}`
-    if (artifactId === 'fulfillmentCompleted') nextArtifacts.fulfillmentCompleted = true
-    if (artifactId === 'billingGuideValidated') nextArtifacts.billingGuideValidated = true
+    if (artifactId === 'orderId') nextArtifacts.orderId = `order-${context.execution.executionId.slice(0, 8)}`
+    if (artifactId === 'orderFulfilled') nextArtifacts.orderFulfilled = true
+    if (artifactId === 'invoiceValidated') nextArtifacts.invoiceValidated = true
     if (artifactId === 'financeValidated') nextArtifacts.financeValidated = true
     if (artifactId === 'reportsValidated') nextArtifacts.reportsValidated = true
   }

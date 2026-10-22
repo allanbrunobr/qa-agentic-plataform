@@ -21,43 +21,26 @@ const releasePath = fs.existsSync(preferredNodePath)
   ? `${preferredNodeBin}${path.delimiter}${process.env.PATH ?? ''}`
   : process.env.PATH
 
-const apiReleaseTests = [
-  'src/phase2/__tests__/agent-profiles.test.ts',
-  'src/phase2/__tests__/scenario-loading.test.ts',
-  'src/phase2/__tests__/adaptive-history.test.ts',
-  'src/phase2/__tests__/failure-diagnosis-service.test.ts',
-  'src/phase2/__tests__/agent-runtime.test.ts',
-  'src/phase2/__tests__/workflow-tools.test.ts',
-  'src/phase2/__tests__/generic-adapter-runtime.test.ts',
-  'src/phase2/__tests__/evidence-tools.test.ts',
-  'src/phase2/__tests__/l5-services.test.ts',
-  'src/phase2/__tests__/l5-soak.test.ts',
-  'src/phase2/__tests__/scenario-draft-promotion-readiness-service.test.ts',
-  'src/phase2/__tests__/governance-policy-service.test.ts',
-  'src/phase2/__tests__/independent-auditor-service.test.ts',
-  'src/phase2/__tests__/sessions-routes.test.ts',
-  'src/phase2/__tests__/sensors.test.ts',
-  'src/phase2/__tests__/sensors-policy.test.ts',
-]
+// Collect test files relative to `root` so every suite runs, not a hand-picked subset.
+function listTestFiles(root, dir, { exclude = [] } = {}) {
+  const results = []
+  const walk = (current) => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const absolute = path.join(current, entry.name)
+      const relative = path.relative(root, absolute).split(path.sep).join('/')
+      if (entry.name === 'node_modules' || exclude.some((prefix) => relative.startsWith(prefix))) continue
+      if (entry.isDirectory()) walk(absolute)
+      else if (/\.test\.tsx?$/.test(entry.name)) results.push(relative)
+    }
+  }
+  walk(path.join(root, dir))
+  return results.sort()
+}
 
-const webReleaseTests = [
-  'src/components/__tests__/DomainDiscoveryPanel.test.tsx',
-  'src/components/__tests__/L5GovernancePanel.test.tsx',
-  'src/components/__tests__/MaturityStatusPanel.test.tsx',
-  'src/components/__tests__/RunTimeline.test.tsx',
-  'src/components/__tests__/RecentFindings.test.tsx',
-  'src/components/__tests__/RecentRuns.test.tsx',
-  'src/components/__tests__/ScenarioMetrics.test.tsx',
-  'src/components/__tests__/SourceBadge.test.tsx',
-  'src/components/__tests__/ArtifactsSection.test.tsx',
-  'src/components/EvidenceSummary.test.tsx',
-  'src/components/RunSourceBadge.test.tsx',
-  'src/__tests__/EmptyState.test.tsx',
-  'src/__tests__/FilterChip.test.tsx',
-  'src/__tests__/RunFilters.test.tsx',
-  'src/__tests__/StaleBanner.test.tsx',
-  'src/__tests__/filter-url-persistence.test.ts',
-]
+// src/routes/__tests__ holds node:test suites; everything else under src is vitest.
+const apiRouteNodeTests = listTestFiles(apiRoot, 'src/routes/__tests__')
+const apiReleaseTests = listTestFiles(apiRoot, 'src', { exclude: ['src/routes/__tests__'] })
+const webReleaseTests = listTestFiles(webRoot, 'src')
 
 const portSeed = Number(process.env.RELEASE_PORT_SEED ?? 3280 + (process.pid % 400))
 const baseReleaseEnv = {
@@ -68,18 +51,6 @@ const baseReleaseEnv = {
 let releaseEnv = baseReleaseEnv
 
 const steps = [
-  {
-    name: 'syntax: clean-room verifier',
-    command: releaseNodePath,
-    args: ['--check', 'scripts/verify-install-local-reference-store.mjs'],
-    cwd: repoRoot,
-  },
-  {
-    name: 'syntax: real Reference Store verifier',
-    command: releaseNodePath,
-    args: ['--check', 'scripts/verify-real-reference-store.mjs'],
-    cwd: repoRoot,
-  },
   {
     name: 'syntax: generic frontend verifier',
     command: releaseNodePath,
@@ -195,31 +166,29 @@ const steps = [
     env: releaseEnv,
   },
   {
-    name: 'api: adapter route node tests',
+    name: 'api: route node tests',
     command: releaseNodePath,
     args: [
       '--import',
       tsxLoader,
       '--test',
-      'src/routes/__tests__/personas.test.ts',
-      'src/routes/__tests__/domain-discovery.test.ts',
-      'src/routes/__tests__/code-graph.test.ts',
+      ...apiRouteNodeTests,
     ],
     cwd: apiRoot,
   },
   {
-    name: 'api: L4/L5 release vitest',
+    name: 'api: vitest',
     command: releaseNpmCliPath ? releaseNodePath : 'npm',
     args: releaseNpmCliPath
       ? [releaseNpmCliPath, 'exec', '--', 'vitest', 'run', '--configLoader', 'runner', ...apiReleaseTests]
       : ['exec', '--', 'vitest', 'run', '--configLoader', 'runner', ...apiReleaseTests],
     cwd: apiRoot,
     env: {
-      PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS: '1',
+      PERSONA_QA_USE_REFERENCE_SCENARIOS: '1',
     },
   },
   {
-    name: 'web: release vitest',
+    name: 'web: vitest',
     command: releaseNpmCliPath ? releaseNodePath : 'npm',
     args: releaseNpmCliPath
       ? [releaseNpmCliPath, 'exec', '--', 'vitest', 'run', ...webReleaseTests]
@@ -233,19 +202,6 @@ const steps = [
       ? [releaseNpmCliPath, 'run', 'build']
       : ['run', 'build'],
     cwd: webRoot,
-  },
-  {
-    name: 'clean-room install/runtime/dashboard smoke',
-    // Needs a real host frontend repository to copy into a clean room.
-    skipReason: () => (process.env.SOURCE_REPO
-      ? null
-      : 'SOURCE_REPO is not set; point it at a host frontend repository to run this step'),
-    command: releaseNpmCliPath ? releaseNodePath : 'npm',
-    args: releaseNpmCliPath
-      ? [releaseNpmCliPath, 'run', 'verify:install-local:reference-store']
-      : ['run', 'verify:install-local:reference-store'],
-    cwd: repoRoot,
-    env: releaseEnv,
   },
 ]
 

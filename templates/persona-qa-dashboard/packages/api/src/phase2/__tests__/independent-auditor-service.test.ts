@@ -29,8 +29,8 @@ function session(events: SessionEvent[], status: Session['status'] = 'complete')
 describe('IndependentAuditorService', () => {
   it('passes when agent lifecycle and terminal session events are balanced', () => {
     const evaluation = new IndependentAuditorService().evaluateSession(session([
-      event('agent_started', { agentId: 'sales-associate', stepId: 'create_customer', attempt: 1 }),
-      event('agent_stopped', { agentId: 'sales-associate', stepId: 'create_customer', attempt: 1, status: 'completed' }),
+      event('agent_started', { agentId: 'sales_associate', stepId: 'register_customer', attempt: 1 }),
+      event('agent_stopped', { agentId: 'sales_associate', stepId: 'register_customer', attempt: 1, status: 'completed' }),
       event('session_completed', { scenarioId: 'first_order' }),
     ]))
 
@@ -42,7 +42,7 @@ describe('IndependentAuditorService', () => {
 
   it('fails when an agent start has no matching stop', () => {
     const evaluation = new IndependentAuditorService().evaluateSession(session([
-      event('agent_started', { agentId: 'sales-associate', stepId: 'create_customer', attempt: 1 }),
+      event('agent_started', { agentId: 'sales_associate', stepId: 'register_customer', attempt: 1 }),
       event('session_completed', { scenarioId: 'first_order' }),
     ]))
 
@@ -55,8 +55,8 @@ describe('IndependentAuditorService', () => {
 
   it('warns when a completed legacy session lacks terminal lifecycle event', () => {
     const evaluation = new IndependentAuditorService().evaluateSession(session([
-      event('agent_started', { agentId: 'sales-associate', stepId: 'create_customer', attempt: 1 }),
-      event('agent_stopped', { agentId: 'sales-associate', stepId: 'create_customer', attempt: 1, status: 'completed' }),
+      event('agent_started', { agentId: 'sales_associate', stepId: 'register_customer', attempt: 1 }),
+      event('agent_stopped', { agentId: 'sales_associate', stepId: 'register_customer', attempt: 1, status: 'completed' }),
     ]))
 
     expect(evaluation.verdict).toBe('warning')

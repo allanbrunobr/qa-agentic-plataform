@@ -2,37 +2,37 @@ import type { AdapterPersonaModel } from '../../../../../packages/host-sdk/src/a
 
 export const referenceStoreGeneratedPersonas: AdapterPersonaModel[] = [
   {
-    "id": "sales-associate",
+    "id": "sales_associate",
     "title": "Sales Associate",
-    "goal": "Owns customer registration and scheduling workflows.",
+    "goal": "Owns customer registration and order creation workflows.",
     "allowedCapabilities": [
-      "createCustomer",
-      "scheduleOrder",
+      "registerCustomer",
+      "createOrder",
       "captureScreenshot"
     ]
   },
   {
-    "id": "fulfillment-agent",
+    "id": "fulfillment_agent",
     "title": "Fulfillment Agent",
-    "goal": "Owns operational record and fulfillment completion workflows.",
+    "goal": "Owns order details and fulfilment workflows.",
     "allowedCapabilities": [
       "openOrderDetails",
-      "completeFulfillment",
+      "fulfillOrder",
       "captureScreenshot"
     ]
   },
   {
     "id": "billing_clerk",
-    "title": "Billing clerk",
-    "goal": "Owns guide review and insurance workflow verification.",
+    "title": "Billing Clerk",
+    "goal": "Owns invoice review and billing workflow verification.",
     "allowedCapabilities": [
-      "findBillingGuideByEventId",
+      "findInvoiceByOrderId",
       "captureScreenshot"
     ]
   },
   {
     "id": "store_manager",
-    "title": "Gestor da Storea",
+    "title": "Store Manager",
     "goal": "Owns financial and reports closure validation.",
     "allowedCapabilities": [
       "verifyFinanceDashboard",

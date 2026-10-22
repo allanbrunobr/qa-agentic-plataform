@@ -9,11 +9,11 @@ export const AgentRoleSchema = z.enum([
   'integration_developer',
   'repository_reviewer',
   'quality_auditor',
-  'sales-associate',
-  'fulfillment-agent',
+  'sales_associate',
+  'fulfillment_agent',
   'billing_clerk',
   'store_manager',
-  'financeiro',
+  'finance_reviewer',
   'auditor',
 ])
 export type AgentRole = z.infer<typeof AgentRoleSchema>

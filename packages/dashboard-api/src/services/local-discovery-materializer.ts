@@ -138,10 +138,6 @@ function toLowerEvidence(value: string) {
   return value.normalize('NFKD').toLowerCase()
 }
 
-function legacyStoreFallbackEnabled() {
-  return process.env.AGENTIC_PLATFORM_ENABLE_LEGACY_STORE_FALLBACK === '1'
-}
-
 function extractRoutePathFromEvidence(evidence: string) {
   const normalized = evidence.replace(/\\/g, '/')
   const methodRouteMatch = normalized.match(/\b(?:GET|POST|PUT|PATCH|DELETE)\s+(\/[A-Za-z0-9/_:-]*)/)
@@ -162,14 +158,6 @@ function extractRoutePathFromEvidence(evidence: string) {
 }
 
 function inferProducedArtifacts(stepId: NormalizedStep) {
-  if (legacyStoreFallbackEnabled()) {
-    if (stepId === 'create_customer') return ['customerId']
-    if (stepId === 'schedule_order' || stepId === 'schedule_return') return ['eventId']
-    if (stepId === 'complete_fulfillment' || stepId === 'complete_return_fulfillment') return ['fulfillmentCompleted']
-    if (stepId === 'review_billing_guide') return ['billingGuideValidated']
-    if (stepId === 'validate_closure') return ['financeValidated', 'reportsValidated']
-  }
-
   if (stepId === 'fill_customer_email') return ['customerEmail']
   if (stepId === 'add_cart_item') return ['cartItemId']
   if (stepId === 'submit_order') return ['orderSubmitted']
@@ -230,13 +218,6 @@ function inferCapabilityId(stepId: NormalizedStep) {
 }
 
 function inferStepRole(stepId: NormalizedStep, fallbackRoles: string[]) {
-  if (legacyStoreFallbackEnabled()) {
-    if (stepId === 'create_customer' || stepId === 'schedule_order' || stepId === 'schedule_return') return 'sales-associate'
-    if (stepId === 'complete_fulfillment' || stepId === 'complete_return_fulfillment') return 'fulfillment-agent'
-    if (stepId === 'review_billing_guide') return 'billing_clerk'
-    if (stepId === 'validate_closure') return 'store_manager'
-  }
-
   if (
     stepId === 'fill_customer_email' ||
     stepId === 'add_cart_item' ||
@@ -307,20 +288,6 @@ function normalizeReport(report: DiscoveryReport): DiscoveryReport {
     })),
     risks: report.risks,
   }
-}
-
-function hasSurface(report: DiscoveryReport, tokens: string[]) {
-  return report.surfaces.some((surface) => {
-    const haystack = [surface.id, surface.label, ...surface.evidence].map(toLowerEvidence).join(' ')
-    return tokens.some((token) => haystack.includes(token))
-  })
-}
-
-function hasRole(report: DiscoveryReport, tokens: string[]) {
-  return report.roles.some((role) => {
-    const haystack = [role.id, ...role.evidence].map(toLowerEvidence).join(' ')
-    return tokens.some((token) => haystack.includes(token))
-  })
 }
 
 function inferRouteForSurface(surface: DiscoveryReport['surfaces'][number]) {
@@ -435,7 +402,7 @@ async function detectAuth(repoPath: string, report: DiscoveryReport) {
       loginHookText?.includes('callbackUrl') ? 'credentials login uses callback redirect flow' : null,
       googleButtonText?.includes("signIn('google'") ? 'google sign-in flow present' : null,
       providers.length > 0 ? `detected providers: ${providers.join(', ')}` : null,
-      'review cookie/session handling and store switching before activation',
+      'review cookie/session handling and tenant/workspace switching before activation',
     ].filter(Boolean),
   }
 }
@@ -949,14 +916,9 @@ function inferRoleForDomainStep(
   const normalizedCapabilityId = normalizeId(capabilityId)
   const normalizedRoles = scenarioRoleIds.map(normalizeId)
 
-  if (/(assert|verify|review|report|relatorio|notes|intake|copy)/.test(normalizedCapabilityId)) {
+  if (/(assert|verify|review|report|copy)/.test(normalizedCapabilityId)) {
     const reviewerRole = normalizedRoles.find((roleId) => roleId.includes('reviewer'))
     if (reviewerRole) return reviewerRole
-  }
-
-  if (/(iniciar|start|encerrar|end|pedido|fulfillment|nova_pedido|new_fulfillment)/.test(normalizedCapabilityId)) {
-    const operatorRole = normalizedRoles.find((roleId) => roleId.includes('operator'))
-    if (operatorRole) return operatorRole
   }
 
   const matchingPersona = personas.find((persona) => (
@@ -1065,7 +1027,7 @@ export async function performHostLogin() {
 }
 
 export async function switchHostRole() {
-  throw new Error('TODO: implement role switching / store switching for this host.')
+  throw new Error('TODO: implement role switching / tenant switching for this host.')
 }
 `
 }
@@ -1108,58 +1070,8 @@ function buildAssertionsStub(scenarios: MaterializedScenario[]) {
 `
 }
 
-function buildReferenceBridge(capabilities: MaterializedCapability[]): ReferenceBridgeEntry[] {
-  if (!legacyStoreFallbackEnabled()) return []
-
-  const mapping: Record<string, Omit<ReferenceBridgeEntry, 'capabilityId'>> = {
-    createCustomer: {
-      modulePath: 'host-source-snapshot/integration-test/persona-tests/support/capabilities/customers.ts',
-      exports: ['createCustomer'],
-      type: 'direct',
-    },
-    scheduleOrder: {
-      modulePath: 'host-source-snapshot/integration-test/persona-tests/support/capabilities/orders.ts',
-      exports: ['scheduleOrder'],
-      type: 'direct',
-    },
-    openOrderDetails: {
-      modulePath: 'host-source-snapshot/integration-test/persona-tests/support/capabilities/order-details.ts',
-      exports: ['openOrderDetails'],
-      type: 'direct',
-    },
-    completeFulfillment: {
-      modulePath: 'host-source-snapshot/integration-test/persona-tests/support/capabilities/order-details.ts',
-      exports: ['completeFulfillment'],
-      type: 'direct',
-    },
-    findBillingGuideByEventId: {
-      modulePath: 'host-source-snapshot/integration-test/persona-tests/support/capabilities/billing.ts',
-      exports: ['findGuideByEventId'],
-      type: 'direct',
-    },
-    verifyFinanceDashboard: {
-      modulePath: 'host-source-snapshot/integration-test/persona-tests/support/capabilities/finance.ts',
-      exports: ['openFinanceDashboard', 'assertDashboardLoaded'],
-      type: 'direct',
-    },
-    verifyReportsPage: {
-      modulePath: 'host-source-snapshot/integration-test/persona-tests/support/capabilities/reports.ts',
-      exports: ['openReportsPage', 'assertReportsPageLoaded'],
-      type: 'direct',
-    },
-    validateManagementClosure: {
-      modulePath: 'host-source-snapshot/integration-test/persona-tests/support/capabilities',
-      exports: ['openFinanceDashboard', 'assertDashboardLoaded', 'openReportsPage', 'assertReportsPageLoaded'],
-      type: 'composite',
-    },
-  }
-
-  return capabilities
-    .filter((capability) => mapping[capability.id])
-    .map((capability) => ({
-      capabilityId: capability.id,
-      ...mapping[capability.id],
-    }))
+function buildReferenceBridge(_capabilities: MaterializedCapability[]): ReferenceBridgeEntry[] {
+  return []
 }
 
 function appendUnique<T extends string>(items: T[], value: T | null | undefined) {
@@ -1167,68 +1079,7 @@ function appendUnique<T extends string>(items: T[], value: T | null | undefined)
   if (!items.includes(value)) items.push(value)
 }
 
-function buildNormalizedPersonas(report: DiscoveryReport, draft: BootstrapDraft): GeneratedPersonaDraft[] {
-  const personas: GeneratedPersonaDraft[] = []
-
-  if (report.repository) {
-    return draft.personas.map((persona) => ({
-      id: normalizeId(persona.id),
-      title: persona.title,
-      rationale: persona.rationale,
-      allowedTools: persona.allowedTools,
-    }))
-  }
-
-  if (!legacyStoreFallbackEnabled()) {
-    return draft.personas.map((persona) => ({
-      id: normalizeId(persona.id),
-      title: persona.title,
-      rationale: persona.rationale,
-      allowedTools: persona.allowedTools,
-    }))
-  }
-
-  if (hasRole(report, ['sales-associate', 'receptionist']) || hasSurface(report, ['agenda', 'customers', 'customer'])) {
-    personas.push({
-      id: 'sales-associate',
-      title: 'Sales Associate',
-      rationale: 'Lente operacional de atendimento inicial, cadastro de customers e pedido.',
-      allowedTools: ['createCustomer', 'scheduleOrder'],
-    })
-  }
-
-  if (hasRole(report, ['operador', 'fulfillment-agent', 'fulfillment-agent', 'agent']) || hasSurface(report, ['registro', 'order details', 'customer management'])) {
-    personas.push({
-      id: 'fulfillment-agent',
-      title: 'Fulfillment Agent',
-      rationale: 'Lente storea focada em registro, atendimento e conclusao da pedido.',
-      allowedTools: ['openOrderDetails', 'completeFulfillment'],
-    })
-  }
-
-  if (hasSurface(report, ['billing', 'insurance'])) {
-    personas.push({
-      id: 'billing_clerk',
-      title: 'Billing clerk',
-      rationale: 'Lente de faturamento e validacao de guias Billing.',
-      allowedTools: ['findBillingGuideByEventId'],
-    })
-  }
-
-  if (
-    hasRole(report, ['admin', 'administrator']) ||
-    hasSurface(report, ['financas', 'finance', 'antecipacao', 'reports', 'configuracoes'])
-  ) {
-    personas.push({
-      id: 'store_manager',
-      title: 'Gestor da Storea',
-      rationale: 'Lente gerencial focada em fechamento financeiro, configuracoes e validacao operacional.',
-      allowedTools: ['verifyFinanceDashboard', 'verifyReportsPage'],
-    })
-  }
-
-  if (personas.length > 0) return personas
-
+function buildNormalizedPersonas(_report: DiscoveryReport, draft: BootstrapDraft): GeneratedPersonaDraft[] {
   return draft.personas.map((persona) => ({
     id: normalizeId(persona.id),
     title: persona.title,
@@ -1237,82 +1088,7 @@ function buildNormalizedPersonas(report: DiscoveryReport, draft: BootstrapDraft)
   }))
 }
 
-function buildScenario(id: string, title: string, roles: string[], steps: NormalizedStep[]): GeneratedScenarioDraft {
-  return {
-    id,
-    title,
-    participatingRoles: roles,
-    rationale: `Generated from product surfaces for ${title}.`,
-    candidateSteps: steps,
-  }
-}
-
-function buildNormalizedScenarios(report: DiscoveryReport, draft: BootstrapDraft, personas: GeneratedPersonaDraft[]): GeneratedScenarioDraft[] {
-  const scenarios: GeneratedScenarioDraft[] = []
-  const personaIds = personas.map((persona) => persona.id)
-  const hasReception = personaIds.includes('sales-associate')
-  const hasAgent = personaIds.includes('fulfillment-agent')
-  const hasBilling = personaIds.includes('billing_clerk')
-  const hasManager = personaIds.includes('store_manager')
-  const hasCustomerModule = hasSurface(report, ['customers', 'customer'])
-  const hasScheduleModule = hasSurface(report, ['agenda', 'schedule'])
-  const hasFinanceModule = hasSurface(report, ['financas', 'finance', 'antecipacao'])
-
-  if (report.repository) {
-    return draft.scenarios.map((scenario) => ({
-      id: normalizeId(scenario.id),
-      title: scenario.title,
-      participatingRoles: scenario.participatingRoles.map(normalizeId),
-      rationale: scenario.rationale,
-      candidateSteps: normalizeFallbackSteps(scenario.candidateSteps),
-    }))
-  }
-
-  if (!legacyStoreFallbackEnabled()) {
-    return draft.scenarios.map((scenario) => ({
-      id: normalizeId(scenario.id),
-      title: scenario.title,
-      participatingRoles: scenario.participatingRoles.map(normalizeId),
-      rationale: scenario.rationale,
-      candidateSteps: normalizeFallbackSteps(scenario.candidateSteps),
-    }))
-  }
-
-  if (hasReception && hasAgent && (hasCustomerModule || hasScheduleModule)) {
-    scenarios.push(buildScenario(
-      'first_order',
-      'First order',
-      ['sales-associate'],
-      ['create_customer', 'schedule_order'],
-    ))
-    scenarios.push(buildScenario(
-      'first_order_multi_role',
-      'First order multi-role',
-      ['sales-associate', 'fulfillment-agent'],
-      ['create_customer', 'schedule_order', 'complete_fulfillment'],
-    ))
-  }
-
-  if (hasReception && hasAgent && hasBilling) {
-    scenarios.push(buildScenario(
-      'quarterly_reorder_multi_role',
-      'Quarterly reorder multi-role',
-      ['sales-associate', 'fulfillment-agent', 'billing_clerk'],
-      ['create_customer', 'schedule_return', 'complete_return_fulfillment', 'review_billing_guide'],
-    ))
-  }
-
-  if (hasReception && hasAgent && hasBilling && hasManager && hasFinanceModule) {
-    scenarios.push(buildScenario(
-      'quarterly_reorder_closure_multi_role',
-      'Quarterly reorder closure multi-role',
-      ['sales-associate', 'fulfillment-agent', 'billing_clerk', 'store_manager'],
-      ['create_customer', 'schedule_return', 'complete_return_fulfillment', 'review_billing_guide', 'validate_closure'],
-    ))
-  }
-
-  if (scenarios.length > 0) return scenarios
-
+function buildNormalizedScenarios(_report: DiscoveryReport, draft: BootstrapDraft, _personas: GeneratedPersonaDraft[]): GeneratedScenarioDraft[] {
   return draft.scenarios.map((scenario) => ({
     id: normalizeId(scenario.id),
     title: scenario.title,
@@ -1348,14 +1124,6 @@ function classifyFallbackStep(step: string): NormalizedStep | null {
   if (text.includes('docs') || text.includes('public api')) return 'verify_public_api_docs'
   if (text.includes('repository') || text.includes('structure')) return 'inspect_repository_structure'
   if (text.includes('test') || text.includes('entrypoint')) return 'identify_test_entrypoints'
-  if (!legacyStoreFallbackEnabled()) return null
-  if (text.includes('customer') && (text.includes('create') || text.includes('register') || text.includes('cadast'))) return 'create_customer'
-  if ((text.includes('schedule') || text.includes('book') || text.includes('agenda')) && text.includes('return')) return 'schedule_return'
-  if (text.includes('schedule') || text.includes('book') || text.includes('agenda')) return 'schedule_order'
-  if ((text.includes('consult') || text.includes('registro') || text.includes('order details')) && text.includes('return')) return 'complete_return_fulfillment'
-  if (text.includes('consult') || text.includes('registro') || text.includes('order details')) return 'complete_fulfillment'
-  if (text.includes('billing') || text.includes('guide') || text.includes('insurance')) return 'review_billing_guide'
-  if (text.includes('finance') || text.includes('payment') || text.includes('closure') || text.includes('report')) return 'validate_closure'
   return null
 }
 

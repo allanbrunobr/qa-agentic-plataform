@@ -149,7 +149,7 @@ describe('ContextJsonSchema', () => {
       session_id: 's1',
       scenario_id: 'test',
       status: 'complete',
-      artifacts: { customer_id: '123', event_id: '456' },
+      artifacts: { customer_id: '123', order_id: '456' },
     });
     expect(result.success).toBe(true);
   });
@@ -172,7 +172,7 @@ describe('ContextJsonSchema', () => {
       findings: [
         {
           finding_id: 'F001',
-          agent: 'agent-fulfillment-agent',
+          agent: 'agent-fulfillment',
           severity: 'high',
           title: 'Test finding',
         },
@@ -190,7 +190,7 @@ describe('FindingJsonSchema', () => {
   it('accepts valid finding', () => {
     const result = FindingJsonSchema.safeParse({
       finding_id: 'F001',
-      agent: 'agent-fulfillment-agent',
+      agent: 'agent-fulfillment',
       step: 'login',
       severity: 'critical',
       title: 'Slow load',

@@ -298,7 +298,7 @@ export function Runs({ activeRunId }: RunsProps) {
           const findings = detail?.findings ?? []
           const prLinks = detail?.pr_links ?? []
           const primaryArtifacts = artifacts
-            ? ['customer_id', 'event_id', 'cancelled_event_id', 'rescheduled_event_id', 'receipt_id', 'billing_guide_id']
+            ? ['customer_id', 'order_id', 'cancelled_order_id', 'modified_order_id', 'shipment_id', 'invoice_id']
                 .filter(key => key in artifacts)
             : []
 

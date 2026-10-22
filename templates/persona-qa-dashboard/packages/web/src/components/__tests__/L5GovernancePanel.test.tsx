@@ -39,7 +39,7 @@ describe('L5GovernancePanel', () => {
     expect(screen.getByText('Learning applied')).toBeInTheDocument()
     expect(screen.getByText('Bounded actions')).toBeInTheDocument()
     expect(screen.getAllByText('increase_timeout_pool on scenario:step').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('prompt_overlay for sales-associate').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('prompt_overlay for sales_associate').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Missing coverage').length).toBeGreaterThan(0)
   })
 
@@ -294,7 +294,7 @@ function learningProposal(overrides: Partial<Phase2LearningProposal> = {}): Phas
     recommendationId: 'rec',
     scenarioId: 'scenario',
     stepId: 'step',
-    agentId: 'sales-associate',
+    agentId: 'sales_associate',
     type: 'prompt_overlay',
     severity: 'medium',
     status: 'proposed',

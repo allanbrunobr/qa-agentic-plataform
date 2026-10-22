@@ -1199,9 +1199,7 @@ export const api = {
     }),
   startPhase2Run: (payload: {
     scenario_id: string
-    customer_name?: string
-    customer_phone?: string
-    order_type?: string
+    seed_artifacts?: Record<string, string>
     execution_context?: Phase2ExecutionContext
   }) =>
     fetchJSON<{

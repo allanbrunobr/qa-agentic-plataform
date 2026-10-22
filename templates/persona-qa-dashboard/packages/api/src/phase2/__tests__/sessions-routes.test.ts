@@ -11,14 +11,14 @@ describe('Phase 2 Session Routes', () => {
   const app = Fastify();
   let sessionService: SessionService;
   let previousArtifactDir: string | undefined;
-  let previousLegacyScenarios: string | undefined;
+  let previousReferenceScenarios: string | undefined;
   let previousPromotedScenariosFile: string | undefined;
 
   beforeAll(async () => {
     previousArtifactDir = process.env.PHASE2_ARTIFACT_DIR;
-    previousLegacyScenarios = process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS;
+    previousReferenceScenarios = process.env.PERSONA_QA_USE_REFERENCE_SCENARIOS;
     previousPromotedScenariosFile = process.env.PERSONA_QA_PROMOTED_SCENARIOS_FILE;
-    process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS = '1';
+    process.env.PERSONA_QA_USE_REFERENCE_SCENARIOS = '1';
     await app.register(phase2SessionRoutes);
     await app.ready();
   });
@@ -29,10 +29,10 @@ describe('Phase 2 Session Routes', () => {
     } else {
       process.env.PHASE2_ARTIFACT_DIR = previousArtifactDir;
     }
-    if (previousLegacyScenarios === undefined) {
-      delete process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS;
+    if (previousReferenceScenarios === undefined) {
+      delete process.env.PERSONA_QA_USE_REFERENCE_SCENARIOS;
     } else {
-      process.env.PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS = previousLegacyScenarios;
+      process.env.PERSONA_QA_USE_REFERENCE_SCENARIOS = previousReferenceScenarios;
     }
     if (previousPromotedScenariosFile === undefined) {
       delete process.env.PERSONA_QA_PROMOTED_SCENARIOS_FILE;
@@ -99,11 +99,11 @@ describe('Phase 2 Session Routes', () => {
       const session = sessionService.createSession('first_order');
       sessionService.appendEvent(session.id, {
         type: 'info',
-        agentRole: 'sales-associate',
+        agentRole: 'sales_associate',
         payload: {
           event: 'l5_runtime_learning_loaded',
           scenarioId: 'first_order',
-          stepId: 'create_customer',
+          stepId: 'register_customer',
           overlayCount: 2,
           overlays: [
             { proposalId: 'proposal-1', materializationId: 'materialization-1', checksum: 'checksum-1' },
@@ -155,8 +155,8 @@ describe('Phase 2 Session Routes', () => {
         sessionService.recordStepPerformance({
           sessionId: session.id,
           scenarioId: 'first_order',
-          stepId: 'create_customer',
-          agentId: 'sales-associate',
+          stepId: 'register_customer',
+          agentId: 'sales_associate',
           status: 'failed',
           success: false,
           attempt,
@@ -387,12 +387,12 @@ describe('Phase 2 Session Routes', () => {
         recommendationId: 'promotion-audit-gate',
         scenarioId: 'test_scenario',
         stepId: 'step_1',
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         type: 'prompt_patch',
         severity: 'medium',
         recommendation: { reason: 'audit gate test' },
         patchKind: 'prompt_overlay',
-        target: 'agent:sales-associate',
+        target: 'agent:sales_associate',
         patchContent: '[LEARNING OVERLAY]',
       });
       const run = sessionService.recordL5ClosedLoopRun({
@@ -425,7 +425,7 @@ describe('Phase 2 Session Routes', () => {
         status: 'requires_review',
         version: 'abc123def4567890abc123def4567890abc123def4567890abc123def4567890',
         title: 'Prompt patch for step_1',
-        target: 'agent:sales-associate',
+        target: 'agent:sales_associate',
         reason: 'Promotion audit gate test.',
         approvalRequired: true,
         materializationReady: false,
@@ -494,12 +494,12 @@ describe('Phase 2 Session Routes', () => {
         recommendationId: 'promotion-event-route',
         scenarioId: 'test_scenario',
         stepId: 'step_1',
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         type: 'prompt_patch',
         severity: 'medium',
         recommendation: { reason: 'promotion event route test' },
         patchKind: 'prompt_overlay',
-        target: 'agent:sales-associate',
+        target: 'agent:sales_associate',
         patchContent: '[LEARNING OVERLAY]',
       });
       const run = sessionService.recordL5ClosedLoopRun({
@@ -521,7 +521,7 @@ describe('Phase 2 Session Routes', () => {
         status: 'requires_review',
         version: candidateVersion,
         title: 'Prompt patch for step_1',
-        target: 'agent:sales-associate',
+        target: 'agent:sales_associate',
         reason: 'Promotion event route test.',
         approvalRequired: true,
         materializationReady: false,
@@ -624,7 +624,7 @@ describe('Phase 2 Session Routes', () => {
         action: 'approve',
         status: 'completed',
         actor: 'qa_lead',
-        target: 'agent:sales-associate',
+        target: 'agent:sales_associate',
         result: expect.objectContaining({
           postPromotionVerification: expect.objectContaining({
             status: 'passed',
@@ -640,7 +640,7 @@ describe('Phase 2 Session Routes', () => {
         action: 'apply',
         status: 'completed',
         actor: 'qa_lead',
-        target: 'agent:sales-associate',
+        target: 'agent:sales_associate',
         result: expect.objectContaining({
           postPromotionVerification: expect.objectContaining({
             status: 'passed',
@@ -661,7 +661,7 @@ describe('Phase 2 Session Routes', () => {
         sourceRunId: run.id,
         scenarioId: 'test_scenario',
         stepId: 'step_1',
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         version: candidateVersion,
         status: 'retained',
         summary: 'apply learning_overlay completed with passed verification.',
@@ -676,21 +676,21 @@ describe('Phase 2 Session Routes', () => {
 
       const scopedSignals = await app.inject({
         method: 'GET',
-        url: `/api/p2/learning/signals?subjectType=learning_proposal&subjectId=${proposal.id}&stepId=step_1&agentId=sales-associate&status=retained`,
+        url: `/api/p2/learning/signals?subjectType=learning_proposal&subjectId=${proposal.id}&stepId=step_1&agentId=sales_associate&status=retained`,
       });
       expect(scopedSignals.statusCode).toBe(200);
       expect(scopedSignals.json()).toEqual([
         expect.objectContaining({
           subjectId: proposal.id,
           stepId: 'step_1',
-          agentId: 'sales-associate',
+          agentId: 'sales_associate',
           status: 'retained',
         }),
       ]);
 
       const outOfScopeSignals = await app.inject({
         method: 'GET',
-        url: `/api/p2/learning/signals?subjectType=learning_proposal&subjectId=${proposal.id}&stepId=other_step&agentId=sales-associate&status=retained`,
+        url: `/api/p2/learning/signals?subjectType=learning_proposal&subjectId=${proposal.id}&stepId=other_step&agentId=sales_associate&status=retained`,
       });
       expect(outOfScopeSignals.statusCode).toBe(200);
       expect(outOfScopeSignals.json()).toEqual([]);
@@ -814,7 +814,7 @@ describe('Phase 2 Session Routes', () => {
         severity: 'high',
         title: 'Campo obrigatório ausente',
         evidence: ['screenshot.png'],
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         stepId: 'step_1',
       });
 
@@ -824,7 +824,7 @@ describe('Phase 2 Session Routes', () => {
       expect(findings).toHaveLength(1);
       expect(findings[0].severity).toBe('high');
       expect(findings[0].title).toBe('Campo obrigatório ausente');
-      expect(findings[0].agentId).toBe('sales-associate');
+      expect(findings[0].agentId).toBe('sales_associate');
     });
 
     it('should return empty array when no findings', async () => {
@@ -848,12 +848,12 @@ describe('Phase 2 Session Routes', () => {
         recommendationId: 'route-governance',
         scenarioId: 'test_scenario',
         stepId: 'step_1',
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         type: 'prompt_patch',
         severity: 'medium',
         recommendation: { reason: 'test' },
         patchKind: 'prompt_overlay',
-        target: 'agent:sales-associate',
+        target: 'agent:sales_associate',
         patchContent: '[LEARNING OVERLAY]',
       });
 
@@ -1450,12 +1450,12 @@ describe('Phase 2 Session Routes', () => {
         recommendationId: 'route-learning-apply',
         scenarioId: 'test_scenario',
         stepId: 'step_1',
-        agentId: 'sales-associate',
+        agentId: 'sales_associate',
         type: 'prompt_patch',
         severity: 'medium',
         recommendation: { reason: 'test' },
         patchKind: 'prompt_overlay',
-        target: 'agent:sales-associate',
+        target: 'agent:sales_associate',
         patchContent: '[LEARNING OVERLAY]',
       });
 

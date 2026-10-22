@@ -22,13 +22,6 @@
     "review": "tsx packages/dashboard-api/src/cli.ts review",
     "install-local": "tsx packages/dashboard-api/src/cli.ts install-local",
     "discover-local": "tsx packages/dashboard-api/src/cli.ts discover-local",
-    "discover:reference-store": "tsx packages/dashboard-api/src/cli.ts discover \"$AGENTIC_PLATFORM_REFERENCE_STORE_REPO\" reference-store",
-    "bootstrap:reference-store": "tsx packages/dashboard-api/src/cli.ts bootstrap \"$AGENTIC_PLATFORM_REFERENCE_STORE_REPO\" reference-store",
-    "review:reference-store": "tsx packages/dashboard-api/src/cli.ts review \"$AGENTIC_PLATFORM_REFERENCE_STORE_REPO\" reference-store",
-    "install-local:reference-store": "tsx packages/dashboard-api/src/cli.ts install-local \"$AGENTIC_PLATFORM_REFERENCE_STORE_REPO\"",
-    "discover-local:reference-store": "tsx packages/dashboard-api/src/cli.ts discover-local \"$AGENTIC_PLATFORM_REFERENCE_STORE_REPO\" reference-store",
-    "verify:install-local:reference-store": "node scripts/verify-install-local-reference-store.mjs",
-    "verify:real-reference-store": "node scripts/verify-real-reference-store.mjs",
     "verify:generic-frontend": "node scripts/verify-generic-frontend.mjs",
     "verify:generic-repository-types": "node scripts/verify-generic-repository-types.mjs",
     "verify:generic-runtime-execution": "node scripts/verify-generic-runtime-execution.mjs",
@@ -41,8 +34,12 @@
     "verify:release": "node scripts/verify-release.mjs",
     "dev:api": "tsx packages/dashboard-api/src/server.ts",
     "dev:web": "tsx packages/dashboard-web/src/server.ts",
-    "build": "echo 'scaffold only'",
-    "dev": "echo 'run npm run dev:api and npm run dev:web in separate terminals'"
+    "test": "npm run test:unit && npm run test:runtime",
+    "test:unit": "tsx packages/dashboard-api/src/ingestion/boundary.test.ts && npm run verify:domain-discovery-contracts && npm run verify:static-frontend-scanner && npm run verify:domain-fixture-matrix && npm run verify:domain-specialist-service",
+    "test:runtime": "cd templates/persona-qa-dashboard/packages/api && npx vitest run && node --import tsx --test src/routes/__tests__/*.test.ts && cd ../web && npx vitest run",
+    "test:e2e": "node scripts/verify-e2e-storefront.mjs",
+    "typecheck": "tsc -p tsconfig.json && cd templates/persona-qa-dashboard/packages/api && npx tsc --noEmit && cd ../web && npx tsc -b",
+    "setup:runtime": "npm ci --prefix templates/persona-qa-dashboard"
   },
   "dependencies": {
     "typescript": "^5.9.3"

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(scriptDir, '..')
+const REFERENCE_DOMAIN_ID_PATTERN = /^(sales_associate|fulfillment_agent|billing_clerk|store_manager)$|reference-store/
 const fixtureRoot = path.join(os.tmpdir(), `agentic-platform-generic-repository-fixtures-${Date.now()}`)
 const tsxLoaderCandidates = [
   path.join(repoRoot, 'node_modules/tsx/dist/loader.mjs'),
@@ -214,8 +215,8 @@ function verifyFixture(fixtureName, expected) {
   for (const capabilityId of expected.capabilities) {
     assert(capabilityIds.includes(capabilityId), `${fixtureName}: missing capability ${capabilityId}; got ${capabilityIds.join(', ')}`)
   }
-  assert(!personaIds.includes('sales-associate') && !personaIds.includes('fulfillment-agent'), `${fixtureName}: Reference Store personas leaked into generic adapter`)
-  assert(!scenarioIds.includes('first_order'), `${fixtureName}: Reference Store scenario leaked into generic adapter`)
+  assert(!personaIds.some((id) => REFERENCE_DOMAIN_ID_PATTERN.test(id)), `${fixtureName}: reference-domain personas leaked into generic adapter`)
+  assert(!scenarioIds.includes('first_order') && !scenarioIds.includes('first_order_multi_role'), `${fixtureName}: reference-domain scenario leaked into generic adapter`)
   assert(!surfaceIds.includes('form_entry') && !surfaceIds.includes('checkout'), `${fixtureName}: frontend surfaces leaked into non-frontend adapter`)
   assert(auth.loginEntryPoint === 'not_applicable', `${fixtureName}: expected no browser login, got ${auth.loginEntryPoint}`)
   assert(contractsIndex.some((entry) => entry.scenarioId === expected.scenario), `${fixtureName}: workflow contract missing`)

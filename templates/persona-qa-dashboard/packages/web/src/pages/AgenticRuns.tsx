@@ -113,10 +113,10 @@ function statusClasses(status: AgenticStatus) {
 }
 
 function agentColor(agentId: string) {
-  if (agentId.includes('recepcion')) return 'border-sky-500/30 bg-sky-500/10 text-sky-300'
-  if (agentId.includes('medic')) return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+  if (agentId.includes('sales')) return 'border-sky-500/30 bg-sky-500/10 text-sky-300'
+  if (agentId.includes('fulfill')) return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
   if (agentId.includes('billing')) return 'border-violet-500/30 bg-violet-500/10 text-violet-300'
-  if (agentId.includes('gestor')) return 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+  if (agentId.includes('manager')) return 'border-amber-500/30 bg-amber-500/10 text-amber-300'
   return 'border-zinc-500/30 bg-zinc-500/10 text-zinc-300'
 }
 
@@ -541,7 +541,7 @@ function AgentConversation({
       <div className="space-y-4">
         {conversationEvents.map(({ event, summary }) => {
           const agentId = event.agentRole ?? String(eventPayload(event).fromAgentId ?? 'system')
-          const alignRight = agentId.includes('medic') || agentId.includes('billing')
+          const alignRight = agentId.includes('fulfill') || agentId.includes('billing')
           const artifactId = getEventArtifactId(event)
           const artifact = artifactId ? artifactsById[artifactId] : undefined
           const screenshotUrl = artifact?.type === 'screenshot' ? api.getPhase2ArtifactContentUrl(artifact.id) : null
@@ -1053,7 +1053,6 @@ export function AgenticRuns() {
   const [selectedId, setSelectedId] = useState<string | null>(initialHashState?.selectedId ?? null)
   const [currentSessionIdOverride, setCurrentSessionIdOverride] = useState<string | null>(null)
   const [selectedScenario, setSelectedScenario] = useState('')
-  const [customerName, setCustomerName] = useState('')
   const [startingRun, setStartingRun] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
   const [sessionDetail, setSessionDetail] = useState<Phase2SessionDetail | null>(null)
@@ -1465,7 +1464,6 @@ export function AgenticRuns() {
     try {
       const result = await api.startPhase2Run({
         scenario_id: selectedScenario,
-        customer_name: customerName.trim() || undefined,
       })
       setActiveView('current')
       setCurrentSessionIdOverride(result.session_id)
@@ -1778,18 +1776,6 @@ export function AgenticRuns() {
                       </p>
                     </div>
                   ) : null}
-
-                  <div>
-                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                      Customer name
-                    </label>
-                    <input
-                      value={customerName}
-                      onChange={(event) => setCustomerName(event.target.value)}
-                      placeholder="Opcional; gera nome único se vazio"
-                      className="h-9 w-full rounded-md border border-[var(--border)] bg-[var(--bg-card)] px-2.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]/50 focus:outline-none"
-                    />
-                  </div>
 
                   <Button
                     variant="primary"

@@ -175,11 +175,11 @@ export function makeRecordArtifactHandler(sessionService: SessionService): ToolH
 
 export const recordArtifactMetadata: ToolMetadata = {
   name: 'recordArtifact',
-  description: 'Record a domain artifact (e.g., customerId, eventId) as session evidence',
+  description: 'Record a domain artifact (e.g., customerId, orderId) as session evidence',
   inputSchema: {
     type: 'object',
     properties: {
-      type: { type: 'string', description: 'Artifact type (e.g., customerId, eventId)' },
+      type: { type: 'string', description: 'Artifact type (e.g., customerId, orderId)' },
       payload: { type: 'object', description: 'Artifact data' },
       description: { type: 'string', description: 'What this artifact represents' },
     },

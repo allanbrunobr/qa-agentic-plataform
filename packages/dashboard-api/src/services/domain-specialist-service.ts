@@ -199,60 +199,39 @@ const DOMAIN_PROFILES: DomainProfile[] = [
     ],
   },
   {
-    domain: 'retail',
-    label: 'Retail',
-    summary: 'Care workflows such as customers, orders, records, care plans, receipts, or operational review.',
-    keywords: [
-      'order',
-      'care plan',
-      'operational',
-      'pedido',
-      'fulfillment',
-      'health',
-      'operational',
-      'customer',
-      'receipt',
-      'registro',
-      'record',
-      'relatorio fulfillment-agent',
-      'notes',
-      'symptom',
-      'sintoma',
-      'intake',
-      'intake',
-      'medicamento',
-      'medication',
-      'visit',
-    ],
+    domain: 'logistics',
+    label: 'Logistics',
+    summary: 'Fulfilment workflows such as shipments, warehouses, dispatch, carriers, parcels, or freight tracking.',
+    keywords: ['carrier', 'dispatch', 'freight', 'parcel', 'shipment', 'warehouse'],
     entities: [
-      { id: 'customer', name: 'Customer', kind: 'person', keywords: ['customer', 'customer'] },
-      { id: 'order', name: 'Order', kind: 'workflow', keywords: ['order', 'visit', 'pedido', 'fulfillment'] },
-      { id: 'care_plan', name: 'Care Plan', kind: 'record', keywords: ['care plan', 'operational', 'intake', 'notes', 'operational', 'relatorio fulfillment-agent'] },
+      { id: 'shipment', name: 'Shipment', kind: 'record', keywords: ['shipment', 'parcel', 'freight'] },
+      { id: 'warehouse', name: 'Warehouse', kind: 'organization', keywords: ['warehouse'] },
+      { id: 'dispatch', name: 'Dispatch', kind: 'workflow', keywords: ['dispatch', 'carrier'] },
     ],
     personas: [
       {
-        id: 'operator',
-        title: 'Operator',
-        goals: ['Conduct fulfillment', 'Generate structured operational documentation'],
-        rationale: 'Operational documentation and fulfillment evidence indicates a operator-facing workflow.',
+        id: 'dispatcher',
+        title: 'Dispatcher',
+        goals: ['Create shipments', 'Finish dispatch runs'],
+        rationale: 'Shipment creation and dispatch evidence indicates a dispatcher-facing workflow.',
       },
       {
-        id: 'operational_reviewer',
-        title: 'Operational Reviewer',
-        goals: ['Review generated report quality', 'Validate Notes and intake consistency'],
-        rationale: 'Report review and structured operational notes imply a reviewer persona for validation workflows.',
+        id: 'warehouse_operator',
+        title: 'Warehouse Operator',
+        goals: ['Review dispatch reports', 'Verify tracking summaries'],
+        rationale: 'Dispatch report review and tracking summaries imply a warehouse operator acting as reviewer for validation workflows.',
       },
     ],
     scenarios: [
       {
-        id: 'conduct_fulfillment',
-        title: 'Conduct fulfillment',
-        rationale: 'Validates fulfillment start, live documentation, and visit closure evidence.',
+        id: 'create_shipment',
+        title: 'Create shipment',
+        rationale: 'Validates shipment start, label generation, and dispatch closure evidence.',
       },
       {
         id: 'review_dispatch_report',
         title: 'Review dispatch report',
-        rationale: 'Validates generated report, Notes content, and operational documentation review evidence.',
+        rationale: 'Validates generated dispatch report, tracking summary, and review evidence.',
       },
     ],
   },
@@ -522,15 +501,15 @@ function selectScenarioSequence(
   const selected: CapabilityCandidate[] = []
   const scenarioText = normalize([scenario.id, scenario.title, scenario.rationale].join(' '))
 
-  if (scenarioText.includes('fulfillment')) {
-    pushFirstMatch(selected, interactionCandidates, /\b(iniciar|start|begin|open)\b/)
-    pushFirstMatch(selected, interactionCandidates, /\b(gerar|generate|relatorio|report|notes|intake)\b/)
-    pushFirstMatch(selected, interactionCandidates, /\b(encerrar|finish|end|close)\b/)
+  if (scenarioText.includes('create shipment')) {
+    pushFirstMatch(selected, interactionCandidates, /\b(start|begin|open)\b/)
+    pushFirstMatch(selected, interactionCandidates, /\b(generate|report|label)\b/)
+    pushFirstMatch(selected, interactionCandidates, /\b(finish|end|close)\b/)
   }
 
   if (scenarioText.includes('report')) {
-    pushFirstMatch(selected, interactionCandidates, /\b(gerar|generate|relatorio|report)\b/)
-    pushFirstMatch(selected, interactionCandidates, /\b(notes|intake|copy|clipboard)\b/)
+    pushFirstMatch(selected, interactionCandidates, /\b(generate|report)\b/)
+    pushFirstMatch(selected, interactionCandidates, /\b(summary|copy|clipboard)\b/)
     pushFirstMatch(selected, interactionCandidates, /\b(review|validate|verif|assert)\b/)
   }
 
@@ -563,12 +542,12 @@ function isScenarioCapabilityOutOfBand(
   const scenarioText = normalize([scenario.id, scenario.title, scenario.rationale].join(' '))
   const capabilityText = normalizeScenarioCapabilityText(capability)
 
-  if (scenarioText.includes('fulfillment')) {
+  if (scenarioText.includes('create shipment')) {
     return /\b(copy|clipboard)\b/.test(capabilityText)
   }
 
   if (scenarioText.includes('report')) {
-    return /\b(iniciar|start|encerrar|end|nova pedido|new fulfillment)\b/.test(capabilityText)
+    return /\b(start|begin|end|finish|new)\b/.test(capabilityText)
   }
 
   return false
@@ -782,14 +761,9 @@ function isCapabilitySuitableForPersona(
     ...(capability.selectorHints ?? []),
   ].join(' '))
 
-  if (personaText.includes('operator')) {
-    return !/\b(copy|clipboard|assert|verify|review)\b/.test(capabilityText)
-      || /\b(report|relatorio|operational)\b/.test(capabilityText)
-  }
-
   if (personaText.includes('reviewer')) {
-    return !/\b(iniciar|start|encerrar|end|nova pedido|new fulfillment)\b/.test(capabilityText)
-      || /\b(report|relatorio|notes|intake|assert|verify|review|copy|clipboard)\b/.test(capabilityText)
+    return !/\b(start|begin|end|finish|new)\b/.test(capabilityText)
+      || /\b(report|summary|assert|verify|review|copy|clipboard)\b/.test(capabilityText)
   }
 
   return true
@@ -808,20 +782,11 @@ function scoreCapabilityForPersona(
 
   let score = capabilityStepPriority(capability)
 
-  if (personaText.includes('operator')) {
-    if (/\b(iniciar|start|pedido|fulfillment|encerrar|end|operational|report|relatorio|generate|gerar)\b/.test(capabilityText)) {
-      score += 7
-    }
-    if (/\b(assert|verify|review|copy|clipboard)\b/.test(capabilityText)) {
-      score -= 1
-    }
-  }
-
   if (personaText.includes('reviewer')) {
-    if (/\b(assert|verify|review|report|notes|intake|operational|copy|clipboard)\b/.test(capabilityText)) {
+    if (/\b(assert|verify|review|report|summary|copy|clipboard)\b/.test(capabilityText)) {
       score += 8
     }
-    if (/\b(iniciar|start|encerrar|end|new fulfillment|nova pedido)\b/.test(capabilityText)) {
+    if (/\b(start|begin|end|finish|new)\b/.test(capabilityText)) {
       score -= 2
     }
   }
@@ -842,14 +807,14 @@ function scoreScenarioCapability(
 
   let score = capabilityStepPriority(capability)
 
-  if (scenarioText.includes('fulfillment')) {
-    if (/\b(iniciar|start|pedido|fulfillment|encerrar|end)\b/.test(capabilityText)) score += 8
-    if (/\b(report|relatorio|notes|intake|copy|clipboard)\b/.test(capabilityText)) score += 2
+  if (scenarioText.includes('create shipment')) {
+    if (/\b(start|shipment|finish|end)\b/.test(capabilityText)) score += 8
+    if (/\b(report|label|copy|clipboard)\b/.test(capabilityText)) score += 2
   }
 
   if (scenarioText.includes('report')) {
-    if (/\b(report|relatorio|notes|intake|copy|clipboard|review|assert|verify)\b/.test(capabilityText)) score += 8
-    if (/\b(iniciar|start|encerrar|end|nova pedido|new fulfillment)\b/.test(capabilityText)) score -= 6
+    if (/\b(report|summary|copy|clipboard|review|assert|verify)\b/.test(capabilityText)) score += 8
+    if (/\b(start|begin|end|finish|new)\b/.test(capabilityText)) score -= 6
   }
 
   return score
@@ -869,7 +834,7 @@ function capabilityStepPriority(capability: CapabilityCandidate) {
   if (capability.kind === 'assertion') score += 4
   if (capability.kind === 'navigation') score += 2
 
-  if (/\b(start|begin|open|create|new|iniciar|gerar|generate|encerrar|finish|end|review|schedule|pedido|relatorio|operational|care)\b/.test(text)) {
+  if (/\b(start|begin|open|create|new|generate|finish|end|review|schedule)\b/.test(text)) {
     score += 6
   }
 
@@ -901,7 +866,7 @@ function scoreButtonSurface(item: FrontendSurfaceMap['buttons'][number], selecte
     if (text.includes(normalize(keyword))) score += 4
   }
 
-  if (/\b(start|begin|new|iniciar|gerar|generate|encerrar|end|finish|review|schedule|pedido|notes|intake|operational|relatorio|customer|order)\b/.test(text)) {
+  if (/\b(start|begin|new|generate|end|finish|review|schedule|report|summary)\b/.test(text)) {
     score += 6
   }
 

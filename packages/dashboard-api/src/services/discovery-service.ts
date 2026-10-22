@@ -12,11 +12,6 @@ async function resolveProvider(_repoPath: string, adapterHint?: string) {
     return new GenericFrontendDiscoveryProvider()
   }
 
-  if (adapterHint === 'reference-store') {
-    const { ReferenceStoreDiscoveryProvider } = await import('../../../../adapters/reference-store/src/discovery.ts')
-    return new ReferenceStoreDiscoveryProvider()
-  }
-
   throw new Error(`Unknown adapter hint: ${adapterHint}`)
 }
 

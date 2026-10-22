@@ -33,7 +33,7 @@ describe('evidence-tools', () => {
 
   beforeEach(() => {
     sessionService = createSessionServiceStub()
-    ctx = { page: mockPage(), sessionId: 'sess-1', agentRole: 'sales-associate' }
+    ctx = { page: mockPage(), sessionId: 'sess-1', agentRole: 'sales_associate' }
   })
 
   describe('captureScreenshot', () => {
@@ -81,7 +81,7 @@ describe('evidence-tools', () => {
       const handler = makeCaptureScreenshotHandler(sessionService)
       const result = await handler(
         { description: 'blank page' },
-        { page: mockBlankPage(), sessionId: 'sess-1', agentRole: 'sales-associate' },
+        { page: mockBlankPage(), sessionId: 'sess-1', agentRole: 'sales_associate' },
       )
 
       expect(result).toEqual({
@@ -138,8 +138,8 @@ describe('evidence-tools', () => {
     it('does not require page (browser-free)', async () => {
       const handler = makeRecordArtifactHandler(sessionService)
       const result = await handler(
-        { type: 'eventId', payload: { id: '99' }, description: 'scheduled order' },
-        { sessionId: 'sess-1', agentRole: 'sales-associate' },
+        { type: 'orderId', payload: { id: '99' }, description: 'scheduled order' },
+        { sessionId: 'sess-1', agentRole: 'sales_associate' },
       )
       expect(result.ok).toBe(true)
     })

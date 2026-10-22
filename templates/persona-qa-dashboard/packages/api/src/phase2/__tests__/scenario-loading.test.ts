@@ -7,17 +7,17 @@ import { Orchestrator } from '../services/orchestrator.js';
 import { SessionService } from '../services/session-service.js';
 import { AgentRuntime } from '../services/agent-runtime.js';
 
-const previousLegacyScenarioFlag = process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'];
+const previousReferenceScenarioFlag = process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'];
 
 beforeAll(() => {
-  process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'] = '1';
+  process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'] = '1';
 });
 
 afterAll(() => {
-  if (previousLegacyScenarioFlag === undefined) {
-    delete process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'];
+  if (previousReferenceScenarioFlag === undefined) {
+    delete process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'];
   } else {
-    process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'] = previousLegacyScenarioFlag;
+    process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'] = previousReferenceScenarioFlag;
   }
 });
 
@@ -26,40 +26,40 @@ describe('Scenario Loading', () => {
     const scenario = loadScenario('first_order');
 
     expect(scenario.id).toBe('first_order');
-    expect(scenario.name).toBe('First order');
+    expect(scenario.name).toBe('First Order');
     expect(scenario.steps).toHaveLength(2);
-    expect(scenario.steps[0]!.id).toBe('create_customer');
-    expect(scenario.steps[1]!.id).toBe('schedule_order');
+    expect(scenario.steps[0]!.id).toBe('register_customer');
+    expect(scenario.steps[1]!.id).toBe('create_order');
   });
 
   it('should validate scenario contract with Zod', () => {
     const scenario = loadScenario('first_order');
 
     expect(scenario.requiredArtifacts).toContain('customerId');
-    expect(scenario.requiredArtifacts).toContain('eventId');
-    expect(scenario.roles).toContain('sales-associate');
-    expect(scenario.allowedTools).toEqual(['createCustomer', 'scheduleOrder']);
+    expect(scenario.requiredArtifacts).toContain('orderId');
+    expect(scenario.roles).toContain('sales_associate');
+    expect(scenario.allowedTools).toEqual(['registerCustomer', 'createOrder']);
     expect(scenario.workflowContract).toEqual({
       version: '1.0',
       deterministic: true,
       steps: [
         {
-          id: 'create_customer',
+          id: 'register_customer',
           order: 0,
-          agentId: 'sales-associate',
-          capabilityId: 'createCustomer',
+          agentId: 'sales_associate',
+          capabilityId: 'registerCustomer',
           requiredArtifacts: [],
           producedArtifacts: ['customerId'],
           timeoutMs: 90000,
           retryPolicy: { maxAttempts: 2, backoffMs: 1000 },
         },
         {
-          id: 'schedule_order',
+          id: 'create_order',
           order: 1,
-          agentId: 'sales-associate',
-          capabilityId: 'scheduleOrder',
+          agentId: 'sales_associate',
+          capabilityId: 'createOrder',
           requiredArtifacts: ['customerId'],
-          producedArtifacts: ['eventId'],
+          producedArtifacts: ['orderId'],
           timeoutMs: 90000,
           retryPolicy: { maxAttempts: 2, backoffMs: 1000 },
         },
@@ -91,22 +91,22 @@ describe('Scenario Loading', () => {
         {
           id: 'step_1',
           roleId: 'operator',
-          capabilityId: 'click_iniciar_pedido',
+          capabilityId: 'click_start_session',
           producesArtifacts: ['commandResult'],
         },
         {
           id: 'step_2',
           roleId: 'reviewer',
-          capabilityId: 'assert_retail_visible_state',
+          capabilityId: 'assert_primary_visible_state',
           producesArtifacts: ['verificationResult'],
         },
       ],
     }]));
 
     const previousGeneratedScenarios = process.env['PERSONA_QA_SCENARIOS_FILE'];
-    const previousLegacyFlag = process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'];
+    const previousReferenceFlag = process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'];
     process.env['PERSONA_QA_SCENARIOS_FILE'] = scenariosFile;
-    process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'] = '0';
+    process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'] = '0';
 
     try {
       const scenario = loadScenario('generated_multi_agent');
@@ -114,7 +114,7 @@ describe('Scenario Loading', () => {
         nextAgentId: 'reviewer',
         reason: 'Generated handoff from operator to reviewer after step_1.',
         requiredArtifacts: ['commandResult'],
-        expectedOutput: 'Continue execution with capability assert_retail_visible_state.',
+        expectedOutput: 'Continue execution with capability assert_primary_visible_state.',
       });
     } finally {
       if (previousGeneratedScenarios === undefined) {
@@ -123,10 +123,10 @@ describe('Scenario Loading', () => {
         process.env['PERSONA_QA_SCENARIOS_FILE'] = previousGeneratedScenarios;
       }
 
-      if (previousLegacyFlag === undefined) {
-        delete process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'];
+      if (previousReferenceFlag === undefined) {
+        delete process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'];
       } else {
-        process.env['PERSONA_QA_USE_LEGACY_STATIC_SCENARIOS'] = previousLegacyFlag;
+        process.env['PERSONA_QA_USE_REFERENCE_SCENARIOS'] = previousReferenceFlag;
       }
     }
   });
@@ -146,53 +146,53 @@ describe('Scenario Loading', () => {
     expect(step1.requiredArtifacts).toEqual([]);
     expect(step1.producedArtifacts).toContain('customerId');
     expect(step2.requiredArtifacts).toContain('customerId');
-    expect(step2.producedArtifacts).toContain('eventId');
+    expect(step2.producedArtifacts).toContain('orderId');
   });
 
-  it('should load first_order_multi_role scenario with handoff to fulfillment-agent', () => {
+  it('should load first_order_multi_role scenario with handoff to fulfillment_agent', () => {
     const scenario = loadScenario('first_order_multi_role');
 
-    expect(scenario.roles).toEqual(['sales-associate', 'fulfillment-agent']);
+    expect(scenario.roles).toEqual(['sales_associate', 'fulfillment_agent']);
     expect(scenario.steps).toHaveLength(3);
     expect(scenario.steps[1]!.handoff).toEqual({
-      nextAgentId: 'fulfillment-agent',
+      nextAgentId: 'fulfillment_agent',
       reason: expect.any(String),
-      requiredArtifacts: ['customerId', 'eventId'],
+      requiredArtifacts: ['customerId', 'orderId'],
       expectedOutput: expect.any(String),
     });
-    expect(scenario.steps[2]!.agentId).toBe('fulfillment-agent');
-    expect(scenario.allowedTools).toContain('completeFulfillment');
+    expect(scenario.steps[2]!.agentId).toBe('fulfillment_agent');
+    expect(scenario.allowedTools).toContain('fulfillOrder');
     expect(scenario.workflowContract).toEqual({
       version: '1.0',
       deterministic: true,
       steps: [
         {
-          id: 'create_customer',
+          id: 'register_customer',
           order: 0,
-          agentId: 'sales-associate',
-          capabilityId: 'createCustomer',
+          agentId: 'sales_associate',
+          capabilityId: 'registerCustomer',
           requiredArtifacts: [],
           producedArtifacts: ['customerId'],
           timeoutMs: 90000,
           retryPolicy: { maxAttempts: 1, backoffMs: 0 },
         },
         {
-          id: 'schedule_order',
+          id: 'create_order',
           order: 1,
-          agentId: 'sales-associate',
-          capabilityId: 'scheduleOrder',
+          agentId: 'sales_associate',
+          capabilityId: 'createOrder',
           requiredArtifacts: ['customerId'],
-          producedArtifacts: ['eventId'],
+          producedArtifacts: ['orderId'],
           timeoutMs: 90000,
           retryPolicy: { maxAttempts: 1, backoffMs: 0 },
         },
         {
-          id: 'complete_fulfillment',
+          id: 'fulfill_order',
           order: 2,
-          agentId: 'fulfillment-agent',
-          capabilityId: 'completeFulfillment',
-          requiredArtifacts: ['customerId', 'eventId'],
-          producedArtifacts: ['fulfillmentCompleted'],
+          agentId: 'fulfillment_agent',
+          capabilityId: 'fulfillOrder',
+          requiredArtifacts: ['customerId', 'orderId'],
+          producedArtifacts: ['orderFulfilled'],
           timeoutMs: 180000,
           retryPolicy: { maxAttempts: 1, backoffMs: 0 },
         },
@@ -200,60 +200,60 @@ describe('Scenario Loading', () => {
     });
   });
 
-  it('should load quarterly_reorder_multi_role scenario with fulfillment-agent -> billing_clerk handoff', () => {
+  it('should load quarterly_reorder_multi_role scenario with fulfillment_agent -> billing_clerk handoff', () => {
     const scenario = loadScenario('quarterly_reorder_multi_role');
 
-    expect(scenario.roles).toEqual(['sales-associate', 'fulfillment-agent', 'billing_clerk']);
+    expect(scenario.roles).toEqual(['sales_associate', 'fulfillment_agent', 'billing_clerk']);
     expect(scenario.steps).toHaveLength(4);
     expect(scenario.steps[2]!.handoff).toEqual({
       nextAgentId: 'billing_clerk',
       reason: expect.any(String),
-      requiredArtifacts: ['customerId', 'eventId', 'fulfillmentCompleted'],
+      requiredArtifacts: ['customerId', 'orderId', 'orderFulfilled'],
       expectedOutput: expect.any(String),
     });
     expect(scenario.steps[3]!.agentId).toBe('billing_clerk');
-    expect(scenario.allowedTools).toContain('findBillingGuideByEventId');
+    expect(scenario.allowedTools).toContain('findInvoiceByOrderId');
     expect(scenario.workflowContract).toEqual({
       version: '1.0',
       deterministic: true,
       steps: [
         {
-          id: 'create_customer',
+          id: 'register_customer',
           order: 0,
-          agentId: 'sales-associate',
-          capabilityId: 'createCustomer',
+          agentId: 'sales_associate',
+          capabilityId: 'registerCustomer',
           requiredArtifacts: [],
           producedArtifacts: ['customerId'],
           timeoutMs: 90000,
           retryPolicy: { maxAttempts: 1, backoffMs: 0 },
         },
         {
-          id: 'schedule_return',
+          id: 'create_reorder',
           order: 1,
-          agentId: 'sales-associate',
-          capabilityId: 'scheduleOrder',
+          agentId: 'sales_associate',
+          capabilityId: 'createOrder',
           requiredArtifacts: ['customerId'],
-          producedArtifacts: ['eventId'],
+          producedArtifacts: ['orderId'],
           timeoutMs: 90000,
           retryPolicy: { maxAttempts: 1, backoffMs: 0 },
         },
         {
-          id: 'complete_return_fulfillment',
+          id: 'fulfill_reorder',
           order: 2,
-          agentId: 'fulfillment-agent',
-          capabilityId: 'completeFulfillment',
-          requiredArtifacts: ['customerId', 'eventId'],
-          producedArtifacts: ['fulfillmentCompleted'],
+          agentId: 'fulfillment_agent',
+          capabilityId: 'fulfillOrder',
+          requiredArtifacts: ['customerId', 'orderId'],
+          producedArtifacts: ['orderFulfilled'],
           timeoutMs: 180000,
           retryPolicy: { maxAttempts: 1, backoffMs: 0 },
         },
         {
-          id: 'review_billing_guide',
+          id: 'review_invoice',
           order: 3,
           agentId: 'billing_clerk',
-          capabilityId: 'findBillingGuideByEventId',
-          requiredArtifacts: ['eventId', 'fulfillmentCompleted'],
-          producedArtifacts: ['billingGuideReviewed'],
+          capabilityId: 'findInvoiceByOrderId',
+          requiredArtifacts: ['orderId', 'orderFulfilled'],
+          producedArtifacts: ['invoiceReviewed'],
           timeoutMs: 120000,
           retryPolicy: { maxAttempts: 1, backoffMs: 0 },
         },
@@ -264,12 +264,12 @@ describe('Scenario Loading', () => {
   it('should load quarterly_reorder_closure_multi_role scenario with billing_clerk -> store_manager handoff', () => {
     const scenario = loadScenario('quarterly_reorder_closure_multi_role');
 
-    expect(scenario.roles).toEqual(['sales-associate', 'fulfillment-agent', 'billing_clerk', 'store_manager']);
+    expect(scenario.roles).toEqual(['sales_associate', 'fulfillment_agent', 'billing_clerk', 'store_manager']);
     expect(scenario.steps).toHaveLength(5);
     expect(scenario.steps[3]!.handoff).toEqual({
       nextAgentId: 'store_manager',
       reason: expect.any(String),
-      requiredArtifacts: ['eventId', 'fulfillmentCompleted', 'billingGuideReviewed'],
+      requiredArtifacts: ['orderId', 'orderFulfilled', 'invoiceReviewed'],
       expectedOutput: expect.any(String),
     });
     expect(scenario.steps[4]!.agentId).toBe('store_manager');
@@ -280,42 +280,42 @@ describe('Scenario Loading', () => {
       deterministic: true,
       steps: [
         {
-          id: 'create_customer',
+          id: 'register_customer',
           order: 0,
-          agentId: 'sales-associate',
-          capabilityId: 'createCustomer',
+          agentId: 'sales_associate',
+          capabilityId: 'registerCustomer',
           requiredArtifacts: [],
           producedArtifacts: ['customerId'],
           timeoutMs: 90000,
           retryPolicy: { maxAttempts: 1, backoffMs: 0 },
         },
         {
-          id: 'schedule_return',
+          id: 'create_reorder',
           order: 1,
-          agentId: 'sales-associate',
-          capabilityId: 'scheduleOrder',
+          agentId: 'sales_associate',
+          capabilityId: 'createOrder',
           requiredArtifacts: ['customerId'],
-          producedArtifacts: ['eventId'],
+          producedArtifacts: ['orderId'],
           timeoutMs: 90000,
           retryPolicy: { maxAttempts: 1, backoffMs: 0 },
         },
         {
-          id: 'complete_return_fulfillment',
+          id: 'fulfill_reorder',
           order: 2,
-          agentId: 'fulfillment-agent',
-          capabilityId: 'completeFulfillment',
-          requiredArtifacts: ['customerId', 'eventId'],
-          producedArtifacts: ['fulfillmentCompleted'],
+          agentId: 'fulfillment_agent',
+          capabilityId: 'fulfillOrder',
+          requiredArtifacts: ['customerId', 'orderId'],
+          producedArtifacts: ['orderFulfilled'],
           timeoutMs: 180000,
           retryPolicy: { maxAttempts: 1, backoffMs: 0 },
         },
         {
-          id: 'review_billing_guide',
+          id: 'review_invoice',
           order: 3,
           agentId: 'billing_clerk',
-          capabilityId: 'findBillingGuideByEventId',
-          requiredArtifacts: ['eventId', 'fulfillmentCompleted'],
-          producedArtifacts: ['billingGuideReviewed'],
+          capabilityId: 'findInvoiceByOrderId',
+          requiredArtifacts: ['orderId', 'orderFulfilled'],
+          producedArtifacts: ['invoiceReviewed'],
           timeoutMs: 120000,
           retryPolicy: { maxAttempts: 1, backoffMs: 0 },
         },
@@ -324,7 +324,7 @@ describe('Scenario Loading', () => {
           order: 4,
           agentId: 'store_manager',
           capabilityId: 'validateManagementClosure',
-          requiredArtifacts: ['eventId', 'billingGuideReviewed'],
+          requiredArtifacts: ['orderId', 'invoiceReviewed'],
           producedArtifacts: ['financeValidated', 'reportsValidated'],
           timeoutMs: 120000,
           retryPolicy: { maxAttempts: 1, backoffMs: 0 },
@@ -354,8 +354,8 @@ describe('Run Resume', () => {
 
     vi.spyOn(agentRuntime, 'executeStep').mockResolvedValue({
       stepIndex: 1,
-      agentId: 'sales-associate',
-      output: { eventId: '789' },
+      agentId: 'sales_associate',
+      output: { orderId: '789' },
       toolCalls: [],
       durationMs: 100,
       success: true,
@@ -378,8 +378,8 @@ describe('Run Resume', () => {
 
     vi.spyOn(agentRuntime, 'executeStep').mockResolvedValue({
       stepIndex: 0,
-      agentId: 'sales-associate',
-      output: { customerId: '123', eventId: '456' },
+      agentId: 'sales_associate',
+      output: { customerId: '123', orderId: '456' },
       toolCalls: [],
       durationMs: 50,
       success: true,
