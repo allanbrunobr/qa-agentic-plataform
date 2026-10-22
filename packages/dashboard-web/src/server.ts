@@ -406,8 +406,8 @@ const html = `<!doctype html>
           <div class="sidebar-title">Agentic <span>Platform</span></div>
         </div>
         <nav class="sidebar-nav">
-          <button id="overviewNav" class="active"><span class="nav-icon">OV</span><span class="nav-label">Agentic Overview</span></button>
-          <button id="runsNav"><span class="nav-icon">AR</span><span class="nav-label">Agentic Runs</span></button>
+          <button id="overviewNav" class="active"><span class="nav-icon">OV</span><span class="nav-label">Agentic overview</span></button>
+          <button id="runsNav"><span class="nav-icon">AR</span><span class="nav-label">Agentic runs</span></button>
           <button id="adaptersNav"><span class="nav-icon">AD</span><span class="nav-label">Adapters</span></button>
           <button id="insightsNav"><span class="nav-icon">IN</span><span class="nav-label">Insights</span></button>
         </nav>
@@ -418,7 +418,7 @@ const html = `<!doctype html>
       </aside>
       <main class="main">
         <header class="header">
-          <div class="header-title" id="pageTitle">Agentic Overview</div>
+          <div class="header-title" id="pageTitle">Agentic overview</div>
           <div class="health-strip" id="healthStrip">
             <span>API <span class="health-dot ok"></span> up</span>
             <span class="health-separator"></span>
@@ -435,7 +435,7 @@ const html = `<!doctype html>
           <div class="setup-grid">
         <div class="card stack">
           <div>
-            <h2>Start Agentic Session</h2>
+            <h2>Start agentic session</h2>
             <label for="repoPath">Repository path</label>
             <input id="repoPath" value="${DEFAULT_REPO}" />
           </div>
@@ -515,7 +515,7 @@ const html = `<!doctype html>
             <div class="runs-sidebar">
               <div class="card">
                 <h2>Agentic sessions</h2>
-                <p class="muted">Runs multi-agent com handoff e eventos persistidos.</p>
+                <p class="muted">Multi-agent runs with handoffs and persisted events.</p>
                 <div id="sessionSummaryBadges" class="session-summary-badges"></div>
                 <div id="sessionTypeFilters" class="session-filter-row"></div>
                 <div id="contractFilters" class="session-filter-row"></div>
@@ -724,7 +724,7 @@ const html = `<!doctype html>
         adaptersNav.classList.toggle('active', panel === 'review')
         insightsNav.classList.remove('active')
         settingsNav.classList.remove('active')
-        pageTitle.textContent = panel === 'runs' ? 'Agentic Runs' : panel === 'review' ? 'Adapters' : 'Agentic Overview'
+        pageTitle.textContent = panel === 'runs' ? 'Agentic runs' : panel === 'review' ? 'Adapters' : 'Agentic overview'
       }
 
       function projectLabel(projectPath) {

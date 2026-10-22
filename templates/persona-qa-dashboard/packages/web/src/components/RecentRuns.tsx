@@ -19,12 +19,12 @@ export function RecentRuns({ runs, className }: RecentRunsProps) {
   return (
     <div className={className}>
       <h3 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">
-        Últimas 5 Execuções
+        Last 5 runs
       </h3>
       <Card>
         {runs.length === 0 ? (
           <div className="flex h-24 items-center justify-center text-xs text-[var(--text-muted)]">
-            Nenhuma execução registrada
+            No runs recorded
           </div>
         ) : (
           <div className="divide-y divide-[var(--border)]/50">

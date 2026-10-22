@@ -58,7 +58,7 @@ function MaturityLevelCard({ level }: { level: Phase2MaturityLevel }) {
 
       <div className="mb-4">
         <div className="mb-1.5 flex items-center justify-between text-xs">
-          <span className="text-[var(--text-muted)]">Maturidade</span>
+          <span className="text-[var(--text-muted)]">Maturity</span>
           <span className="font-semibold text-[var(--text-primary)]">{level.completion}%</span>
         </div>
         <div className="h-2 rounded-full bg-[var(--bg-primary)]">

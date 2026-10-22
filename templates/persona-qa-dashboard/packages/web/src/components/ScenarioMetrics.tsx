@@ -22,14 +22,14 @@ export function ScenarioMetrics({ latestRun, successRate, avgDurationMs, classNa
   return (
     <div className={className}>
       <h3 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">
-        Métricas do Cenário
+        Scenario metrics
       </h3>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {/* Latest run */}
         <StatCard
-          label="Última Execução"
+          label="Last run"
           value={latestRun ? mapApiStatus(latestRun.status).toUpperCase() : '—'}
-          sub={latestRun ? formatRelativeTime(latestRun.started_at) : 'Nenhuma execução'}
+          sub={latestRun ? formatRelativeTime(latestRun.started_at) : 'No runs'}
           icon={<Activity className="h-5 w-5" />}
           accentColor={
             latestRun
@@ -50,26 +50,26 @@ export function ScenarioMetrics({ latestRun, successRate, avgDurationMs, classNa
 
         {/* Success rate */}
         <StatCard
-          label="Taxa de Sucesso"
+          label="Pass rate"
           value={`${successRate}%`}
-          sub="Últimas 5 execuções"
+          sub="Last 5 runs"
           icon={<TrendingUp className="h-5 w-5" />}
           accentColor={successRate >= 80 ? '#22c55e' : successRate >= 50 ? '#f97316' : '#ef4444'}
         />
 
         {/* Average duration */}
         <StatCard
-          label="Duração Média"
+          label="Average duration"
           value={avgDurationMs ? formatDuration(Math.round(avgDurationMs / 1000)) : '—'}
-          sub="Últimas 5 execuções"
+          sub="Last 5 runs"
           icon={<Clock className="h-5 w-5" />}
         />
 
         {/* Latest run duration */}
         <StatCard
-          label="Duração Última"
+          label="Last duration"
           value={latestRun?.duration_ms ? formatDuration(Math.round(latestRun.duration_ms / 1000)) : '—'}
-          sub={latestRun?.started_at ? new Date(latestRun.started_at).toLocaleDateString('pt-BR') : ''}
+          sub={latestRun?.started_at ? new Date(latestRun.started_at).toLocaleDateString('en-US') : ''}
           icon={<CheckCircle2 className="h-5 w-5" />}
         />
       </div>

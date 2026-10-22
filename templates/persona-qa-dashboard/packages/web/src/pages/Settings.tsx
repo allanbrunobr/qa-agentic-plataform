@@ -54,6 +54,7 @@ export function Settings() {
   const [selectedProvider, setSelectedProvider] = useState<'anthropic' | 'openai'>('anthropic')
   const [savingProvider, setSavingProvider] = useState(false)
   const [providerNotice, setProviderNotice] = useState<string | null>(null)
+  const [providerNoticeIsError, setProviderNoticeIsError] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -79,7 +80,7 @@ export function Settings() {
         setPersonas(Array.isArray(nextPersonas) ? nextPersonas : [])
       } catch (loadError) {
         if (!mounted) return
-        setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar settings')
+        setError(loadError instanceof Error ? loadError.message : 'Failed to load settings')
       } finally {
         if (mounted) setLoading(false)
       }
@@ -123,9 +124,11 @@ export function Settings() {
           },
         }
       })
-      setProviderNotice('Provider salvo. A mudanca vale para a proxima run.')
+      setProviderNoticeIsError(false)
+      setProviderNotice('Provider saved. The change applies to the next run.')
     } catch (saveError) {
-      setProviderNotice(saveError instanceof Error ? saveError.message : 'Falha ao salvar provider')
+      setProviderNoticeIsError(true)
+      setProviderNotice(saveError instanceof Error ? saveError.message : 'Failed to save provider')
     } finally {
       setSavingProvider(false)
     }
@@ -136,13 +139,13 @@ export function Settings() {
       <div>
         <h1 className="text-lg font-semibold text-[var(--text-primary)]">Settings</h1>
         <p className="mt-1 text-sm text-[var(--text-muted)]">
-          Diagnóstico do dashboard, adapter e ambiente local.
+          Diagnostics for the dashboard, adapter, and local environment.
         </p>
       </div>
 
       {loading && (
         <Card>
-          <p className="text-sm text-[var(--text-muted)]">Carregando configurações...</p>
+          <p className="text-sm text-[var(--text-muted)]">Loading settings...</p>
         </Card>
       )}
 
@@ -174,7 +177,7 @@ export function Settings() {
         <Card className="space-y-4">
           <div className="flex items-center gap-2">
             <SettingsIcon className="h-4 w-4 text-[var(--accent)]" />
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Model Provider</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Model provider</h2>
           </div>
           <div>
             <InfoRow label="Current provider" value={runtimeConfig?.provider ?? runtimeSettings?.provider ?? 'anthropic'} />
@@ -201,7 +204,7 @@ export function Settings() {
               </select>
             </label>
             <div className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3 text-xs text-[var(--text-muted)]">
-              {providerOptions.find((provider) => provider.id === selectedProvider)?.description ?? 'Selecione o provider usado nas proximas runs agentic.'}
+              {providerOptions.find((provider) => provider.id === selectedProvider)?.description ?? 'Select the provider used for upcoming agentic runs.'}
             </div>
             <Button
               variant="primary"
@@ -210,12 +213,12 @@ export function Settings() {
               loading={savingProvider}
               className="w-full justify-center"
             >
-              Salvar provider
+              Save provider
             </Button>
             {providerNotice && (
               <div className={cn(
                 'rounded-md border px-3 py-2 text-xs',
-                providerNotice.toLowerCase().includes('falha')
+                providerNoticeIsError
                   ? 'border-red-500/30 bg-red-500/10 text-red-300'
                   : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
               )}>
@@ -270,7 +273,7 @@ export function Settings() {
         <Card className="space-y-4">
           <div className="flex items-center gap-2">
             <Database className="h-4 w-4 text-[var(--accent)]" />
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Local Data</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Local data</h2>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
@@ -296,7 +299,7 @@ export function Settings() {
         <Card className="space-y-4 lg:col-span-2">
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-[var(--accent)]" />
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Execution Defaults</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Execution defaults</h2>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <InfoRow label="Parallel runs" value="disabled" />
@@ -309,25 +312,25 @@ export function Settings() {
         <Card className="space-y-4 lg:col-span-2">
           <div className="flex items-center gap-2">
             <SettingsIcon className="h-4 w-4 text-[var(--accent)]" />
-            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Handoff Notes</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Handoff notes</h2>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
               <div className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
                 <Activity className="h-4 w-4 text-[var(--accent)]" />
-                Dashboard local
+                Local dashboard
               </div>
               <p className="mt-2 text-xs leading-relaxed text-[var(--text-muted)]">
-                Use esta tela para confirmar que API, banco local, personas e cenários foram carregados.
+                Use this page to confirm that the API, local database, personas, and scenarios loaded.
               </p>
             </div>
             <div className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
               <div className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
                 <KeyRound className="h-4 w-4 text-[var(--accent)]" />
-                Valores sensíveis
+                Sensitive values
               </div>
               <p className="mt-2 text-xs leading-relaxed text-[var(--text-muted)]">
-                Chaves e senhas devem ficar no ambiente local. A escolha do provider afeta apenas a proxima run.
+                Keys and passwords must stay in the local environment. The provider choice only affects the next run.
               </p>
             </div>
           </div>

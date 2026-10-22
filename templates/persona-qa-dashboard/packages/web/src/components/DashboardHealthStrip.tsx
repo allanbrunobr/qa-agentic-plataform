@@ -87,7 +87,7 @@ export function DashboardHealthStrip({}: DashboardHealthStripProps) {
     <div
       className="flex items-center gap-4 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-1.5 text-xs"
       role="status"
-      aria-label="Status do sistema"
+      aria-label="System status"
     >
       {/* API Status */}
       <div className="flex items-center gap-1.5">
@@ -118,7 +118,7 @@ export function DashboardHealthStrip({}: DashboardHealthStripProps) {
         <Activity className="h-3 w-3 text-[var(--text-muted)]" />
         <span className="text-[var(--text-muted)]">Activity</span>
         <span className="text-[var(--text-secondary)]">
-          {status?.latest_activity_at ? formatRelativeTime(status.latest_activity_at) : 'nunca'}
+          {status?.latest_activity_at ? formatRelativeTime(status.latest_activity_at) : 'never'}
         </span>
         {status?.latest_activity_source === 'p2_sessions' && (
           <span className="text-[var(--accent)]">agentic</span>
@@ -132,7 +132,7 @@ export function DashboardHealthStrip({}: DashboardHealthStripProps) {
         {activeRunStatus === 'running' ? (
           <>
             <Play className="h-3 w-3 text-teal-400 animate-pulse" />
-            <span className="text-teal-400 font-medium">executando</span>
+            <span className="text-teal-400 font-medium">running</span>
             {status?.active_run?.source === 'p2_sessions' && (
               <span className="text-[var(--accent)]">agentic</span>
             )}
@@ -145,17 +145,17 @@ export function DashboardHealthStrip({}: DashboardHealthStripProps) {
         ) : activeRunStatus === 'failed' ? (
           <>
             <AlertCircle className="h-3 w-3 text-red-400" />
-            <span className="text-red-400 font-medium">falhou</span>
+            <span className="text-red-400 font-medium">failed</span>
           </>
         ) : activeRunStatus === 'pending' ? (
           <>
             <Play className="h-3 w-3 text-yellow-400" />
-            <span className="text-yellow-400 font-medium">pendente</span>
+            <span className="text-yellow-400 font-medium">pending</span>
           </>
         ) : (
           <>
             <Play className="h-3 w-3 text-[var(--text-muted)]" />
-            <span className="text-[var(--text-muted)]">nenhuma</span>
+            <span className="text-[var(--text-muted)]">none</span>
           </>
         )}
       </div>

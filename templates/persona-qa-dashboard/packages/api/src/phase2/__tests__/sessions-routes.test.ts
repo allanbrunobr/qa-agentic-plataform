@@ -90,7 +90,7 @@ describe('Phase 2 Session Routes', () => {
         value: 0,
       }));
       expect(body.levels.l5.signals).toContainEqual(expect.objectContaining({
-        label: 'Sinais L5 retidos',
+        label: 'Retained L5 signals',
         value: 0,
       }));
     });
@@ -119,7 +119,7 @@ describe('Phase 2 Session Routes', () => {
       expect(l5.capabilities).toContainEqual(expect.objectContaining({
         id: 'runtime_learning',
         state: 'complete',
-        evidence: expect.stringContaining('2 overlay(s) L5'),
+        evidence: expect.stringContaining('2 L5 overlay(s)'),
       }));
       expect(l5.signals).toContainEqual(expect.objectContaining({
         label: 'Runtime learning loads',
@@ -127,7 +127,7 @@ describe('Phase 2 Session Routes', () => {
         tone: 'success',
       }));
       expect(l5.signals).toContainEqual(expect.objectContaining({
-        label: 'Runtime overlays usados',
+        label: 'Runtime overlays used',
         value: 2,
         tone: 'success',
       }));
@@ -812,7 +812,7 @@ describe('Phase 2 Session Routes', () => {
       const session = sessionService.createSession('test_scenario');
       sessionService.addEvent(session.id, 'finding_recorded', {
         severity: 'high',
-        title: 'Campo obrigatório ausente',
+        title: 'Required field missing',
         evidence: ['screenshot.png'],
         agentId: 'sales_associate',
         stepId: 'step_1',
@@ -823,7 +823,7 @@ describe('Phase 2 Session Routes', () => {
       const findings = res.json();
       expect(findings).toHaveLength(1);
       expect(findings[0].severity).toBe('high');
-      expect(findings[0].title).toBe('Campo obrigatório ausente');
+      expect(findings[0].title).toBe('Required field missing');
       expect(findings[0].agentId).toBe('sales_associate');
     });
 

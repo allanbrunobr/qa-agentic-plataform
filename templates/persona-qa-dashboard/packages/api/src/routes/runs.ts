@@ -118,13 +118,13 @@ function buildTimeline(params: {
     {
       type: 'started' as const,
       timestamp: params.startedAt,
-      label: 'Run iniciada',
+      label: 'Run started',
     },
     ...(params.artifacts
       ? [{
           type: 'artifact' as const,
           timestamp: params.startedAt,
-          label: 'Artefatos registrados',
+          label: 'Artifacts recorded',
           details: {
             artifact_count: countArtifacts(params.artifacts),
             artifact_keys: Object.keys(params.artifacts),
@@ -146,7 +146,7 @@ function buildTimeline(params: {
       ? [{
           type: 'completed' as const,
           timestamp: params.completedAt,
-          label: params.status === 'complete' ? 'Run concluída' : 'Run falhou',
+          label: params.status === 'complete' ? 'Run completed' : 'Run failed',
           details: {
             status: params.status,
           },
@@ -449,25 +449,25 @@ export async function runsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const now = new Date().toISOString().split('T')[0];
-    let md = `# Relatório Operacional — Persona QA\n\n`;
-    md += `**Gerado em:** ${now}\n\n`;
-    md += `## Resumo Geral\n\n`;
-    md += `| Métrica | Valor |\n|---|---|\n`;
-    md += `| Total de Runs | ${total} |\n`;
-    md += `| Completos | ${complete} |\n`;
-    md += `| Falharam | ${failed} |\n`;
-    md += `| Taxa de Sucesso | ${passRate}% |\n\n`;
+    let md = `# Operational report — Persona QA\n\n`;
+    md += `**Generated on:** ${now}\n\n`;
+    md += `## Overview\n\n`;
+    md += `| Metric | Value |\n|---|---|\n`;
+    md += `| Total runs | ${total} |\n`;
+    md += `| Completed | ${complete} |\n`;
+    md += `| Failed | ${failed} |\n`;
+    md += `| Pass rate | ${passRate}% |\n\n`;
 
-    md += `## Cenários\n\n`;
-    md += `| Cenário | Execuções | Taxa de Sucesso |\n|---|---|---|\n`;
+    md += `## Scenarios\n\n`;
+    md += `| Scenario | Runs | Pass rate |\n|---|---|---|\n`;
     for (const [, entry] of scenarioMap) {
       const rate = entry.count > 0 ? Math.round((entry.passed / entry.count) * 100) : 0;
       md += `| ${entry.name} | ${entry.count} | ${rate}% |\n`;
     }
 
     if (recentFindings.length > 0) {
-      md += `\n## Findings Recentes\n\n`;
-      md += `| Severidade | Título | Agente |\n|---|---|---|\n`;
+      md += `\n## Recent findings\n\n`;
+      md += `| Severity | Title | Agent |\n|---|---|---|\n`;
       for (const f of recentFindings) {
         md += `| ${f.severity} | ${f.title} | ${f.agent} |\n`;
       }

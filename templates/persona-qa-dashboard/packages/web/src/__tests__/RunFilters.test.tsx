@@ -43,7 +43,7 @@ describe('RunFilters', () => {
     render(<RunFilters filters={filters} onChange={onChange} />)
 
     await waitFor(() => {
-      const sourceSelect = screen.getByTitle('Coluna run_source ainda não disponível')
+      const sourceSelect = screen.getByTitle('run_source column not available yet')
       expect(sourceSelect).toBeDisabled()
     })
   })
@@ -56,10 +56,10 @@ describe('RunFilters', () => {
     render(<RunFilters filters={filters} onChange={onChange} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Todas as fontes')).toBeInTheDocument()
+      expect(screen.getByText('All sources')).toBeInTheDocument()
     })
 
-    const sourceSelect = screen.getByText('Todas as fontes').closest('select')!
+    const sourceSelect = screen.getByText('All sources').closest('select')!
     expect(sourceSelect).not.toBeDisabled()
     expect(screen.getByText('manual')).toBeInTheDocument()
     expect(screen.getByText('ci')).toBeInTheDocument()
@@ -86,8 +86,8 @@ describe('RunFilters', () => {
     }
     render(<RunFilters filters={activeFilters} onChange={onChange} />)
 
-    expect(screen.getByRole('button', { name: /remover filtro: falhou/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /remover filtro: com findings/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /remove filter: failed/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /remove filter: with findings/i })).toBeInTheDocument()
   })
 
   it('shows source chip when source filter is active', () => {
@@ -97,10 +97,10 @@ describe('RunFilters', () => {
     }
     render(<RunFilters filters={activeFilters} onChange={onChange} />)
 
-    expect(screen.getByRole('button', { name: /remover filtro: fonte: ci/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /remove filter: source: ci/i })).toBeInTheDocument()
   })
 
-  it('clears all filters including source when "Limpar filtros" is clicked', async () => {
+  it('clears all filters including source when "Clear filters" is clicked', async () => {
     const activeFilters: RunFilterState = {
       ...EMPTY_FILTERS,
       status: 'failed',
@@ -108,7 +108,7 @@ describe('RunFilters', () => {
     }
     render(<RunFilters filters={activeFilters} onChange={onChange} />)
 
-    await userEvent.click(screen.getByText('Limpar filtros'))
+    await userEvent.click(screen.getByText('Clear filters'))
 
     expect(onChange).toHaveBeenCalledWith(EMPTY_FILTERS)
   })
@@ -121,7 +121,7 @@ describe('RunFilters', () => {
     }
     render(<RunFilters filters={activeFilters} onChange={onChange} />)
 
-    const removeButtons = screen.getAllByRole('button', { name: /remover filtro/i })
+    const removeButtons = screen.getAllByRole('button', { name: /remove filter/i })
     await userEvent.click(removeButtons[0])
 
     expect(onChange).toHaveBeenCalledWith(

@@ -106,7 +106,7 @@ function normalizeRunDetail(raw: unknown): RunDetailPayload | null {
 
 function formatNullable(value: string | number | boolean | null | undefined): string {
   if (value === null || value === undefined || value === '') return '—'
-  if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
   return String(value)
 }
 
@@ -201,7 +201,7 @@ export function Runs({ activeRunId }: RunsProps) {
       const detail = normalizeRunDetail(await api.getRun(runId))
       setRunDetails(prev => ({ ...prev, [runId]: detail }))
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erro ao carregar detalhe da run'
+      const message = error instanceof Error ? error.message : 'Failed to load run details'
       setRunDetailErrors(prev => ({ ...prev, [runId]: message }))
     } finally {
       setRunDetailLoading(prev => ({ ...prev, [runId]: false }))
@@ -263,8 +263,8 @@ export function Runs({ activeRunId }: RunsProps) {
 
   if (allRuns.length === 0) return (
     <EmptyState
-      title="Nenhuma execução encontrada"
-      description="Execute testes com pnpm test:persona-qa"
+      title="No runs found"
+      description="Run tests with pnpm test:persona-qa"
     />
   )
 
@@ -276,7 +276,7 @@ export function Runs({ activeRunId }: RunsProps) {
           <DataExport filterParams={Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== ''))} />
         </div>
         <p className="mt-3 text-sm text-[var(--text-muted)]">
-          {allRuns.length} runs encontrados
+          {allRuns.length} runs found
         </p>
       </div>
 
@@ -389,7 +389,7 @@ export function Runs({ activeRunId }: RunsProps) {
                       <div className="p-4 space-y-4">
                         {detailLoading && (
                           <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-xs text-[var(--text-muted)]">
-                            Carregando detalhe da run...
+                            Loading run details...
                           </div>
                         )}
                         {detailError && (
@@ -412,7 +412,7 @@ export function Runs({ activeRunId }: RunsProps) {
                         <div className="grid grid-cols-4 gap-4">
                           <div className="rounded-lg bg-[var(--bg-primary)] p-3 text-center">
                             <p className="text-lg font-bold tabular-nums text-[var(--text-primary)]">{run.total_tests}</p>
-                            <p className="text-[10px] text-[var(--text-muted)]">Total Tests</p>
+                            <p className="text-[10px] text-[var(--text-muted)]">Total tests</p>
                           </div>
                           <div className="rounded-lg bg-[var(--bg-primary)] p-3 text-center">
                             <p className="text-lg font-bold tabular-nums text-[var(--success)]">{run.passed}</p>
@@ -453,7 +453,7 @@ export function Runs({ activeRunId }: RunsProps) {
                                 )}
                                 {run.findings_count - run.critical_count - run.high_count > 0 && (
                                   <span className="text-xs text-[var(--text-muted)]">
-                                    +{run.findings_count - run.critical_count - run.high_count} outros
+                                    +{run.findings_count - run.critical_count - run.high_count} more
                                   </span>
                                 )}
                               </div>
@@ -464,13 +464,13 @@ export function Runs({ activeRunId }: RunsProps) {
 
                           <div className="rounded-lg bg-[var(--bg-primary)] p-3">
                             <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                              Evidência
+                              Evidence
                             </p>
                             <div className="flex flex-wrap gap-2 text-xs text-[var(--text-muted)]">
                               <span>Findings: {run.findings_count}</span>
                               <span>Screenshots: {(run as ApiRunExtended).screenshots_count ?? 0}</span>
                               <span>Artifacts: {Object.keys(artifacts ?? {}).length}</span>
-                              <span>Contexto: {(run as ApiRunExtended).context_available ? 'sim' : 'não'}</span>
+                              <span>Context: {(run as ApiRunExtended).context_available ? 'yes' : 'no'}</span>
                               <span>Logs: {(run as ApiRunExtended).log_entries_count ?? liveEvents.length}</span>
                             </div>
                           </div>
@@ -479,7 +479,7 @@ export function Runs({ activeRunId }: RunsProps) {
                         {primaryArtifacts.length > 0 && (
                           <div className="rounded-lg bg-[var(--bg-primary)] p-3">
                             <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                              Artefatos principais
+                              Key artifacts
                             </p>
                             <div className="flex flex-wrap gap-2">
                               {primaryArtifacts.map(key => (
@@ -501,7 +501,7 @@ export function Runs({ activeRunId }: RunsProps) {
                           <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-3">
                             <div className="mb-2 flex items-center justify-between gap-3">
                               <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                                Findings desta run
+                                Findings for this run
                               </p>
                               <span className="text-xs text-[var(--text-muted)]">
                                 {findings.length} finding{findings.length !== 1 ? 's' : ''}
@@ -532,11 +532,11 @@ export function Runs({ activeRunId }: RunsProps) {
                                   </div>
                                   <div className="mt-2 grid gap-2 text-xs text-[var(--text-muted)] lg:grid-cols-2">
                                     <div>
-                                      <p className="font-semibold uppercase tracking-wide text-[var(--text-muted)]">Esperado</p>
+                                      <p className="font-semibold uppercase tracking-wide text-[var(--text-muted)]">Expected</p>
                                       <p className="mt-1 whitespace-pre-wrap text-[var(--text-secondary)]">{finding.expected}</p>
                                     </div>
                                     <div>
-                                      <p className="font-semibold uppercase tracking-wide text-[var(--text-muted)]">Atual</p>
+                                      <p className="font-semibold uppercase tracking-wide text-[var(--text-muted)]">Actual</p>
                                       <p className="mt-1 whitespace-pre-wrap text-[var(--text-secondary)]">{finding.actual}</p>
                                     </div>
                                   </div>
@@ -586,7 +586,7 @@ export function Runs({ activeRunId }: RunsProps) {
                               <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                                 Live log
                               </p>
-                              <span className="text-xs text-[var(--text-muted)]">{liveEvents.length} eventos</span>
+                              <span className="text-xs text-[var(--text-muted)]">{liveEvents.length} events</span>
                             </div>
                             {liveEvents.length > 0 ? (
                               <LiveLog events={liveEvents} className="max-h-96" />

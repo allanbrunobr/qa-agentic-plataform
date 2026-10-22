@@ -24,16 +24,16 @@ const EMPTY_FILTERS: RunFilterState = {
 }
 
 const STATUS_OPTIONS = [
-  { value: '', label: 'Todos os status' },
-  { value: 'pending', label: 'Pendente' },
-  { value: 'running', label: 'Em execução' },
-  { value: 'complete', label: 'Completo' },
-  { value: 'failed', label: 'Falhou' },
+  { value: '', label: 'All statuses' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'running', label: 'Running' },
+  { value: 'complete', label: 'Complete' },
+  { value: 'failed', label: 'Failed' },
 ]
 
 const FINDINGS_OPTIONS = [
   { value: '', label: 'Findings' },
-  { value: 'true', label: 'Com findings' },
+  { value: 'true', label: 'With findings' },
 ]
 
 interface RunFiltersProps {
@@ -97,13 +97,13 @@ export function RunFilters({ filters, onChange }: RunFiltersProps) {
       case 'status':
         return STATUS_OPTIONS.find(o => o.value === value)?.label ?? value
       case 'from':
-        return `De: ${value}`
+        return `From: ${value}`
       case 'to':
-        return `Até: ${value}`
+        return `To: ${value}`
       case 'has_findings':
-        return 'Com findings'
+        return 'With findings'
       case 'source':
-        return `Fonte: ${value}`
+        return `Source: ${value}`
       default:
         return value
     }
@@ -120,7 +120,7 @@ export function RunFilters({ filters, onChange }: RunFiltersProps) {
           onChange={e => updateFilter('scenario', e.target.value)}
           className="h-9 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 pr-8 text-sm text-[var(--text-primary)] focus:border-[var(--accent)]/50 focus:outline-none cursor-pointer"
         >
-          <option value="">Todos os cenários</option>
+          <option value="">All scenarios</option>
           {scenarios.map(s => (
             <option key={s.scenario_id} value={s.scenario_id}>{s.name}</option>
           ))}
@@ -142,11 +142,11 @@ export function RunFilters({ filters, onChange }: RunFiltersProps) {
           value={filters.source}
           onChange={e => updateFilter('source', e.target.value)}
           disabled={!sourcesInfo.available}
-          title={sourcesInfo.available ? undefined : 'Coluna run_source ainda não disponível'}
+          title={sourcesInfo.available ? undefined : 'run_source column not available yet'}
           className="h-9 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 pr-8 text-sm text-[var(--text-primary)] focus:border-[var(--accent)]/50 focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <option value="">
-            {sourcesInfo.available ? 'Todas as fontes' : 'Fonte (indisponível)'}
+            {sourcesInfo.available ? 'All sources' : 'Source (unavailable)'}
           </option>
           {sourcesInfo.sources.map(s => (
             <option key={s} value={s}>{s}</option>
@@ -172,7 +172,7 @@ export function RunFilters({ filters, onChange }: RunFiltersProps) {
             value={filters.from}
             onChange={e => updateFilter('from', e.target.value)}
             className="h-9 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] pl-8 pr-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent)]/50 focus:outline-none"
-            placeholder="De"
+            placeholder="From"
           />
         </div>
 
@@ -184,13 +184,13 @@ export function RunFilters({ filters, onChange }: RunFiltersProps) {
             value={filters.to}
             onChange={e => updateFilter('to', e.target.value)}
             className="h-9 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] pl-8 pr-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent)]/50 focus:outline-none"
-            placeholder="Até"
+            placeholder="To"
           />
         </div>
 
         {activeFilters.length > 0 && (
           <Button variant="ghost" size="sm" onClick={clearAll}>
-            Limpar filtros
+            Clear filters
           </Button>
         )}
       </div>

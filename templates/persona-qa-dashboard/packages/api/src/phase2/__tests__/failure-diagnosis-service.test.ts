@@ -10,7 +10,7 @@ describe('FailureDiagnosisService', () => {
       retryable: false,
     })
 
-    expect(diagnoseFailureMessage('Login timeout para dev@example.test')).toMatchObject({
+    expect(diagnoseFailureMessage('Login timeout for dev@example.test')).toMatchObject({
       rootCause: 'application_login',
       failureCategory: 'auth',
       retryable: true,

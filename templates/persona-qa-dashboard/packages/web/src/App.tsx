@@ -10,15 +10,15 @@ import { Settings } from '@/pages/Settings'
 import { CodeGraph } from '@/pages/CodeGraph'
 
 const PAGE_TITLES: Record<Page, string> = {
-  overview: 'Agentic Overview',
+  overview: 'Agentic overview',
   scenarios: 'Scenarios',
   findings: 'Findings',
   runs: 'Runs',
-  'agentic-runs': 'Agentic Runs',
+  'agentic-runs': 'Agentic runs',
   personas: 'Personas',
-  'pr-tracking': 'PR Tracking',
+  'pr-tracking': 'PR tracking',
   insights: 'Insights',
-  'code-graph': 'Code Graph',
+  'code-graph': 'Code graph',
   settings: 'Settings',
 }
 

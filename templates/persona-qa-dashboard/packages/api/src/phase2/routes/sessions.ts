@@ -375,7 +375,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     const session = service.getSession(request.params.id);
 
     if (!session || !isAvailableScenarioId(session.scenarioId)) {
-      return reply.status(404).send({ error: 'Sessão não encontrada' });
+      return reply.status(404).send({ error: 'Session not found' });
     }
 
     return reply.send({
@@ -391,7 +391,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     const session = service.getSession(request.params.id);
 
     if (!session || !isAvailableScenarioId(session.scenarioId)) {
-      return reply.status(404).send({ error: 'Sessão não encontrada' });
+      return reply.status(404).send({ error: 'Session not found' });
     }
 
     const sorted = [...session.events].sort(
@@ -406,7 +406,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     const session = service.getSession(request.params.id);
 
     if (!session || !isAvailableScenarioId(session.scenarioId)) {
-      return reply.status(404).send({ error: 'Sessão não encontrada' });
+      return reply.status(404).send({ error: 'Session not found' });
     }
 
     return reply.send(new IndependentAuditorService().evaluateSession(session));
@@ -418,7 +418,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     const session = service.getSession(request.params.id);
 
     if (!session || !isAvailableScenarioId(session.scenarioId)) {
-      return reply.status(404).send({ error: 'Sessão não encontrada' });
+      return reply.status(404).send({ error: 'Session not found' });
     }
 
     const findings = session.findings.map((finding) => ({
@@ -846,7 +846,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     const session = service.getSession(request.params.id);
 
     if (!session) {
-      return reply.status(404).send({ error: 'Sessão não encontrada' });
+      return reply.status(404).send({ error: 'Session not found' });
     }
 
     return reply.send({
@@ -864,7 +864,7 @@ export async function phase2SessionRoutes(app: FastifyInstance): Promise<void> {
     const session = service.getSession(request.params.id);
 
     if (!session) {
-      return reply.status(404).send({ error: 'Sessão não encontrada' });
+      return reply.status(404).send({ error: 'Session not found' });
     }
 
     return reply.send(service.listArtifacts(request.params.id));

@@ -21,11 +21,11 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'overview', label: 'Agentic Overview', icon: LayoutDashboard },
-  { id: 'agentic-runs', label: 'Agentic Runs', icon: BotMessageSquare },
+  { id: 'overview', label: 'Agentic overview', icon: LayoutDashboard },
+  { id: 'agentic-runs', label: 'Agentic runs', icon: BotMessageSquare },
   { id: 'personas', label: 'Personas', icon: Users },
   { id: 'insights', label: 'Insights', icon: Sparkles },
-  { id: 'code-graph', label: 'Code Graph', icon: Network },
+  { id: 'code-graph', label: 'Code graph', icon: Network },
 ]
 
 interface SidebarProps {

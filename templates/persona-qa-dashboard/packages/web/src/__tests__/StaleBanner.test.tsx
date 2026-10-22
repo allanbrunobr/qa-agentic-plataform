@@ -42,9 +42,9 @@ describe('StaleBanner', () => {
     render(<StaleBanner />)
 
     await waitFor(() => {
-      expect(screen.getByText(/dados podem estar desatualizados/i)).toBeInTheDocument()
+      expect(screen.getByText(/data may be stale/i)).toBeInTheDocument()
     })
-    expect(screen.getByText(/2h atrás/)).toBeInTheDocument()
+    expect(screen.getByText(/2h ago/)).toBeInTheDocument()
   })
 
   it('renders new data banner when new_data_available is true', async () => {
@@ -61,9 +61,9 @@ describe('StaleBanner', () => {
     render(<StaleBanner />)
 
     await waitFor(() => {
-      expect(screen.getByText(/novos dados disponíveis/i)).toBeInTheDocument()
+      expect(screen.getByText(/new data available/i)).toBeInTheDocument()
     })
-    expect(screen.getByText('Sincronizar')).toBeInTheDocument()
+    expect(screen.getByText('Sync')).toBeInTheDocument()
   })
 
   it('dismisses stale warning when X is clicked', async () => {
@@ -80,12 +80,12 @@ describe('StaleBanner', () => {
     render(<StaleBanner />)
 
     await waitFor(() => {
-      expect(screen.getByText(/dados podem estar desatualizados/i)).toBeInTheDocument()
+      expect(screen.getByText(/data may be stale/i)).toBeInTheDocument()
     })
 
-    await userEvent.click(screen.getByLabelText('Fechar alerta'))
+    await userEvent.click(screen.getByLabelText('Dismiss alert'))
 
-    expect(screen.queryByText(/dados podem estar desatualizados/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/data may be stale/i)).not.toBeInTheDocument()
   })
 
   it('calls /api/runs/staleness endpoint, not /health or /api/sync/status', async () => {
@@ -125,8 +125,8 @@ describe('StaleBanner', () => {
     render(<StaleBanner />)
 
     await waitFor(() => {
-      expect(screen.getByText(/dados podem estar desatualizados/i)).toBeInTheDocument()
-      expect(screen.getByText(/novos dados disponíveis/i)).toBeInTheDocument()
+      expect(screen.getByText(/data may be stale/i)).toBeInTheDocument()
+      expect(screen.getByText(/new data available/i)).toBeInTheDocument()
     })
   })
 })

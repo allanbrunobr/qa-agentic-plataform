@@ -274,7 +274,7 @@ function HandoffBoard({ events }: { events: Phase2SessionEvent[] }) {
     return (
       <Card>
         <p className="text-sm text-[var(--text-muted)]">
-          Nenhum handoff registrado nesta sessão.
+          No handoffs recorded in this session.
         </p>
       </Card>
     )
@@ -370,7 +370,7 @@ function EventTimeline({
   if (events.length === 0) {
     return (
       <Card>
-        <p className="text-sm text-[var(--text-muted)]">Nenhum evento disponível.</p>
+        <p className="text-sm text-[var(--text-muted)]">No events available.</p>
       </Card>
     )
   }
@@ -380,7 +380,7 @@ function EventTimeline({
       <div>
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">Event timeline</h3>
         <p className="mt-1 text-xs text-[var(--text-muted)]">
-          Log cronológico da sessão agentic.
+          Chronological log of the agentic session.
         </p>
       </div>
 
@@ -457,7 +457,7 @@ function FindingsByAgent({ findings }: { findings: Phase2SessionFinding[] }) {
   if (ordered.length === 0) {
     return (
       <Card>
-        <p className="text-sm text-[var(--text-muted)]">Nenhum finding registrado nesta sessão.</p>
+        <p className="text-sm text-[var(--text-muted)]">No findings recorded in this session.</p>
       </Card>
     )
   }
@@ -467,7 +467,7 @@ function FindingsByAgent({ findings }: { findings: Phase2SessionFinding[] }) {
       <div>
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">Findings by agent</h3>
         <p className="mt-1 text-xs text-[var(--text-muted)]">
-          Comparativo de findings por papel nesta sessão.
+          Findings compared by role in this session.
         </p>
       </div>
 
@@ -493,7 +493,7 @@ function FindingsByAgent({ findings }: { findings: Phase2SessionFinding[] }) {
               ))}
               {summary.titles.length > 3 && (
                 <p className="text-xs text-[var(--text-muted)]">
-                  +{summary.titles.length - 3} findings adicionais
+                  +{summary.titles.length - 3} more findings
                 </p>
               )}
             </div>
@@ -524,7 +524,7 @@ function AgentConversation({
   if (conversationEvents.length === 0) {
     return (
       <Card>
-        <p className="text-sm text-[var(--text-muted)]">Nenhuma conversa operacional disponível.</p>
+        <p className="text-sm text-[var(--text-muted)]">No agent conversation available.</p>
       </Card>
     )
   }
@@ -534,7 +534,7 @@ function AgentConversation({
       <div>
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">Agent conversation</h3>
         <p className="mt-1 text-xs text-[var(--text-muted)]">
-          Visualização operacional das trocas entre agentes e tools.
+          Operational view of exchanges between agents and tools.
         </p>
       </div>
 
@@ -604,7 +604,7 @@ function ScreenshotGallery({
   if (screenshots.length === 0) {
     return (
       <Card>
-        <p className="text-sm text-[var(--text-muted)]">Nenhum screenshot registrado nesta sessão.</p>
+        <p className="text-sm text-[var(--text-muted)]">No screenshots recorded in this session.</p>
       </Card>
     )
   }
@@ -614,7 +614,7 @@ function ScreenshotGallery({
       <div>
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">Screenshots</h3>
         <p className="mt-1 text-xs text-[var(--text-muted)]">
-          Evidências visuais capturadas ao longo da run.
+          Visual evidence captured during the run.
         </p>
       </div>
 
@@ -659,12 +659,12 @@ function WorkflowSpecPanel({
       <div>
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">Workflow contract</h3>
         <p className="mt-1 text-xs text-[var(--text-muted)]">
-          Spec determinístico esperado para esta sessão.
+          Deterministic spec expected for this session.
         </p>
       </div>
 
       {loading ? (
-        <p className="text-sm text-[var(--text-muted)]">Carregando workflow contract...</p>
+        <p className="text-sm text-[var(--text-muted)]">Loading workflow contract...</p>
       ) : error ? (
         <p className="text-sm text-red-300">{error}</p>
       ) : workflowYaml ? (
@@ -672,7 +672,7 @@ function WorkflowSpecPanel({
           {workflowYaml}
         </pre>
       ) : (
-        <p className="text-sm text-[var(--text-muted)]">Nenhum workflow contract disponível.</p>
+        <p className="text-sm text-[var(--text-muted)]">No workflow contract available.</p>
       )}
     </Card>
   )
@@ -816,9 +816,9 @@ function SpecVsRunReal({
   return (
     <Card className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Spec vs run real</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Spec vs actual run</h3>
         <p className="mt-1 text-xs text-[var(--text-muted)]">
-          Comparativo entre o contract esperado e a execução observada.
+          Comparison between the expected contract and the observed run.
         </p>
       </div>
 
@@ -909,7 +909,7 @@ function SpecVsRunReal({
           <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Observed order</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {observedStepOrder.length === 0 ? (
-              <p className="text-sm text-[var(--text-muted)]">Nenhum step iniciado.</p>
+              <p className="text-sm text-[var(--text-muted)]">No steps started.</p>
             ) : (
               observedStepOrder.map((stepId, index) => {
                 const expectedAtPosition = expectedStepOrder[index]
@@ -940,7 +940,7 @@ function SpecVsRunReal({
         <div className="space-y-3">
           <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Expected steps</p>
           {contractSteps.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">Nenhum step esperado.</p>
+            <p className="text-sm text-[var(--text-muted)]">No expected steps.</p>
           ) : (
             normalizedStepChecks.map((rawStep) => {
               const stepId = rawStep.stepId
@@ -988,7 +988,7 @@ function SpecVsRunReal({
           <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Expected artifacts</p>
           <div className="flex flex-wrap gap-2">
             {expectedArtifacts.length === 0 ? (
-              <p className="text-sm text-[var(--text-muted)]">Nenhum artifact esperado.</p>
+              <p className="text-sm text-[var(--text-muted)]">No expected artifacts.</p>
             ) : (
               expectedArtifacts.map((artifact) => {
                 const present = producedArtifacts.includes(artifact)
@@ -1013,7 +1013,7 @@ function SpecVsRunReal({
             <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Produced artifacts</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {producedArtifacts.length === 0 ? (
-                <p className="text-sm text-[var(--text-muted)]">Nenhum artifact produzido.</p>
+                <p className="text-sm text-[var(--text-muted)]">No artifacts produced.</p>
               ) : (
                 producedArtifacts.map((artifact) => (
                   <span
@@ -1289,8 +1289,8 @@ export function AgenticRuns() {
       .catch((error) => {
         if (!mounted) return
         setWorkflowContract(null)
-        const message = error instanceof Error ? error.message : 'Falha ao carregar workflow contract'
-        setWorkflowError(message.includes('404') ? 'Esta sessão não possui workflow contract.' : message)
+        const message = error instanceof Error ? error.message : 'Failed to load workflow contract'
+        setWorkflowError(message.includes('404') ? 'This session has no workflow contract.' : message)
       })
       .finally(() => {
         if (mounted) setWorkflowLoading(false)
@@ -1469,7 +1469,7 @@ export function AgenticRuns() {
       setCurrentSessionIdOverride(result.session_id)
       window.dispatchEvent(new CustomEvent('agentic-run-started', { detail: result }))
     } catch (error) {
-      setStartError(error instanceof Error ? error.message : 'Falha ao iniciar sessão agentic')
+      setStartError(error instanceof Error ? error.message : 'Failed to start agentic session')
     } finally {
       setStartingRun(false)
     }
@@ -1492,8 +1492,8 @@ export function AgenticRuns() {
     <Card>
       <p className="text-sm text-[var(--text-muted)]">
         {activeView === 'current'
-          ? 'Nenhuma execução em foco. Inicie uma nova run para acompanhar os eventos desta aba.'
-          : 'Selecione uma sessão do histórico.'}
+          ? 'No run in focus. Start a new run to follow its events here.'
+          : 'Select a session from the history.'}
       </p>
     </Card>
   ) : detailLoading && !sessionDetail ? (
@@ -1593,7 +1593,7 @@ export function AgenticRuns() {
         <div>
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">View filters</h3>
           <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Filtre a sessão por agente ou status de handoff.
+            Filter the session by agent or handoff status.
           </p>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
@@ -1662,7 +1662,7 @@ export function AgenticRuns() {
     </>
   ) : (
     <Card>
-      <p className="text-sm text-[var(--text-muted)]">Falha ao carregar a sessão.</p>
+      <p className="text-sm text-[var(--text-muted)]">Failed to load the session.</p>
     </Card>
   )
 
@@ -1678,7 +1678,7 @@ export function AgenticRuns() {
         )}
       </AnimatePresence>
       <Card className="p-2">
-        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Agentic Runs views">
+        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Agentic runs views">
           <button
             type="button"
             role="tab"
@@ -1691,7 +1691,7 @@ export function AgenticRuns() {
                 : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
             )}
           >
-            Execução Atual {(currentSessionSummary || currentSessionIdOverride) ? '(1)' : '(0)'}
+            Current run {(currentSessionSummary || currentSessionIdOverride) ? '(1)' : '(0)'}
           </button>
           <button
             type="button"
@@ -1705,7 +1705,7 @@ export function AgenticRuns() {
                 : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30',
             )}
           >
-            Histórico ({historySessions.length})
+            History ({historySessions.length})
           </button>
         </div>
       </Card>
@@ -1714,9 +1714,9 @@ export function AgenticRuns() {
         <div className="grid min-h-0 flex-1 gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
           <Card className="flex min-h-0 flex-col overflow-hidden p-0">
             <div className="border-b border-[var(--border)] px-5 py-4">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Execução Atual</h2>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Current run</h2>
               <p className="mt-1 text-xs text-[var(--text-muted)]">
-                Uma única run em foco. Ao iniciar uma nova, a anterior vai para o histórico.
+                One run in focus at a time. Starting a new run moves the previous one to History.
               </p>
             </div>
 
@@ -1724,14 +1724,14 @@ export function AgenticRuns() {
               <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-3">
                 <div className="mb-3">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
-                    Nova execução
+                    New run
                   </h3>
                   <p className="mt-1 text-xs text-[var(--text-muted)]">
-                    Inicie uma nova execução e acompanhe os eventos ao vivo nesta aba.
+                    Start a new run and follow its events live on this tab.
                   </p>
                   {activeSession && (
                     <p className="mt-2 rounded-md border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">
-                      Uma sessão já está em execução: {activeSession.scenarioId}
+                      A session is already running: {activeSession.scenarioId}
                     </p>
                   )}
                 </div>
@@ -1786,10 +1786,10 @@ export function AgenticRuns() {
                     className="w-full justify-center"
                   >
                     {activeSession
-                      ? 'Sessão em execução'
+                      ? 'Session running'
                       : selectedScenarioGate?.status === 'restricted'
-                        ? 'Scenario Restricted'
-                        : 'Iniciar Sessão'}
+                        ? 'Scenario restricted'
+                        : 'Start session'}
                   </Button>
 
                   {startError && (
@@ -1804,10 +1804,10 @@ export function AgenticRuns() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
-                      Run em foco
+                      Run in focus
                     </h3>
                     <p className="mt-1 text-xs text-[var(--text-muted)]">
-                      A aba mostra a sessão ativa ou, na ausência de uma ativa, a mais recente.
+                      Shows the active session or, if none is active, the most recent one.
                     </p>
                   </div>
                   {currentSessionSummary && (
@@ -1818,7 +1818,7 @@ export function AgenticRuns() {
                 </div>
 
                 {currentSessionIdOverride && currentSessionSummary?.id !== currentSessionIdOverride ? (
-                  <p className="mt-4 text-sm text-[var(--text-muted)]">Inicializando nova sessão...</p>
+                  <p className="mt-4 text-sm text-[var(--text-muted)]">Starting new session...</p>
                 ) : currentSessionSummary ? (
                   <div className="mt-4 space-y-3">
                     <div>
@@ -1842,7 +1842,7 @@ export function AgenticRuns() {
                   </div>
                 ) : (
                   <p className="mt-4 text-sm text-[var(--text-muted)]">
-                    Nenhuma execução em foco no momento.
+                    No run in focus right now.
                   </p>
                 )}
               </div>
@@ -1857,9 +1857,9 @@ export function AgenticRuns() {
         <div className="grid min-h-0 flex-1 gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
           <Card className="flex min-h-0 flex-col overflow-hidden p-0">
             <div className="border-b border-[var(--border)] px-5 py-4">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Histórico</h2>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">History</h2>
               <p className="mt-1 text-xs text-[var(--text-muted)]">
-                Sessões finalizadas ou anteriores. A execução em foco fica isolada na aba Execução Atual.
+                Finished or earlier sessions. The run in focus stays on the Current run tab.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <span className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-red-300">
@@ -1970,7 +1970,7 @@ export function AgenticRuns() {
               {loading ? (
                 <div className="p-5 text-sm text-[var(--text-muted)]">Loading sessions...</div>
               ) : orderedHistorySessions.length === 0 ? (
-                <div className="p-5 text-sm text-[var(--text-muted)]">Nenhuma sessão anterior disponível.</div>
+                <div className="p-5 text-sm text-[var(--text-muted)]">No earlier sessions available.</div>
               ) : (
                 <div className="space-y-2 p-3">
                   {orderedHistorySessions.map((session) => {

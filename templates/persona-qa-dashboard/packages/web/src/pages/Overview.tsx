@@ -51,8 +51,8 @@ function LoadingState() {
 function EmptyState() {
   return (
     <div className="flex h-64 flex-col items-center justify-center gap-2 text-[var(--text-muted)]">
-      <p className="text-sm">Nenhuma sessão agentic encontrada.</p>
-      <p className="text-xs">Execute uma sessão live para popular o dashboard.</p>
+      <p className="text-sm">No agentic sessions found.</p>
+      <p className="text-xs">Run a live session to populate the dashboard.</p>
     </div>
   )
 }
@@ -246,8 +246,8 @@ export function Overview() {
       .catch((error) => {
         if (!mounted) return
         setWorkflowYaml('')
-        const message = error instanceof Error ? error.message : 'Falha ao carregar workflow contract'
-        setWorkflowError(message.includes('404') ? 'Este cenário ainda não possui workflow contract.' : message)
+        const message = error instanceof Error ? error.message : 'Failed to load workflow contract'
+        setWorkflowError(message.includes('404') ? 'This scenario does not have a workflow contract yet.' : message)
       })
       .finally(() => {
         if (mounted) setWorkflowLoading(false)
@@ -370,7 +370,7 @@ export function Overview() {
       window.location.hash = '#agentic-runs'
       window.dispatchEvent(new CustomEvent('agentic-run-started', { detail: result }))
     } catch (error) {
-      setStartError(error instanceof Error ? error.message : 'Falha ao iniciar sessão agentic')
+      setStartError(error instanceof Error ? error.message : 'Failed to start agentic session')
     } finally {
       setStartingRun(false)
     }
@@ -404,7 +404,7 @@ export function Overview() {
       setGovernanceDecisions(nextGovernance)
       setSelectedClosedLoopRunId(nextStatus.latestRun?.id ?? null)
     } catch (error) {
-      setClosedLoopError(error instanceof Error ? error.message : 'Falha ao executar closed loop L5')
+      setClosedLoopError(error instanceof Error ? error.message : 'Failed to run L5 closed loop')
     } finally {
       setClosedLoopRunning(false)
     }
@@ -433,7 +433,7 @@ export function Overview() {
       })
       setClosedLoopScheduler(scheduler)
     } catch (error) {
-      setClosedLoopError(error instanceof Error ? error.message : 'Falha ao iniciar automação L5')
+      setClosedLoopError(error instanceof Error ? error.message : 'Failed to start L5 automation')
     } finally {
       setClosedLoopRunning(false)
     }
@@ -447,7 +447,7 @@ export function Overview() {
       const scheduler = await api.stopPhase2ClosedLoopScheduler()
       setClosedLoopScheduler(scheduler)
     } catch (error) {
-      setClosedLoopError(error instanceof Error ? error.message : 'Falha ao pausar automação L5')
+      setClosedLoopError(error instanceof Error ? error.message : 'Failed to pause L5 automation')
     } finally {
       setClosedLoopRunning(false)
     }
@@ -482,7 +482,7 @@ export function Overview() {
       setGovernanceDecisions(nextGovernance)
       setSelectedClosedLoopRunId(nextStatus.latestRun?.id ?? null)
     } catch (error) {
-      setClosedLoopError(error instanceof Error ? error.message : 'Falha ao executar automação L5')
+      setClosedLoopError(error instanceof Error ? error.message : 'Failed to run L5 automation')
     } finally {
       setClosedLoopRunning(false)
     }
@@ -502,7 +502,7 @@ export function Overview() {
       setClosedLoopPromotion(bundle.promotion)
       setClosedLoopPromotionEvents(promotionEvents)
     } catch (error) {
-      setClosedLoopReplayError(error instanceof Error ? error.message : 'Falha ao carregar bundle L5')
+      setClosedLoopReplayError(error instanceof Error ? error.message : 'Failed to load L5 bundle')
     } finally {
       setClosedLoopReplayLoading(false)
     }
@@ -531,7 +531,7 @@ export function Overview() {
       setMaturity(nextMaturity)
       setClosedLoopLearningSignals(nextLearningSignals)
     } catch (error) {
-      setClosedLoopPromotionActionError(error instanceof Error ? error.message : 'Falha ao executar ação governada L5')
+      setClosedLoopPromotionActionError(error instanceof Error ? error.message : 'Failed to run governed L5 action')
     } finally {
       setClosedLoopPromotionActionPendingId(null)
     }
@@ -560,7 +560,7 @@ export function Overview() {
       setClosedLoopLearningSignals(nextLearningSignals)
       setSelectedClosedLoopRunId(run.id)
     } catch (error) {
-      setClosedLoopAuditReviewError(error instanceof Error ? error.message : 'Falha ao registrar revisão da auditoria')
+      setClosedLoopAuditReviewError(error instanceof Error ? error.message : 'Failed to record audit review')
     } finally {
       setClosedLoopAuditReviewPendingRunId(null)
     }
@@ -585,7 +585,7 @@ export function Overview() {
       setClosedLoopReplay(null)
       setClosedLoopPromotion(null)
     } catch (error) {
-      setClosedLoopReplayError(error instanceof Error ? error.message : 'Falha ao executar replay seguro L5')
+      setClosedLoopReplayError(error instanceof Error ? error.message : 'Failed to run L5 safe replay')
     } finally {
       setClosedLoopReplayLoading(false)
       setClosedLoopRunning(false)
@@ -602,9 +602,9 @@ export function Overview() {
       <div className="grid grid-cols-4 gap-4">
         <motion.div variants={itemVariants}>
           <StatCard
-            label="Agentic Sessions"
+            label="Agentic sessions"
             value={orderedSessions.length}
-            sub={`${completedSessions.length} completas`}
+            sub={`${completedSessions.length} completed`}
             trend="up"
             trendValue={`${multiAgentSessions.length} multi-agent`}
             icon={<Activity className="h-4 w-4" />}
@@ -614,11 +614,11 @@ export function Overview() {
 
         <motion.div variants={itemVariants}>
           <StatCard
-            label="Completion Rate"
+            label="Completion rate"
             value={`${passRate}%`}
-            sub={`${failedSessions.length} falharam`}
+            sub={`${failedSessions.length} failed`}
             trend={passRate >= 60 ? 'up' : 'down'}
-            trendValue={runningSessions.length > 0 ? `${runningSessions.length} em execução` : 'sem backlog'}
+            trendValue={runningSessions.length > 0 ? `${runningSessions.length} running` : 'no backlog'}
             icon={<Bot className="h-4 w-4" />}
             accentColor="var(--success)"
           />
@@ -626,11 +626,11 @@ export function Overview() {
 
         <motion.div variants={itemVariants}>
           <StatCard
-            label="Handoffs / Multi-agent"
+            label="Handoffs / multi-agent"
             value={multiAgentSessions.length}
-            sub="sessões com múltiplos papéis"
+            sub="sessions with multiple roles"
             trend="neutral"
-            trendValue="handoffs persistidos"
+            trendValue="persisted handoffs"
             icon={<ArrowRightLeft className="h-4 w-4" />}
             accentColor="var(--info)"
           />
@@ -638,11 +638,11 @@ export function Overview() {
 
         <motion.div variants={itemVariants}>
           <StatCard
-            label="Agentic Findings"
+            label="Agentic findings"
             value={totalFindings}
-            sub={`${failedSessions.length} sessões falhadas`}
+            sub={`${failedSessions.length} failed sessions`}
             trend={totalFindings > 0 ? 'down' : 'neutral'}
-            trendValue={totalFindings > 0 ? 'requer revisão' : 'sem findings'}
+            trendValue={totalFindings > 0 ? 'needs review' : 'no findings'}
             icon={<AlertTriangle className="h-4 w-4" />}
             accentColor={totalFindings > 0 ? 'var(--danger)' : 'var(--warning)'}
           />
@@ -666,9 +666,9 @@ export function Overview() {
         <Card className="p-6">
           <div className="mb-4 flex items-center justify-between gap-4">
             <div>
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">L5 Closed Loop</h2>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">L5 closed loop</h2>
               <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-                Aprendizado, aplicação governada e verificação antes/depois por cenário.
+                Learning, governed apply, and before/after verification per scenario.
               </p>
             </div>
             <div className="flex flex-wrap justify-end gap-2">
@@ -677,21 +677,21 @@ export function Overview() {
                 loading={closedLoopRunning}
                 onClick={() => void handleClosedLoopRun(false)}
               >
-                Analisar
+                Analyze
               </Button>
               <Button
                 variant="primary"
                 loading={closedLoopRunning}
                 onClick={() => void handleClosedLoopRun(true)}
               >
-                Aplicar aprovadas
+                Apply approved
               </Button>
               <Button
                 variant="secondary"
                 loading={closedLoopRunning}
                 onClick={() => void handleClosedLoopSchedulerTick()}
               >
-                Rodar agora
+                Run now
               </Button>
               <Button
                 variant={schedulerEnabled ? 'secondary' : 'primary'}
@@ -704,7 +704,7 @@ export function Overview() {
                   }
                 }}
               >
-                {schedulerEnabled ? 'Pausar auto' : 'Iniciar auto'}
+                {schedulerEnabled ? 'Pause auto' : 'Start auto'}
               </Button>
             </div>
           </div>
@@ -796,13 +796,13 @@ export function Overview() {
 
           <div className="grid gap-3 md:grid-cols-6">
             <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Última iteração</p>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Last iteration</p>
               <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
-                {latestClosedLoop?.status?.replace('_', ' ') ?? 'sem execução'}
+                {latestClosedLoop?.status?.replace('_', ' ') ?? 'not run'}
               </p>
             </div>
             <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Cenários na fila</p>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Queued scenarios</p>
               <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
                 {closedLoop?.queue.filter((item) => item.status === 'queued').length ?? 0}
               </p>
@@ -811,7 +811,7 @@ export function Overview() {
               </p>
             </div>
             <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Ações</p>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Actions</p>
               <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
                 {latestClosedLoop?.actions.length ?? 0}
               </p>
@@ -823,25 +823,25 @@ export function Overview() {
               </p>
             </div>
             <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Reexecução</p>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Rerun</p>
               <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
-                {latestClosedLoop?.verification?.rerunRequired ? 'necessária' : 'não exigida'}
+                {latestClosedLoop?.verification?.rerunRequired ? 'required' : 'not required'}
               </p>
             </div>
             <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Automação</p>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">Automation</p>
               <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]">
-                {schedulerEnabled ? 'ativa' : 'pausada'}
+                {schedulerEnabled ? 'active' : 'paused'}
               </p>
               <p className="mt-1 truncate text-xs text-[var(--text-muted)]">
-                {closedLoopScheduler?.nextTickAt ? `próxima ${formatRelativeTime(closedLoopScheduler.nextTickAt)}` : 'sem agenda'}
+                {closedLoopScheduler?.nextTickAt ? `next ${formatRelativeTime(closedLoopScheduler.nextTickAt)}` : 'not scheduled'}
               </p>
             </div>
           </div>
 
           {latestClosedLoop ? (
             <p className="mt-4 text-xs text-[var(--text-muted)]">
-              {String(latestClosedLoop.summary.statusReason ?? 'Iteração L5 registrada.')}
+              {String(latestClosedLoop.summary.statusReason ?? 'L5 iteration recorded.')}
             </p>
           ) : null}
 
@@ -886,13 +886,13 @@ export function Overview() {
         <Card className="p-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Contract Adherence</h2>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Contract adherence</h2>
               <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-                Resumo consolidado das sessões agentic por veredito do workflow contract.
+                Agentic sessions summarized by workflow contract verdict.
               </p>
             </div>
             <div className="text-xs text-[var(--text-muted)]">
-              {orderedSessions.length} sessões visíveis
+              {orderedSessions.length} visible sessions
             </div>
           </div>
 
@@ -930,9 +930,9 @@ export function Overview() {
         <Card className="p-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Scenario Quality Gates</h2>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Scenario quality gates</h2>
               <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-                Governança automática baseada no histórico recente de contrato por cenário.
+                Automatic governance based on recent contract history per scenario.
               </p>
             </div>
           </div>
@@ -954,13 +954,13 @@ export function Overview() {
         <Card className="p-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Agentic Session Trend</h2>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Agentic session trend</h2>
               <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-                Conclusão e falha das últimas sessões agentic.
+                Completions and failures across recent agentic sessions.
               </p>
             </div>
             <div className="text-xs text-[var(--text-muted)]">
-              Última atividade {formatRelativeTime(orderedSessions[0]!.startedAt)}
+              Last activity {formatRelativeTime(orderedSessions[0]!.startedAt)}
             </div>
           </div>
           <div className="h-52">
@@ -992,13 +992,13 @@ export function Overview() {
         <Card className="p-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Workflow Contract</h2>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Workflow contract</h2>
               <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-                Spec determinístico do cenário selecionado.
+                Deterministic spec for the selected scenario.
               </p>
             </div>
             <div className="text-xs text-[var(--text-muted)]">
-              {selectedScenario || 'Nenhum cenário selecionado'}
+              {selectedScenario || 'No scenario selected'}
             </div>
           </div>
 
@@ -1041,7 +1041,7 @@ export function Overview() {
           ) : null}
 
           {workflowLoading ? (
-            <div className="text-sm text-[var(--text-muted)]">Carregando workflow contract...</div>
+            <div className="text-sm text-[var(--text-muted)]">Loading workflow contract...</div>
           ) : workflowError ? (
             <div className="text-sm text-red-300">{workflowError}</div>
           ) : (
@@ -1056,9 +1056,9 @@ export function Overview() {
         <Card className="p-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Start Agentic Session</h2>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Start agentic session</h2>
               <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-                Dispare uma nova sessão live diretamente do dashboard.
+                Start a new live session directly from the dashboard.
               </p>
             </div>
           </div>
@@ -1072,7 +1072,7 @@ export function Overview() {
                 onClick={handleStartRun}
                 disabled={selectedScenarioGate?.status === 'restricted'}
               >
-                {selectedScenarioGate?.status === 'restricted' ? 'Scenario Restricted' : 'Iniciar Sessão'}
+                {selectedScenarioGate?.status === 'restricted' ? 'Scenario restricted' : 'Start session'}
               </Button>
             </div>
           </div>
@@ -1095,9 +1095,9 @@ export function Overview() {
         <motion.div variants={itemVariants} className="col-span-3">
           <Card className="h-full">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Recent Agentic Sessions</h2>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Recent agentic sessions</h2>
               <span className="text-xs text-[var(--text-muted)]">
-                duração média {completedSessions.length > 0 ? formatDuration(Math.round(averageDurationMs / 1000)) : '0s'}
+                avg duration {completedSessions.length > 0 ? formatDuration(Math.round(averageDurationMs / 1000)) : '0s'}
               </span>
             </div>
             {latestSessions.length === 0 ? (
@@ -1140,12 +1140,12 @@ export function Overview() {
         <motion.div variants={itemVariants} className="col-span-2">
           <Card className="h-full">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Scenario Coverage</h2>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Scenario coverage</h2>
               <Clock3 className="h-4 w-4 text-[var(--text-muted)]" />
             </div>
             {scenarioCoverage.length === 0 ? (
               <div className="flex h-40 items-center justify-center text-sm text-[var(--text-muted)]">
-                Nenhuma cobertura agentic registrada.
+                No agentic coverage recorded.
               </div>
             ) : (
               <div className="space-y-3">

@@ -18,24 +18,24 @@ describe('RunSourceBadge', () => {
     expect(screen.getByText('Clean Run')).toBeDefined();
   });
 
-  it('renders "Desconhecido" for unknown source', () => {
+  it('renders "Unknown" for unknown source', () => {
     render(<RunSourceBadge source="unknown" />);
-    expect(screen.getByText('Desconhecido')).toBeDefined();
+    expect(screen.getByText('Unknown')).toBeDefined();
   });
 
-  it('renders "Desconhecido" for null source', () => {
+  it('renders "Unknown" for null source', () => {
     render(<RunSourceBadge source={null} />);
-    expect(screen.getByText('Desconhecido')).toBeDefined();
+    expect(screen.getByText('Unknown')).toBeDefined();
   });
 
-  it('renders "Desconhecido" for undefined source', () => {
+  it('renders "Unknown" for undefined source', () => {
     render(<RunSourceBadge source={undefined} />);
-    expect(screen.getByText('Desconhecido')).toBeDefined();
+    expect(screen.getByText('Unknown')).toBeDefined();
   });
 
-  it('renders "Desconhecido" for unrecognized source string', () => {
+  it('renders "Unknown" for unrecognized source string', () => {
     render(<RunSourceBadge source="something-else" />);
-    expect(screen.getByText('Desconhecido')).toBeDefined();
+    expect(screen.getByText('Unknown')).toBeDefined();
   });
 
   it('applies dashboard-specific blue styling', () => {

@@ -15,7 +15,7 @@ describe('ArtifactsSection', () => {
 
   it('shows artifact count in header', () => {
     render(<ArtifactsSection artifacts={{ customer_id: '123', order_id: '456' }} />);
-    expect(screen.getByText('Artefatos (2)')).toBeDefined();
+    expect(screen.getByText('Artifacts (2)')).toBeDefined();
   });
 
   it('is collapsed by default', () => {
@@ -25,7 +25,7 @@ describe('ArtifactsSection', () => {
 
   it('expands on click to show artifact keys and values', () => {
     render(<ArtifactsSection artifacts={{ customer_id: '123', order_id: '456' }} />);
-    fireEvent.click(screen.getByText('Artefatos (2)'));
+    fireEvent.click(screen.getByText('Artifacts (2)'));
     expect(screen.getByText('Customer ID')).toBeDefined();
     expect(screen.getByText('123')).toBeDefined();
     expect(screen.getByText('Order ID')).toBeDefined();
@@ -34,15 +34,15 @@ describe('ArtifactsSection', () => {
 
   it('shows tooltip icon for stub values like shipping-engine-managed', () => {
     render(<ArtifactsSection artifacts={{ shipment_id: 'shipping-engine-managed' }} />);
-    fireEvent.click(screen.getByText('Artefatos (1)'));
+    fireEvent.click(screen.getByText('Artifacts (1)'));
     expect(screen.getByText('shipping-engine-managed')).toBeDefined();
     // The Info icon should be present (tooltip trigger)
-    expect(screen.getByText('Valor gerenciado pelo motor de regras. Não é um ID real do sistema.')).toBeDefined();
+    expect(screen.getByText('Value managed by the rules engine. Not a real system ID.')).toBeDefined();
   });
 
   it('uses raw key name when no label mapping exists', () => {
     render(<ArtifactsSection artifacts={{ custom_field: 'value' }} />);
-    fireEvent.click(screen.getByText('Artefatos (1)'));
+    fireEvent.click(screen.getByText('Artifacts (1)'));
     expect(screen.getByText('custom_field')).toBeDefined();
   });
 });

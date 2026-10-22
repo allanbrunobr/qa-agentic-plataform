@@ -93,16 +93,16 @@ export function ScenarioHistoryTable({ scenarioId, onNavigateToRun, className }:
   return (
     <div className={className}>
       <h3 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">
-        Histórico de Execuções
+        Run history
       </h3>
       <Card className="p-0 overflow-hidden">
         {loading ? (
           <div className="flex h-32 items-center justify-center text-xs text-[var(--text-muted)]">
-            Carregando...
+            Loading...
           </div>
         ) : sorted.length === 0 ? (
           <div className="flex h-32 items-center justify-center text-xs text-[var(--text-muted)]">
-            Nenhuma execução encontrada
+            No runs found
           </div>
         ) : (
           <>
@@ -129,7 +129,7 @@ export function ScenarioHistoryTable({ scenarioId, onNavigateToRun, className }:
                       className="px-4 py-2.5 text-left font-medium text-[var(--text-muted)] cursor-pointer hover:text-[var(--text-secondary)]"
                       onClick={() => handleSort('duration_ms')}
                     >
-                      Duração <SortIcon field="duration_ms" />
+                      Duration <SortIcon field="duration_ms" />
                     </th>
                     <th
                       className="px-4 py-2.5 text-center font-medium text-[var(--text-muted)] cursor-pointer hover:text-[var(--text-secondary)]"
@@ -192,7 +192,7 @@ export function ScenarioHistoryTable({ scenarioId, onNavigateToRun, className }:
             {pagination.totalPages > 1 && (
               <div className="flex items-center justify-between border-t border-[var(--border)] px-4 py-2.5">
                 <span className="text-[10px] text-[var(--text-muted)]">
-                  Página {pagination.page} de {pagination.totalPages} ({pagination.total} total)
+                  Page {pagination.page} of {pagination.totalPages} ({pagination.total} total)
                 </span>
                 <div className="flex items-center gap-1">
                   <button

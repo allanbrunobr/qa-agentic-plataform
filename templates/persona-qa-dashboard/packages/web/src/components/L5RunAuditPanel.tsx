@@ -80,7 +80,7 @@ export function L5RunAuditPanel({
       <Card className="mt-4">
         <PanelHeader />
         <p className="rounded-md border border-dashed border-[var(--border)] p-4 text-xs text-[var(--text-muted)]">
-          Nenhuma iteração L5 registrada para auditar.
+          No L5 iterations recorded to audit.
         </p>
       </Card>
     )
@@ -100,7 +100,7 @@ export function L5RunAuditPanel({
   const selectedRunReviews = auditReviews.filter((review) => review.runId === selectedRun.id)
   const selectedRunReviewed = selectedRunReviews.some((review) => review.status === 'reviewed')
   const promotionBlockedReason = independentAuditReviewable && !selectedRunReviewed
-    ? 'Revise a auditoria independente desta run antes de promover conhecimento.'
+    ? 'Review the independent audit for this run before promoting knowledge.'
     : null
   const blockedGuards = guards.filter((guard) => guard.status === 'blocked').length
   const pendingReviews = numberValue(selectedRun.summary['pendingReviews'])
@@ -145,18 +145,18 @@ export function L5RunAuditPanel({
 
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Metric label="Status" value={selectedRun.status.replace('_', ' ')} tone={runStatusTone(selectedRun.status)} />
-        <Metric label="Modo" value={selectedRun.mode.replace('_', ' ')} />
+        <Metric label="Mode" value={selectedRun.mode.replace('_', ' ')} />
         <Metric label="Lifecycle" value={lifecycle.length} tone={lifecycle.length > 0 ? 'success' : 'neutral'} />
-        <Metric label="Pendências" value={pendingReviews} tone={pendingReviews > 0 ? 'warning' : 'success'} />
-        <Metric label="Reexecução" value={rerunRequired ? 'necessária' : 'não'} tone={rerunRequired ? 'warning' : 'success'} />
+        <Metric label="Pending reviews" value={pendingReviews} tone={pendingReviews > 0 ? 'warning' : 'success'} />
+        <Metric label="Rerun" value={rerunRequired ? 'required' : 'no'} tone={rerunRequired ? 'warning' : 'success'} />
         <Metric label="Auditor" value={independentAuditVerdict} tone={auditVerdictTone(independentAuditVerdict)} />
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <section className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
-          <SectionHeader title="Lifecycle recente" detail={`${lifecycle.length} evento(s)`} />
+          <SectionHeader title="Recent lifecycle" detail={`${lifecycle.length} event(s)`} />
           {visibleLifecycle.length === 0 ? (
-            <EmptyLine>Nenhum evento de lifecycle registrado.</EmptyLine>
+            <EmptyLine>No lifecycle events recorded.</EmptyLine>
           ) : (
             <div className="space-y-2">
               {visibleLifecycle.map((event, index) => (
@@ -167,15 +167,15 @@ export function L5RunAuditPanel({
         </section>
 
         <section className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
-          <SectionHeader title="Verificação" detail={String(selectedRun.verification['recommendation'] ?? 'sem recomendação')} />
+          <SectionHeader title="Verification" detail={String(selectedRun.verification['recommendation'] ?? 'no recommendation')} />
           <div className="mt-3 space-y-2">
-            <AuditLine label="Auditor independente" value={independentAuditVerdict} tone={auditVerdictTone(independentAuditVerdict)} />
-            <AuditLine label="Sessões auditadas" value={independentAuditedSessions} tone={independentAuditedSessions > 0 ? 'success' : 'neutral'} />
-            <AuditLine label="Findings auditor" value={independentAuditFindings} tone={independentAuditFindings > 0 ? 'warning' : 'success'} />
-            <AuditLine label="Comparações" value={comparisons.length} />
-            <AuditLine label="Cenários melhores" value={numberValue(selectedRun.summary['improvedScenarios'])} />
-            <AuditLine label="Cenários regrediram" value={numberValue(selectedRun.summary['regressedScenarios'])} />
-            <AuditLine label="Circuit breakers bloqueados" value={blockedGuards} tone={blockedGuards > 0 ? 'danger' : 'success'} />
+            <AuditLine label="Independent auditor" value={independentAuditVerdict} tone={auditVerdictTone(independentAuditVerdict)} />
+            <AuditLine label="Audited sessions" value={independentAuditedSessions} tone={independentAuditedSessions > 0 ? 'success' : 'neutral'} />
+            <AuditLine label="Auditor findings" value={independentAuditFindings} tone={independentAuditFindings > 0 ? 'warning' : 'success'} />
+            <AuditLine label="Comparisons" value={comparisons.length} />
+            <AuditLine label="Improved scenarios" value={numberValue(selectedRun.summary['improvedScenarios'])} />
+            <AuditLine label="Regressed scenarios" value={numberValue(selectedRun.summary['regressedScenarios'])} />
+            <AuditLine label="Blocked circuit breakers" value={blockedGuards} tone={blockedGuards > 0 ? 'danger' : 'success'} />
           </div>
           {independentAuditReviewable ? (
             <IndependentAuditReviewAction
@@ -192,9 +192,9 @@ export function L5RunAuditPanel({
 
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
         <section className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
-          <SectionHeader title="Ações da iteração" detail={`${selectedRun.actions.length} ação(ões)`} />
+          <SectionHeader title="Iteration actions" detail={`${selectedRun.actions.length} action(s)`} />
           {visibleActions.length === 0 ? (
-            <EmptyLine>Nenhuma ação registrada.</EmptyLine>
+            <EmptyLine>No actions recorded.</EmptyLine>
           ) : (
             <div className="space-y-2">
               {visibleActions.map((action, index) => (
@@ -205,9 +205,9 @@ export function L5RunAuditPanel({
         </section>
 
         <section className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
-          <SectionHeader title="Governança recente" detail={`${governanceDecisions.length} decisão(ões)`} />
+          <SectionHeader title="Recent governance" detail={`${governanceDecisions.length} decision(s)`} />
           {governanceDecisions.length === 0 ? (
-            <EmptyLine>Nenhuma decisão recente carregada.</EmptyLine>
+            <EmptyLine>No recent decisions loaded.</EmptyLine>
           ) : (
             <div className="space-y-2">
               {governanceDecisions.slice(0, 6).map((decision) => (
@@ -219,7 +219,7 @@ export function L5RunAuditPanel({
       </div>
 
       <p className="mt-4 text-xs leading-relaxed text-[var(--text-muted)]">
-        {String(selectedRun.summary['statusReason'] ?? 'Iteração L5 registrada.')}
+        {String(selectedRun.summary['statusReason'] ?? 'L5 iteration recorded.')}
       </p>
     </Card>
   )
@@ -252,7 +252,7 @@ function IndependentAuditReviewAction({
       <div className="mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-emerald-100">
-            Auditoria revisada por {latestReview.actor ?? 'operador'}: {latestReview.reason ?? 'sem motivo registrado'}
+            Audit reviewed by {latestReview.actor ?? 'operator'}: {latestReview.reason ?? 'no reason recorded'}
           </p>
           <time className="text-[11px] text-emerald-200">{formatRelativeTime(latestReview.createdAt)}</time>
         </div>
@@ -266,24 +266,24 @@ function IndependentAuditReviewAction({
     <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
       <div className="grid gap-3">
         <p className="text-xs text-amber-100">
-          Auditoria independente {verdict}; registre a revisão para liberar o circuit breaker L5.
+          Independent audit {verdict}; record a review to release the L5 circuit breaker.
         </p>
         <textarea
           value={reason}
           onChange={(event) => setReason(event.target.value)}
-          placeholder="Motivo da revisão"
+          placeholder="Review reason"
           rows={2}
           className="w-full rounded-md border border-amber-400/30 bg-[var(--bg-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-amber-300"
         />
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-[11px] text-amber-100/80">Motivo obrigatório para manter rastreabilidade operacional.</p>
+          <p className="text-[11px] text-amber-100/80">A reason is required for operational traceability.</p>
           <button
             type="button"
             disabled={!onReviewIndependentAudit || pending || !reasonReady}
             onClick={() => onReviewIndependentAudit?.(run, reason.trim())}
             className="shrink-0 rounded-md border border-amber-400/60 bg-amber-400/10 px-3 py-2 text-xs font-medium text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pending ? 'Registrando...' : 'Marcar auditoria revisada'}
+            {pending ? 'Recording...' : 'Mark audit as reviewed'}
           </button>
         </div>
       </div>
@@ -305,7 +305,7 @@ function IndependentAuditReviewQueue({
 
   return (
     <section className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
-      <SectionHeader title="Fila de revisão L5" detail={`${queue.length} auditoria(s)`} />
+      <SectionHeader title="L5 review queue" detail={`${queue.length} audit(s)`} />
       <div className="grid gap-2 lg:grid-cols-2">
         {queue.slice(0, 6).map((item) => (
           <button
@@ -325,7 +325,7 @@ function IndependentAuditReviewQueue({
                   {item.scenarioId?.replace(/_/g, ' ') ?? item.runId.slice(0, 8)}
                 </p>
                 <p className="mt-1 truncate text-[11px] text-amber-100/70">
-                  {item.findingCount} finding(s) / {item.auditedSessions} sessão(ões)
+                  {item.findingCount} finding(s) / {item.auditedSessions} session(s)
                 </p>
               </div>
               <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] uppercase ${auditVerdictClass(item.verdict)}`}>
@@ -354,7 +354,7 @@ function LearningSignalLedger({
   const retained = signals.filter((signal) => signal.status === 'retained').length
   return (
     <section className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
-      <SectionHeader title="Memória L5" detail={`${retained} sinal(is) retido(s)`} />
+      <SectionHeader title="L5 memory" detail={`${retained} retained signal(s)`} />
       <div className="grid gap-2 lg:grid-cols-2">
         {signals.slice(0, 6).map((signal) => (
           <article
@@ -429,10 +429,10 @@ function KnowledgePromotionPanel({
 
   return (
     <section className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
-      <SectionHeader title="Promoção de conhecimento" detail={preview ? `${candidates.length} candidato(s)` : 'aguardando bundle'} />
+      <SectionHeader title="Knowledge promotion" detail={preview ? `${candidates.length} candidate(s)` : 'awaiting bundle'} />
       {preview ? (
         candidates.length === 0 ? (
-          <EmptyLine>Nenhum candidato de promoção foi derivado desta run.</EmptyLine>
+          <EmptyLine>No promotion candidates were derived from this run.</EmptyLine>
         ) : (
           <div className="grid gap-2 lg:grid-cols-2">
             {candidates.slice(0, 6).map((candidate) => (
@@ -448,7 +448,7 @@ function KnowledgePromotionPanel({
         )
       ) : (
         <p className="rounded-md border border-dashed border-[var(--border)] p-3 text-xs text-[var(--text-muted)]">
-          Carregue o bundle da run para ver quais aprendizados podem virar conhecimento durável.
+          Load the run bundle to see which learnings can become durable knowledge.
         </p>
       )}
       {preview?.notes[0] ? (
@@ -464,9 +464,9 @@ function KnowledgePromotionPanel({
 function PromotionEventHistory({ events }: { events: Phase2KnowledgePromotionEvent[] }) {
   return (
     <div className="mt-4 border-t border-[var(--border)] pt-3">
-      <SectionHeader title="Histórico de promoções" detail={`${events.length} evento(s)`} />
+      <SectionHeader title="Promotion history" detail={`${events.length} event(s)`} />
       {events.length === 0 ? (
-        <EmptyLine>Nenhum evento de promoção registrado.</EmptyLine>
+        <EmptyLine>No promotion events recorded.</EmptyLine>
       ) : (
         <div className="space-y-2">
           {events.slice(0, 6).map((event) => (
@@ -604,7 +604,7 @@ function PromotionCandidateRow({
             onClick={() => onRunPromotionAction?.(candidate)}
             className="shrink-0 rounded-md border border-[var(--accent)] bg-[var(--accent)]/10 px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] transition hover:bg-[var(--accent)]/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pending ? 'Executando...' : promotionActionLabel(candidate.nextAction)}
+            {pending ? 'Running...' : promotionActionLabel(candidate.nextAction)}
           </button>
         ) : null}
       </div>
@@ -627,7 +627,7 @@ function SafeReplayPanel({
 }) {
   return (
     <section className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
-      <SectionHeader title="Replay seguro" detail={preview ? 'payload carregado' : 'aguardando bundle'} />
+      <SectionHeader title="Safe replay" detail={preview ? 'payload loaded' : 'awaiting bundle'} />
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0">
           {preview ? (
@@ -636,13 +636,13 @@ function SafeReplayPanel({
             </pre>
           ) : (
             <p className="rounded-md border border-dashed border-[var(--border)] p-3 text-xs text-[var(--text-muted)]">
-              Carregue o bundle da run selecionada para executar uma reanálise em observe mode.
+              Load the selected run bundle to run a re-analysis in observe mode.
             </p>
           )}
           {error ? <p className="mt-2 text-xs text-red-300">{error}</p> : null}
           {preview ? (
             <p className="mt-2 text-xs text-[var(--text-muted)]">
-              Replay bloqueia aplicação automática e geração de cenários; apenas reavalia o loop.
+              Replay blocks automatic apply and scenario generation; it only re-evaluates the loop.
             </p>
           ) : null}
         </div>
@@ -654,7 +654,7 @@ function SafeReplayPanel({
             onClick={onLoadPreview}
             className="rounded-md border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading && !preview ? 'Carregando...' : 'Preparar replay'}
+            {loading && !preview ? 'Loading...' : 'Prepare replay'}
           </button>
           <button
             type="button"
@@ -662,7 +662,7 @@ function SafeReplayPanel({
             onClick={onRunSafeReplay}
             className="rounded-md border border-[var(--accent)] bg-[var(--accent)]/10 px-3 py-2 text-xs font-medium text-[var(--text-primary)] transition hover:bg-[var(--accent)]/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading && preview ? 'Executando...' : 'Executar observe'}
+            {loading && preview ? 'Running...' : 'Run observe'}
           </button>
         </div>
       </div>
@@ -676,7 +676,7 @@ function PanelHeader({ auditBundleUrl }: { auditBundleUrl?: string }) {
       <div>
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">L5 Run Audit</h3>
         <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-          Trilha operacional da iteração closed-loop selecionada: lifecycle, ações, verificação e governança.
+          Operational trail for the selected closed-loop iteration: lifecycle, actions, verification, and governance.
         </p>
       </div>
       {auditBundleUrl ? (
@@ -685,7 +685,7 @@ function PanelHeader({ auditBundleUrl }: { auditBundleUrl?: string }) {
           download
           className="shrink-0 rounded-md border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent)] hover:text-[var(--text-primary)]"
         >
-          Exportar bundle
+          Export bundle
         </a>
       ) : null}
     </div>
@@ -703,7 +703,7 @@ function RunHistory({
 }) {
   return (
     <section className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] p-4">
-      <SectionHeader title="Histórico L5" detail={`${runs.length} run(s)`} />
+      <SectionHeader title="L5 history" detail={`${runs.length} run(s)`} />
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         {runs.slice(0, 8).map((candidate) => (
           <RunHistoryButton
@@ -746,11 +746,11 @@ function RunHistoryButton({
         <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] uppercase ${historyStatusClass(statusTone)}`}>
           {run.status.replace('_', ' ')}
         </span>
-        <span className="truncate text-[11px]">{timestamp ? formatRelativeTime(timestamp) : 'sem data'}</span>
+        <span className="truncate text-[11px]">{timestamp ? formatRelativeTime(timestamp) : 'no date'}</span>
       </div>
       <p className="mt-2 truncate text-xs font-medium">{formatRunScope(run)}</p>
       <p className="mt-1 truncate text-[11px]">
-        {run.metadata?.lifecycle?.length ?? 0} lifecycle / {run.actions.length} ações
+        {run.metadata?.lifecycle?.length ?? 0} lifecycle / {run.actions.length} actions
       </p>
     </button>
   )
@@ -788,7 +788,7 @@ function LifecycleRow({ event }: { event: Phase2ClosedLoopLifecycleEvent }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-xs font-medium text-[var(--text-secondary)]">{formatLifecycleLabel(event)}</p>
-          <p className="mt-1 text-[11px] text-[var(--text-muted)]">{event.status ?? 'registrado'}</p>
+          <p className="mt-1 text-[11px] text-[var(--text-muted)]">{event.status ?? 'recorded'}</p>
         </div>
         <time className="shrink-0 text-[11px] text-[var(--text-muted)]">{formatRelativeTime(event.timestamp)}</time>
       </div>
@@ -799,8 +799,8 @@ function LifecycleRow({ event }: { event: Phase2ClosedLoopLifecycleEvent }) {
 
 function ActionRow({ action }: { action: Record<string, unknown> }) {
   const type = stringValue(action['type'], 'action')
-  const status = stringValue(action['status'], stringValue(action['healingType'], 'registrado'))
-  const target = stringValue(action['scenarioId'], stringValue(action['proposalId'], stringValue(action['actionId'], 'sem alvo')))
+  const status = stringValue(action['status'], stringValue(action['healingType'], 'recorded'))
+  const target = stringValue(action['scenarioId'], stringValue(action['proposalId'], stringValue(action['actionId'], 'no target')))
 
   return (
     <div className="rounded-md border border-[var(--border)] px-3 py-2">
@@ -900,7 +900,7 @@ function formatRunTimestamp(run: Phase2ClosedLoopRun): string | null {
 }
 
 function formatRunScope(run: Phase2ClosedLoopRun): string {
-  return run.scenarioId ?? run.queuedScenarios[0] ?? 'todos os cenários'
+  return run.scenarioId ?? run.queuedScenarios[0] ?? 'all scenarios'
 }
 
 function runStatusTone(status: Phase2ClosedLoopRun['status']): 'success' | 'warning' | 'danger' | 'neutral' {
@@ -987,10 +987,10 @@ function isActionablePromotionCandidate(
 }
 
 function promotionActionLabel(action: Phase2ClosedLoopAuditBundle['promotion']['candidates'][number]['nextAction']) {
-  if (action === 'approve') return 'Aprovar'
-  if (action === 'apply') return 'Aplicar'
-  if (action === 'promote') return 'Promover'
-  return 'Revisar'
+  if (action === 'approve') return 'Approve'
+  if (action === 'apply') return 'Apply'
+  if (action === 'promote') return 'Promote'
+  return 'Review'
 }
 
 function toneClass(tone: 'success' | 'warning' | 'danger' | 'neutral') {

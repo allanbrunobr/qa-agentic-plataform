@@ -21,7 +21,7 @@ const sourceConfig: Record<RunSource, { label: string; className: string }> = {
     className: 'bg-orange-500/20 text-orange-400 border border-orange-500/30',
   },
   unknown: {
-    label: 'Desconhecido',
+    label: 'Unknown',
     className: 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/30',
   },
 }

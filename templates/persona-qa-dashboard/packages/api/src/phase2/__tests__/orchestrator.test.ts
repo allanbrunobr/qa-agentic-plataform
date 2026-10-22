@@ -180,7 +180,7 @@ describe('Orchestrator', () => {
         steps: [
           {
             id: 'step_1',
-            name: 'Recepcao',
+            name: 'Order intake',
             agentId: 'sales_associate',
             order: 0,
             requiredArtifacts: [],
@@ -238,7 +238,7 @@ describe('Orchestrator', () => {
         steps: [
           {
             id: 'step_1',
-            name: 'Recepcao',
+            name: 'Order intake',
             agentId: 'sales_associate',
             order: 0,
             requiredArtifacts: [],

@@ -174,7 +174,7 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/sync/summary', async (_request, reply) => {
     const summary = loadSyncSummary();
     if (!summary) {
-      return reply.send({ message: 'Nenhum sync realizado ainda', summary: null });
+      return reply.send({ message: 'No sync has run yet', summary: null });
     }
     return reply.send(summary);
   });

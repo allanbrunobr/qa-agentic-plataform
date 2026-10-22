@@ -37,8 +37,8 @@ function EmptyState() {
   return (
     <div className="flex h-64 flex-col items-center justify-center gap-2 text-[var(--text-muted)]">
       <Network className="h-8 w-8" />
-      <p className="text-sm">Code graph ainda não foi gerado.</p>
-      <p className="text-xs">Execute `discover-local` para materializar `adapter/config/code-graph.generated.json`.</p>
+      <p className="text-sm">Code graph has not been generated yet.</p>
+      <p className="text-xs">Run `discover-local` to generate `adapter/config/code-graph.generated.json`.</p>
     </div>
   )
 }
@@ -55,7 +55,7 @@ export function CodeGraph() {
         if (mounted) setResponse(nextResponse)
       })
       .catch((loadError) => {
-        if (mounted) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar code graph')
+        if (mounted) setError(loadError instanceof Error ? loadError.message : 'Failed to load code graph')
       })
       .finally(() => {
         if (mounted) setLoading(false)
@@ -115,9 +115,9 @@ export function CodeGraph() {
     <div className="space-y-6 p-6">
       <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-[var(--text-primary)]">Code Graph</h1>
+          <h1 className="text-lg font-semibold text-[var(--text-primary)]">Code graph</h1>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
-            Evidências, candidates, endpoints e chamadas inferidas do repositório target.
+            Evidence, candidates, endpoints, and calls inferred from the target repository.
           </p>
         </div>
         <div className="text-xs text-[var(--text-muted)]">
@@ -138,16 +138,16 @@ export function CodeGraph() {
         <StatCard
           label="Edges"
           value={summary.edgeCount}
-          sub="relações persistidas"
+          sub="persisted relations"
           trend="neutral"
-          trendValue={`${Object.keys(summary.edgeTypes).length} tipos`}
+          trendValue={`${Object.keys(summary.edgeTypes).length} types`}
           icon={<GitBranch className="h-4 w-4" />}
           accentColor="var(--info)"
         />
         <StatCard
           label="Endpoints"
           value={summary.endpointCount}
-          sub={`${summary.linkedHttpCallCount} calls vinculadas`}
+          sub={`${summary.linkedHttpCallCount} linked calls`}
           trend={summary.endpointCount > 0 ? 'up' : 'neutral'}
           trendValue={`${summary.httpCallCount} HTTP calls`}
           icon={<Route className="h-4 w-4" />}
@@ -156,9 +156,9 @@ export function CodeGraph() {
         <StatCard
           label="Candidates"
           value={summary.candidateNodeCount}
-          sub={`${summary.mappedCapabilityCount} capabilities mapeadas`}
+          sub={`${summary.mappedCapabilityCount} mapped capabilities`}
           trend={summary.fullyMappedScenarioCount > 0 ? 'up' : 'neutral'}
-          trendValue={`${summary.fullyMappedScenarioCount}/${summary.fullyMappedScenarioCount + summary.partiallyMappedScenarioCount + summary.unmappedScenarioCount} cenários prontos`}
+          trendValue={`${summary.fullyMappedScenarioCount}/${summary.fullyMappedScenarioCount + summary.partiallyMappedScenarioCount + summary.unmappedScenarioCount} scenarios ready`}
           icon={<Workflow className="h-4 w-4" />}
           accentColor="var(--warning)"
         />
@@ -166,7 +166,7 @@ export function CodeGraph() {
 
       <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
         <Card className="p-5">
-          <SectionHeader title="Graph Composition" description={response.filePath ?? 'code-graph.generated.json'} />
+          <SectionHeader title="Graph composition" description={response.filePath ?? 'code-graph.generated.json'} />
           <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-3">
             {topNodeTypes.map(([type, count]) => (
               <div key={type} className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
@@ -180,11 +180,11 @@ export function CodeGraph() {
         </Card>
 
         <Card className="p-5">
-          <SectionHeader title="Endpoint Links" description="HTTP calls ligadas a handlers por método e path." />
+          <SectionHeader title="Endpoint links" description="HTTP calls linked to handlers by method and path." />
           <div className="mt-4 space-y-2">
             {endpointLinks.length === 0 ? (
               <p className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3 text-xs text-[var(--text-muted)]">
-                Nenhuma chamada HTTP foi vinculada a um endpoint interno.
+                No HTTP calls were linked to an internal endpoint.
               </p>
             ) : endpointLinks.map(({ edge, from, to }) => (
               <div key={edge.id} className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
@@ -207,14 +207,14 @@ export function CodeGraph() {
         <ListCard title="Endpoints" items={summary.endpoints.map((endpoint) => ({
           id: endpoint.id,
           title: endpoint.label,
-          detail: endpoint.source ? sourceLabel({ source: endpoint.source }) : endpoint.path ?? 'sem source',
+          detail: endpoint.source ? sourceLabel({ source: endpoint.source }) : endpoint.path ?? 'no source',
         }))} />
-        <ListCard title="HTTP Calls" items={summary.httpCalls.map((call) => ({
+        <ListCard title="HTTP calls" items={summary.httpCalls.map((call) => ({
           id: call.id,
           title: call.label,
-          detail: call.source ? sourceLabel({ source: call.source }) : call.url ?? 'sem source',
+          detail: call.source ? sourceLabel({ source: call.source }) : call.url ?? 'no source',
         }))} />
-        <ListCard title="Capability Mapping" items={summary.capabilityMappings.slice(0, 12).map((mapping) => ({
+        <ListCard title="Capability mapping" items={summary.capabilityMappings.slice(0, 12).map((mapping) => ({
           id: mapping.id,
           title: mapping.label,
           detail: `${mapping.mappingStatus} · ${mapping.sourceCount} source(s) · ${Math.round(mapping.confidence * 100)}%`,
@@ -222,11 +222,11 @@ export function CodeGraph() {
       </div>
 
       <Card className="p-5">
-        <SectionHeader title="Scenario Readiness" description="Gate calculado a partir de capabilities suportadas pelo grafo." />
+        <SectionHeader title="Scenario readiness" description="Gate computed from the capabilities supported by the graph." />
         <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {scenarioReadiness.length === 0 ? (
             <p className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3 text-xs text-[var(--text-muted)]">
-              Nenhum cenário com readiness calculado.
+              No scenarios with computed readiness.
             </p>
           ) : scenarioReadiness.map((scenario) => (
             <div key={scenario.id} className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
@@ -241,12 +241,12 @@ export function CodeGraph() {
               </p>
               {scenario.missingCapabilityIds.length > 0 && (
                 <p className="mt-1 truncate text-[10px] text-[var(--warning)]">
-                  faltando: {scenario.missingCapabilityIds.slice(0, 4).join(', ')}
+                  missing: {scenario.missingCapabilityIds.slice(0, 4).join(', ')}
                 </p>
               )}
               {scenario.supportSourceTypes.length > 0 && (
                 <p className="mt-1 truncate text-[10px] text-[var(--text-muted)]">
-                  fontes: {scenario.supportSourceTypes.join(', ')}
+                  sources: {scenario.supportSourceTypes.join(', ')}
                 </p>
               )}
             </div>
@@ -255,7 +255,7 @@ export function CodeGraph() {
       </Card>
 
       <Card className="p-5">
-        <SectionHeader title="Candidate Nodes" description="Personas, cenários e steps detectados para revisão." />
+        <SectionHeader title="Candidate nodes" description="Personas, scenarios, and steps detected for review." />
         <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {candidateNodes.map((node) => (
             <div key={node.id} className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
@@ -267,7 +267,7 @@ export function CodeGraph() {
           ))}
           {candidateNodes.length === 0 && (
             <p className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3 text-xs text-[var(--text-muted)]">
-              Nenhum candidate detectado.
+              No candidates detected.
             </p>
           )}
         </div>
@@ -288,11 +288,11 @@ function SectionHeader({ title, description }: { title: string; description: str
 function ListCard({ title, items }: { title: string; items: Array<{ id: string; title: string; detail: string }> }) {
   return (
     <Card className="p-5">
-      <SectionHeader title={title} description={`${items.length} itens principais`} />
+      <SectionHeader title={title} description={`${items.length} top items`} />
       <div className="mt-4 space-y-2">
         {items.length === 0 ? (
           <p className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3 text-xs text-[var(--text-muted)]">
-            Nenhum item detectado.
+            No items detected.
           </p>
         ) : items.map((item) => (
           <div key={item.id} className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] p-3">
@@ -306,6 +306,6 @@ function ListCard({ title, items }: { title: string; items: Array<{ id: string; 
 }
 
 function sourceLabel(item: { source?: Phase2CodeGraphNode['source'] }) {
-  if (!item.source) return 'sem source'
+  if (!item.source) return 'no source'
   return item.source.line ? `${item.source.filePath}:${item.source.line}` : item.source.filePath
 }

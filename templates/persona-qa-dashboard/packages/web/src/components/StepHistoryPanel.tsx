@@ -32,7 +32,7 @@ export function StepHistoryPanel({ scenarioId, stepId }: { scenarioId: string; s
   return (
     <Card className="p-4">
       <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-3">
-        Histórico do step
+        Step history
       </h3>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
         <Metric label="Runs" value={String(history.totalExecutions)} />
@@ -43,7 +43,7 @@ export function StepHistoryPanel({ scenarioId, stepId }: { scenarioId: string; s
 
       {Object.keys(history.failureBreakdown).length > 0 && (
         <div className="mt-4">
-          <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Falhas</p>
+          <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Failures</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {Object.entries(history.failureBreakdown).map(([category, count]) => (
               <span key={category} className="rounded bg-[var(--bg-hover)] px-2 py-1 text-xs text-[var(--text-secondary)]">
@@ -56,7 +56,7 @@ export function StepHistoryPanel({ scenarioId, stepId }: { scenarioId: string; s
 
       {history.patterns.length > 0 && (
         <div className="mt-4 space-y-2">
-          <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Padrões conhecidos</p>
+          <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Known patterns</p>
           {history.patterns.slice(0, 3).map((pattern) => (
             <div key={`${pattern.category}-${pattern.signature}`} className="rounded border border-[var(--border)] p-2 text-xs">
               <p className="font-semibold text-[var(--text-primary)]">{pattern.category} · {pattern.count}x</p>

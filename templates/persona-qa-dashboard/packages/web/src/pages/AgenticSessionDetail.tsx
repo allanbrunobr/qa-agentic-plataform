@@ -39,15 +39,15 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  pending: 'Pendente',
-  running: 'Em execução',
-  complete: 'Concluída',
-  failed: 'Falhou',
+  pending: 'Pending',
+  running: 'Running',
+  complete: 'Complete',
+  failed: 'Failed',
 }
 
 function formatDateTime(ts: string): string {
   try {
-    return new Date(ts).toLocaleString('pt-BR')
+    return new Date(ts).toLocaleString('en-US')
   } catch {
     return ts
   }
@@ -74,7 +74,7 @@ export function AgenticSessionDetail({ sessionId, onBack }: AgenticSessionDetail
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-[var(--text-muted)]">
-        Carregando sessão...
+        Loading session...
       </div>
     )
   }
@@ -82,9 +82,9 @@ export function AgenticSessionDetail({ sessionId, onBack }: AgenticSessionDetail
   if (error || !session) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3">
-        <p className="text-sm text-red-400">Erro ao carregar sessão: {error ?? 'não encontrada'}</p>
+        <p className="text-sm text-red-400">Failed to load session: {error ?? 'not found'}</p>
         {onBack && (
-          <Button variant="secondary" size="sm" onClick={onBack}>Voltar</Button>
+          <Button variant="secondary" size="sm" onClick={onBack}>Back</Button>
         )}
       </div>
     )
@@ -107,7 +107,7 @@ export function AgenticSessionDetail({ sessionId, onBack }: AgenticSessionDetail
         <div className="flex items-center gap-3">
           {onBack && (
             <Button variant="secondary" size="sm" onClick={onBack}>
-              Voltar
+              Back
             </Button>
           )}
           <h2 className="text-lg font-semibold text-[var(--text-primary)]">
@@ -134,13 +134,13 @@ export function AgenticSessionDetail({ sessionId, onBack }: AgenticSessionDetail
           </p>
         </Card>
         <Card className="p-3">
-          <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Eventos</p>
+          <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Events</p>
           <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
             {session.events.length}
           </p>
         </Card>
         <Card className="p-3">
-          <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Artefatos</p>
+          <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Artifacts</p>
           <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
             {artifactKeys.length}
           </p>
@@ -155,10 +155,10 @@ export function AgenticSessionDetail({ sessionId, onBack }: AgenticSessionDetail
 
       {/* Info row */}
       <div className="flex items-center gap-4 text-xs text-[var(--text-secondary)]">
-        <span>Início: {formatDateTime(session.startedAt)}</span>
-        {session.completedAt && <span>Fim: {formatDateTime(session.completedAt)}</span>}
+        <span>Started: {formatDateTime(session.startedAt)}</span>
+        {session.completedAt && <span>Ended: {formatDateTime(session.completedAt)}</span>}
         {session.status === 'running' && currentStep && (
-          <span className="text-blue-400">Step atual: {currentStep}</span>
+          <span className="text-blue-400">Current step: {currentStep}</span>
         )}
       </div>
 
@@ -171,7 +171,7 @@ export function AgenticSessionDetail({ sessionId, onBack }: AgenticSessionDetail
       {artifactKeys.length > 0 && (
         <Card className="p-4">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">
-            Artefatos Coletados
+            Collected artifacts
           </h3>
           <div className="flex flex-wrap gap-2">
             {artifactKeys.map(key => (
@@ -214,7 +214,7 @@ export function AgenticSessionDetail({ sessionId, onBack }: AgenticSessionDetail
       {recoveryEvents.length > 0 && (
         <Card className="p-4">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">
-            Recovery e interrupções
+            Recovery and interruptions
           </h3>
           <div className="space-y-2">
             {recoveryEvents.map(event => {
@@ -246,7 +246,7 @@ export function AgenticSessionDetail({ sessionId, onBack }: AgenticSessionDetail
       {adaptationEvents.length > 0 && (
         <Card className="p-4">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">
-            Feed de adaptação
+            Adaptation feed
           </h3>
           <div className="space-y-2">
             {adaptationEvents.map(event => {

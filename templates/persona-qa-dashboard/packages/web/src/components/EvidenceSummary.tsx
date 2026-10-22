@@ -35,13 +35,13 @@ export function EvidenceSummary({
         </span>
       )}
       {artifactsCount > 0 && (
-        <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-primary)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]" title="Artefatos">
+        <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-primary)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]" title="Artifacts">
           <Package className="h-2.5 w-2.5" />
           {artifactsCount}
         </span>
       )}
       {contextAvailable && (
-        <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-primary)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]" title="Contexto disponível">
+        <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-primary)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]" title="Context available">
           <Database className="h-2.5 w-2.5" />
         </span>
       )}

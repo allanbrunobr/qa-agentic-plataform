@@ -479,8 +479,8 @@ async function patchInstalledRuntime(installedPath: string, repoPath: string) {
 
   const overviewSource = await fs.readFile(overviewPath, 'utf8')
   const overviewPatched = overviewSource.replace(
-    "              Última atividade {formatRelativeTime(orderedSessions[0]!.startedAt)}",
-    "              Última atividade {orderedSessions[0] ? formatRelativeTime(orderedSessions[0].startedAt) : 'sem atividade ainda'}",
+    "              Last activity {formatRelativeTime(orderedSessions[0]!.startedAt)}",
+    "              Last activity {orderedSessions[0] ? formatRelativeTime(orderedSessions[0].startedAt) : 'no activity yet'}",
   )
   await fs.writeFile(overviewPath, overviewPatched, 'utf8')
 

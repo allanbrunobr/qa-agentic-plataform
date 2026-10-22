@@ -49,7 +49,7 @@ function formatDurationMs(ms: number): string {
 function formatTimestamp(ts: string): string {
   try {
     const d = new Date(ts)
-    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   } catch {
     return ts
   }
@@ -76,7 +76,7 @@ export function RunTimeline({ runId, className }: RunTimelineProps) {
   if (loading) {
     return (
       <div className={cn('flex items-center justify-center py-8 text-xs text-[var(--text-muted)]', className)}>
-        Carregando timeline...
+        Loading timeline...
       </div>
     )
   }
@@ -84,7 +84,7 @@ export function RunTimeline({ runId, className }: RunTimelineProps) {
   if (error) {
     return (
       <div className={cn('flex items-center justify-center py-8 text-xs text-red-400', className)}>
-        Erro ao carregar timeline: {error}
+        Failed to load timeline: {error}
       </div>
     )
   }
@@ -92,7 +92,7 @@ export function RunTimeline({ runId, className }: RunTimelineProps) {
   if (events.length === 0) {
     return (
       <div className={cn('flex items-center justify-center py-8 text-xs text-[var(--text-muted)]', className)}>
-        Nenhum evento de timeline disponível
+        No timeline events available
       </div>
     )
   }
@@ -100,7 +100,7 @@ export function RunTimeline({ runId, className }: RunTimelineProps) {
   return (
     <div className={cn('relative', className)}>
       <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-        Timeline de Execução
+        Run timeline
       </h4>
       <div className="relative">
         {events.map((event, index) => {

@@ -103,7 +103,7 @@ On the first start, the launcher installs the workspace dependencies and the Pla
 
 **5. Start a run**
 
-Open **Agentic Runs**, select a scenario, and click **Iniciar Sessão** (*Start session*). The page then shows live events, artifacts, the workflow contract, and the final verdict.
+Open **Agentic runs**, select a scenario, and click **Start session**. The page then shows live events, artifacts, the workflow contract, and the final verdict.
 
 ![A completed place_order run](docs/images/dashboard-run.png)
 

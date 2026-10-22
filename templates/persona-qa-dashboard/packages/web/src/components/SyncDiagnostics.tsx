@@ -119,14 +119,14 @@ export function SyncDiagnostics({ open, onClose, onSyncComplete }: SyncDiagnosti
           visible: true,
           success: true,
           message: changes > 0
-            ? `Sync concluído: ${data.context_files_processed} arquivos processados, ${data.new_runs_imported} novas runs, ${data.new_findings} novos findings`
-            : 'Sync concluído: nenhuma alteração detectada',
+            ? `Sync complete: ${data.context_files_processed} files processed, ${data.new_runs_imported} new runs, ${data.new_findings} new findings`
+            : 'Sync complete: no changes detected',
         })
       } else {
         setToast({
           visible: true,
           success: false,
-          message: `Erro no sync: ${data.error ?? 'erro desconhecido'}`,
+          message: `Sync error: ${data.error ?? 'unknown error'}`,
         })
       }
 
@@ -135,7 +135,7 @@ export function SyncDiagnostics({ open, onClose, onSyncComplete }: SyncDiagnosti
       setToast({
         visible: true,
         success: false,
-        message: 'Falha ao conectar com a API para sync',
+        message: 'Could not reach the API to sync',
       })
     } finally {
       setSyncing(false)
@@ -155,7 +155,7 @@ export function SyncDiagnostics({ open, onClose, onSyncComplete }: SyncDiagnosti
           {/* Header */}
           <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
             <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-              Detalhes do Sync
+              Sync details
             </h2>
             <button
               onClick={onClose}
@@ -169,33 +169,33 @@ export function SyncDiagnostics({ open, onClose, onSyncComplete }: SyncDiagnosti
           <div className="px-5 py-4">
             {loading ? (
               <div className="flex h-32 items-center justify-center text-xs text-[var(--text-muted)]">
-                Carregando...
+                Loading...
               </div>
             ) : summary ? (
               <div className="divide-y divide-[var(--border)]">
                 <SyncDetailRow
                   icon={<Clock className="h-3.5 w-3.5" />}
-                  label="Último sync"
+                  label="Last sync"
                   value={formatRelativeTime(summary.timestamp)}
                 />
                 <SyncDetailRow
                   icon={<Zap className="h-3.5 w-3.5" />}
-                  label="Origem"
+                  label="Source"
                   value={summary.source}
                 />
                 <SyncDetailRow
                   icon={<FileText className="h-3.5 w-3.5" />}
-                  label="Arquivos context processados"
+                  label="Context files processed"
                   value={summary.context_files_processed}
                 />
                 <SyncDetailRow
                   icon={<FileText className="h-3.5 w-3.5" />}
-                  label="Novas runs importadas"
+                  label="New runs imported"
                   value={summary.new_runs_imported}
                 />
                 <SyncDetailRow
                   icon={<RefreshCw className="h-3.5 w-3.5" />}
-                  label="Runs atualizadas"
+                  label="Runs updated"
                   value={summary.existing_runs_updated}
                 />
                 <SyncDetailRow
@@ -205,12 +205,12 @@ export function SyncDiagnostics({ open, onClose, onSyncComplete }: SyncDiagnosti
                 />
                 <SyncDetailRow
                   icon={<Database className="h-3.5 w-3.5" />}
-                  label="Novos findings"
+                  label="New findings"
                   value={summary.new_findings}
                 />
                 <SyncDetailRow
                   icon={<FileText className="h-3.5 w-3.5" />}
-                  label="Cenários"
+                  label="Scenarios"
                   value={summary.scenarios_count}
                 />
                 {summary.error && (
@@ -225,12 +225,12 @@ export function SyncDiagnostics({ open, onClose, onSyncComplete }: SyncDiagnosti
                     {summary.success ? (
                       <>
                         <CheckCircle className="h-3.5 w-3.5 text-green-400" />
-                        <span className="text-xs text-green-400">Sync bem-sucedido</span>
+                        <span className="text-xs text-green-400">Sync succeeded</span>
                       </>
                     ) : (
                       <>
                         <AlertCircle className="h-3.5 w-3.5 text-red-400" />
-                        <span className="text-xs text-red-400">Sync com erro</span>
+                        <span className="text-xs text-red-400">Sync failed</span>
                       </>
                     )}
                   </div>
@@ -238,7 +238,7 @@ export function SyncDiagnostics({ open, onClose, onSyncComplete }: SyncDiagnosti
               </div>
             ) : (
               <div className="flex h-32 items-center justify-center text-xs text-[var(--text-muted)]">
-                Nenhum sync realizado ainda
+                No sync has run yet
               </div>
             )}
           </div>
@@ -253,7 +253,7 @@ export function SyncDiagnostics({ open, onClose, onSyncComplete }: SyncDiagnosti
               disabled={syncing}
               onClick={handleSyncNow}
             >
-              {syncing ? 'Sincronizando...' : 'Sincronizar Agora'}
+              {syncing ? 'Syncing...' : 'Sync now'}
             </Button>
           </div>
         </div>

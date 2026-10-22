@@ -30,12 +30,12 @@ export function DomainDiscoveryPanel({ discovery, onCreateScenarioDraft }: Domai
                 L5
               </span>
               <span className="rounded-md border border-[var(--border)] bg-[var(--bg-hover)] px-2 py-1 text-[10px] font-semibold uppercase text-[var(--text-muted)]">
-                aguardando discovery
+                awaiting discovery
               </span>
             </div>
             <h2 className="text-sm font-semibold text-[var(--text-primary)]">Domain Discovery</h2>
             <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
-              Rode `discover-local` para gerar domínio, personas candidatas, cenários candidatos e evidências.
+              Run `discover-local` to generate the domain, candidate personas, candidate scenarios, and evidence.
             </p>
           </div>
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-hover)] text-[var(--text-muted)]">
@@ -123,7 +123,7 @@ export function DomainDiscoveryPanel({ discovery, onCreateScenarioDraft }: Domai
       <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <CandidateList
           title="Persona candidates"
-          empty="Nenhuma persona candidata."
+          empty="No candidate personas."
           items={personas.slice(0, 4).map((persona) => ({
             id: persona.id,
             title: persona.title,
@@ -133,7 +133,7 @@ export function DomainDiscoveryPanel({ discovery, onCreateScenarioDraft }: Domai
         />
         <CandidateList
           title="Scenario candidates"
-          empty="Nenhum cenário candidato."
+          empty="No candidate scenarios."
           items={scenarios.slice(0, 4).map((scenario) => ({
             id: scenario.id,
             title: scenario.title,
@@ -142,7 +142,7 @@ export function DomainDiscoveryPanel({ discovery, onCreateScenarioDraft }: Domai
             action: onCreateScenarioDraft ? (
               createdDraftIds[scenario.id] ? (
                 <span className="shrink-0 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-emerald-300">
-                  Draft criado
+                  Draft created
                 </span>
               ) : (
                 <Button
@@ -152,7 +152,7 @@ export function DomainDiscoveryPanel({ discovery, onCreateScenarioDraft }: Domai
                   disabled={scenario.status === 'restricted'}
                   onClick={() => void handleCreateScenarioDraft(scenario.id)}
                 >
-                  Criar draft
+                  Create draft
                 </Button>
               )
             ) : undefined,
@@ -160,7 +160,7 @@ export function DomainDiscoveryPanel({ discovery, onCreateScenarioDraft }: Domai
         />
         <CandidateList
           title="Capability candidates"
-          empty="Nenhuma capability candidata."
+          empty="No candidate capabilities."
           items={capabilities.slice(0, 4).map((capability) => ({
             id: capability.id,
             title: capability.title,

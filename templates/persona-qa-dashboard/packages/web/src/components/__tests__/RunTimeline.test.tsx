@@ -7,11 +7,11 @@ import { RunTimeline } from '../RunTimeline'
 const mockEvents = {
   run_id: 1,
   events: [
-    { id: '1-setup', type: 'setup', label: 'Setup iniciado', timestamp: '2026-04-10T10:00:00Z', durationFromPrev: null },
-    { id: '1-artifact', type: 'artifact', label: 'Artefatos gerados (10 tests, 3 findings)', timestamp: '2026-04-10T10:00:45Z', durationFromPrev: 45000 },
-    { id: '1-findings', type: 'finding', label: '3 findings emitidos', timestamp: '2026-04-10T10:01:30Z', durationFromPrev: 45000 },
-    { id: '1-scenario', type: 'scenario_complete', label: 'Cenário concluído com sucesso', timestamp: '2026-04-10T10:02:00Z', durationFromPrev: 30000 },
-    { id: '1-sync', type: 'sync', label: 'Sincronização finalizada', timestamp: '2026-04-10T10:02:00Z', durationFromPrev: 0 },
+    { id: '1-setup', type: 'setup', label: 'Setup started', timestamp: '2026-04-10T10:00:00Z', durationFromPrev: null },
+    { id: '1-artifact', type: 'artifact', label: 'Artifacts generated (10 tests, 3 findings)', timestamp: '2026-04-10T10:00:45Z', durationFromPrev: 45000 },
+    { id: '1-findings', type: 'finding', label: '3 findings emitted', timestamp: '2026-04-10T10:01:30Z', durationFromPrev: 45000 },
+    { id: '1-scenario', type: 'scenario_complete', label: 'Scenario completed successfully', timestamp: '2026-04-10T10:02:00Z', durationFromPrev: 30000 },
+    { id: '1-sync', type: 'sync', label: 'Sync completed', timestamp: '2026-04-10T10:02:00Z', durationFromPrev: 0 },
   ],
 }
 
@@ -29,28 +29,28 @@ describe('RunTimeline', () => {
     render(<RunTimeline runId={1} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Setup iniciado')).toBeDefined()
+      expect(screen.getByText('Setup started')).toBeDefined()
     })
 
     // AC: setup started
-    expect(screen.getByText('Setup iniciado')).toBeDefined()
+    expect(screen.getByText('Setup started')).toBeDefined()
     // AC: artifacts written
-    expect(screen.getByText('Artefatos gerados (10 tests, 3 findings)')).toBeDefined()
+    expect(screen.getByText('Artifacts generated (10 tests, 3 findings)')).toBeDefined()
     // AC: findings emitted (with count)
-    expect(screen.getByText('3 findings emitidos')).toBeDefined()
+    expect(screen.getByText('3 findings emitted')).toBeDefined()
     // AC: scenario completed
-    expect(screen.getByText('Cenário concluído com sucesso')).toBeDefined()
+    expect(screen.getByText('Scenario completed successfully')).toBeDefined()
     // AC: sync finalized
-    expect(screen.getByText('Sincronização finalizada')).toBeDefined()
+    expect(screen.getByText('Sync completed')).toBeDefined()
   })
 
   it('renders failed scenario variant', async () => {
     const failedEvents = {
       run_id: 2,
       events: [
-        { id: '2-setup', type: 'setup', label: 'Setup iniciado', timestamp: '2026-04-10T10:00:00Z', durationFromPrev: null },
-        { id: '2-scenario', type: 'scenario_failed', label: 'Cenário falhou: timeout', timestamp: '2026-04-10T10:01:00Z', durationFromPrev: 60000 },
-        { id: '2-sync', type: 'sync', label: 'Sincronização finalizada', timestamp: '2026-04-10T10:01:00Z', durationFromPrev: 0 },
+        { id: '2-setup', type: 'setup', label: 'Setup started', timestamp: '2026-04-10T10:00:00Z', durationFromPrev: null },
+        { id: '2-scenario', type: 'scenario_failed', label: 'Scenario failed: timeout', timestamp: '2026-04-10T10:01:00Z', durationFromPrev: 60000 },
+        { id: '2-sync', type: 'sync', label: 'Sync completed', timestamp: '2026-04-10T10:01:00Z', durationFromPrev: 0 },
       ],
     }
 
@@ -62,7 +62,7 @@ describe('RunTimeline', () => {
     render(<RunTimeline runId={2} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Cenário falhou: timeout')).toBeDefined()
+      expect(screen.getByText('Scenario failed: timeout')).toBeDefined()
     })
   })
 
@@ -90,14 +90,14 @@ describe('RunTimeline', () => {
     render(<RunTimeline runId={1} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Timeline de Execução')).toBeDefined()
+      expect(screen.getByText('Run timeline')).toBeDefined()
     })
   })
 
   it('shows loading state initially', () => {
     vi.spyOn(global, 'fetch').mockReturnValueOnce(new Promise(() => {}))
     render(<RunTimeline runId={1} />)
-    expect(screen.getByText('Carregando timeline...')).toBeDefined()
+    expect(screen.getByText('Loading timeline...')).toBeDefined()
   })
 
   it('shows error state on fetch failure', async () => {
@@ -105,7 +105,7 @@ describe('RunTimeline', () => {
     render(<RunTimeline runId={1} />)
 
     await waitFor(() => {
-      expect(screen.getByText(/Erro ao carregar timeline/)).toBeDefined()
+      expect(screen.getByText(/Failed to load timeline/)).toBeDefined()
     })
   })
 
@@ -118,7 +118,7 @@ describe('RunTimeline', () => {
     render(<RunTimeline runId={1} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Nenhum evento de timeline disponível')).toBeDefined()
+      expect(screen.getByText('No timeline events available')).toBeDefined()
     })
   })
 })

@@ -66,7 +66,7 @@ export function SuiteHealthPanel({ onExecuteTests }: SuiteHealthPanelProps) {
     return (
       <Card className="p-6">
         <div className="flex h-32 items-center justify-center text-xs text-[var(--text-muted)]">
-          Carregando status da suite...
+          Loading suite health...
         </div>
       </Card>
     )
@@ -76,7 +76,7 @@ export function SuiteHealthPanel({ onExecuteTests }: SuiteHealthPanelProps) {
     return (
       <Card className="p-6">
         <div className="flex h-32 items-center justify-center text-xs text-[var(--text-muted)]">
-          Erro ao carregar status da suite
+          Failed to load suite health
         </div>
       </Card>
     )
@@ -89,10 +89,10 @@ export function SuiteHealthPanel({ onExecuteTests }: SuiteHealthPanelProps) {
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-            Status da Suite de Testes
+            Test suite health
           </h2>
           <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-            Status separado da status do dashboard
+            Tracked separately from dashboard health
           </p>
         </div>
         {lastRunFailed && onExecuteTests && (
@@ -102,7 +102,7 @@ export function SuiteHealthPanel({ onExecuteTests }: SuiteHealthPanelProps) {
             icon={<Play className="h-3 w-3" />}
             onClick={onExecuteTests}
           >
-            Executar Testes
+            Run tests
           </Button>
         )}
       </div>
@@ -111,13 +111,13 @@ export function SuiteHealthPanel({ onExecuteTests }: SuiteHealthPanelProps) {
       <div className="mb-4 rounded-lg bg-[var(--bg-primary)] p-4">
         <div className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
           {data.last_run?.is_full_suite
-            ? 'Última Execução Completa da Suite'
-            : 'Resultado Agregado (cobertura parcial)'}
+            ? 'Last full suite run'
+            : 'Aggregated result (partial coverage)'}
         </div>
         {!data.last_run?.is_full_suite && data.last_run && (
           <div className="mb-2 rounded-md bg-yellow-500/10 border border-yellow-500/20 px-2 py-1">
             <span className="text-xs text-yellow-400">
-              Nem todos os cenários foram executados. Resultado agregado dos {data.last_run.scenario_count} cenários com execução.
+              Not all scenarios ran. Aggregated result of the {data.last_run.scenario_count} scenarios that ran.
             </span>
           </div>
         )}
@@ -134,10 +134,10 @@ export function SuiteHealthPanel({ onExecuteTests }: SuiteHealthPanelProps) {
                   data.last_run.status === 'pass' ? 'text-green-400' : 'text-red-400'
                 }`}
               >
-                {data.last_run.status === 'pass' ? 'Passou' : 'Falhou'}
+                {data.last_run.status === 'pass' ? 'Passed' : 'Failed'}
               </span>
               <span className="text-xs text-[var(--text-muted)]">
-                — {data.last_run.scenario_count} cenário{data.last_run.scenario_count !== 1 ? 's' : ''}
+                — {data.last_run.scenario_count} scenario{data.last_run.scenario_count !== 1 ? 's' : ''}
               </span>
             </div>
             <div className="grid grid-cols-4 gap-2 text-center">
@@ -172,7 +172,7 @@ export function SuiteHealthPanel({ onExecuteTests }: SuiteHealthPanelProps) {
             </div>
           </div>
         ) : (
-          <p className="text-xs text-[var(--text-muted)]">Nenhuma execução encontrada</p>
+          <p className="text-xs text-[var(--text-muted)]">No runs found</p>
         )}
       </div>
 
@@ -180,7 +180,7 @@ export function SuiteHealthPanel({ onExecuteTests }: SuiteHealthPanelProps) {
       {data.scenarios.length > 0 && (
         <div className="mb-4">
           <div className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
-            Cenários ({data.passed_scenarios} ok / {data.failed_scenarios} falharam)
+            Scenarios ({data.passed_scenarios} passed / {data.failed_scenarios} failed)
           </div>
           <div className="space-y-1.5">
             {data.scenarios.map(s => (
@@ -213,7 +213,7 @@ export function SuiteHealthPanel({ onExecuteTests }: SuiteHealthPanelProps) {
       {data.scenarios_without_runs.length > 0 && (
         <div className="mb-4">
           <div className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
-            Cenários sem execução recente
+            Scenarios without a recent run
           </div>
           <div className="space-y-1">
             {data.scenarios_without_runs.map(s => (
@@ -231,13 +231,13 @@ export function SuiteHealthPanel({ onExecuteTests }: SuiteHealthPanelProps) {
         {data.is_stale && (
           <div className="flex items-center gap-1.5 rounded-md bg-yellow-500/10 border border-yellow-500/20 px-2 py-1">
             <RefreshCw className="h-3 w-3 text-yellow-400" />
-            <span className="text-xs text-yellow-400">Dados desatualizados</span>
+            <span className="text-xs text-yellow-400">Stale data</span>
           </div>
         )}
         {data.db_clean_required && (
           <div className="flex items-center gap-1.5 rounded-md bg-orange-500/10 border border-orange-500/20 px-2 py-1">
             <Database className="h-3 w-3 text-orange-400" />
-            <span className="text-xs text-orange-400">Limpeza recomendada</span>
+            <span className="text-xs text-orange-400">Cleanup recommended</span>
           </div>
         )}
       </div>

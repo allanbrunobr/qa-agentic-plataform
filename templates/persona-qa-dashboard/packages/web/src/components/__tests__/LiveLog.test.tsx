@@ -18,39 +18,39 @@ const mockEvents: LogEvent[] = [
 describe('LiveLog', () => {
   it('renders event counter showing total events', () => {
     render(<LiveLog events={mockEvents} />)
-    expect(screen.getByText(/5 eventos/)).toBeDefined()
+    expect(screen.getByText(/5 events/)).toBeDefined()
   })
 
   it('renders event counter with totalExpected', () => {
     render(<LiveLog events={mockEvents} totalExpected={10} />)
-    expect(screen.getByText(/5 de 10 eventos/)).toBeDefined()
+    expect(screen.getByText(/5 of 10 events/)).toBeDefined()
   })
 
   it('renders filter toggles for system, errors, findings', () => {
     render(<LiveLog events={mockEvents} />)
-    expect(screen.getByText('Todos')).toBeDefined()
-    expect(screen.getByText('Sistema')).toBeDefined()
-    expect(screen.getByText('Erros')).toBeDefined()
+    expect(screen.getByText('All')).toBeDefined()
+    expect(screen.getByText('System')).toBeDefined()
+    expect(screen.getByText('Errors')).toBeDefined()
     expect(screen.getByText('Findings')).toBeDefined()
   })
 
-  it('filters to show only errors when Erros filter clicked', () => {
+  it('filters to show only errors when Errors filter clicked', () => {
     render(<LiveLog events={mockEvents} />)
-    fireEvent.click(screen.getByText('Erros'))
+    fireEvent.click(screen.getByText('Errors'))
 
     // Should show filtered count
-    expect(screen.getByText(/2 visíveis/)).toBeDefined()
+    expect(screen.getByText(/2 visible/)).toBeDefined()
   })
 
   it('filters to show only findings when Findings filter clicked', () => {
     render(<LiveLog events={mockEvents} />)
     fireEvent.click(screen.getByText('Findings'))
-    expect(screen.getByText(/1 visível\b/)).toBeDefined()
+    expect(screen.getByText(/1 visible\b/)).toBeDefined()
   })
 
   it('persists filter state in localStorage', () => {
     render(<LiveLog events={mockEvents} />)
-    fireEvent.click(screen.getByText('Erros'))
+    fireEvent.click(screen.getByText('Errors'))
     expect(localStorage.getItem('livelog-filter')).toBe('errors')
   })
 
@@ -58,7 +58,7 @@ describe('LiveLog', () => {
     localStorage.setItem('livelog-filter', 'findings')
     render(<LiveLog events={mockEvents} />)
     // Findings filter should be active - only 1 event visible
-    expect(screen.getByText(/1 visível\b/)).toBeDefined()
+    expect(screen.getByText(/1 visible\b/)).toBeDefined()
   })
 
   it('shows red background on failure entries', () => {
@@ -70,18 +70,18 @@ describe('LiveLog', () => {
 
   it('shows final status banner when run completes', () => {
     render(<LiveLog events={mockEvents} runStatus="complete" />)
-    expect(screen.getByText('Execução concluída com sucesso')).toBeDefined()
+    expect(screen.getByText('Run completed successfully')).toBeDefined()
   })
 
   it('shows final status banner when run fails', () => {
     render(<LiveLog events={mockEvents} runStatus="failed" />)
-    expect(screen.getByText('Execução falhou')).toBeDefined()
+    expect(screen.getByText('Run failed')).toBeDefined()
   })
 
   it('does not show status banner when run is still running', () => {
     render(<LiveLog events={mockEvents} runStatus="running" />)
-    expect(screen.queryByText('Execução concluída com sucesso')).toBeNull()
-    expect(screen.queryByText('Execução falhou')).toBeNull()
+    expect(screen.queryByText('Run completed successfully')).toBeNull()
+    expect(screen.queryByText('Run failed')).toBeNull()
   })
 })
 

@@ -7,8 +7,8 @@ describe('MaturityStatusPanel', () => {
   it('renders L4 and L5 maturity status with capability evidence', () => {
     render(<MaturityStatusPanel maturity={maturityStatus()} />)
 
-    expect(screen.getByText('Baseline operacional')).toBeInTheDocument()
-    expect(screen.getByText('Operacional governado')).toBeInTheDocument()
+    expect(screen.getByText('Operational baseline')).toBeInTheDocument()
+    expect(screen.getByText('Governed operational')).toBeInTheDocument()
     expect(screen.getByText('Workflow contracts')).toBeInTheDocument()
     expect(screen.getByText('Independent audit')).toBeInTheDocument()
     expect(screen.getByText('Runtime learning loads')).toBeInTheDocument()
@@ -26,38 +26,38 @@ function maturityStatus(): Phase2MaturityStatus {
         level: 'L4',
         status: 'stable',
         completion: 95,
-        verdict: 'Baseline operacional',
-        summary: 'Execução multiagente, contratos, quality gates, evidência e recuperação estão no fluxo principal.',
+        verdict: 'Operational baseline',
+        summary: 'Multi-agent execution, contracts, quality gates, evidence, and recovery are in the main flow.',
         capabilities: [
           {
             id: 'workflow_contracts',
             label: 'Workflow contracts',
             state: 'complete',
-            evidence: 'Contratos determinísticos avaliados por sessão.',
+            evidence: 'Deterministic contracts evaluated per session.',
           },
         ],
         signals: [
-          { label: 'Sessões finais', value: 2, tone: 'neutral' },
-          { label: 'Contratos compliant', value: 2, tone: 'success' },
+          { label: 'Final sessions', value: 2, tone: 'neutral' },
+          { label: 'Compliant contracts', value: 2, tone: 'success' },
         ],
       },
       l5: {
         level: 'L5',
         status: 'operational',
         completion: 95,
-        verdict: 'Operacional governado',
-        summary: 'Aprendizado, healing, auditoria, materialização verificada e fila meta-orquestrada estão governados.',
+        verdict: 'Governed operational',
+        summary: 'Learning, healing, audit, verified materialization, and the meta-orchestrated queue are governed.',
         capabilities: [
           {
             id: 'independent_audit',
             label: 'Independent audit',
             state: 'guarded',
-            evidence: 'Decisões de governança recebem auditoria independente.',
+            evidence: 'Governance decisions get an independent audit.',
           },
         ],
         signals: [
-          { label: 'Revisões pendentes', value: 0, tone: 'success' },
-          { label: 'Decisões bloqueadas', value: 0, tone: 'success' },
+          { label: 'Pending reviews', value: 0, tone: 'success' },
+          { label: 'Blocked decisions', value: 0, tone: 'success' },
           { label: 'Runtime learning loads', value: 1, tone: 'success' },
           { label: 'Lifecycle L5 events', value: 12, tone: 'success' },
         ],

@@ -31,10 +31,10 @@ describe('ScenarioMetrics', () => {
       />
     )
 
-    expect(screen.getByText('Última Execução')).toBeDefined()
-    expect(screen.getByText('Taxa de Sucesso')).toBeDefined()
-    expect(screen.getByText('Duração Média')).toBeDefined()
-    expect(screen.getByText('Duração Última')).toBeDefined()
+    expect(screen.getByText('Last run')).toBeDefined()
+    expect(screen.getByText('Pass rate')).toBeDefined()
+    expect(screen.getByText('Average duration')).toBeDefined()
+    expect(screen.getByText('Last duration')).toBeDefined()
   })
 
   it('displays success rate percentage', () => {

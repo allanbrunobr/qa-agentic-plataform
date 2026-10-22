@@ -14,7 +14,7 @@ export function RecentFindings({ totalFindings, lastFinding, className }: Recent
   return (
     <div className={className}>
       <h3 className="mb-3 text-sm font-semibold text-[var(--text-primary)]">
-        Findings Recentes
+        Recent findings
       </h3>
       <Card>
         <div className="flex items-start gap-4">
@@ -30,7 +30,7 @@ export function RecentFindings({ totalFindings, lastFinding, className }: Recent
                 {totalFindings}
               </span>
               <span className="text-xs text-[var(--text-muted)]">
-                finding{totalFindings !== 1 ? 's' : ''} recente{totalFindings !== 1 ? 's' : ''}
+                recent finding{totalFindings !== 1 ? 's' : ''}
               </span>
             </div>
             {lastFinding ? (
@@ -46,7 +46,7 @@ export function RecentFindings({ totalFindings, lastFinding, className }: Recent
                 </p>
               </div>
             ) : (
-              <p className="text-xs text-[var(--text-muted)]">Nenhum finding registrado</p>
+              <p className="text-xs text-[var(--text-muted)]">No findings recorded</p>
             )}
           </div>
         </div>

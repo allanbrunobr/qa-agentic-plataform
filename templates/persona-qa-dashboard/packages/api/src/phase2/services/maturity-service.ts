@@ -126,47 +126,47 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
         level: 'L4',
         status: l4Status,
         completion: l4Status === 'attention' ? 90 : 95,
-        verdict: l4Status === 'attention' ? 'Atenção operacional' : 'Baseline operacional',
-        summary: 'Execução multiagente, contratos, quality gates, evidência e recuperação estão no fluxo principal.',
+        verdict: l4Status === 'attention' ? 'Operational attention' : 'Operational baseline',
+        summary: 'Multi-agent execution, contracts, quality gates, evidence, and recovery are in the main flow.',
         capabilities: [
           {
             id: 'workflow_contracts',
             label: 'Workflow contracts',
             state: 'complete',
-            evidence: 'Contratos determinísticos avaliados por sessão.',
+            evidence: 'Deterministic contracts evaluated per session.',
           },
           {
             id: 'tool_governance',
             label: 'Tool governance',
             state: 'complete',
-            evidence: 'Ferramentas passam por registry, políticas e ledger.',
+            evidence: 'Tools go through the registry, policies, and ledger.',
           },
           {
             id: 'instruction_governance',
             label: 'Instruction governance',
             state: 'complete',
-            evidence: 'Camadas de instrução têm precedência, validação e budget.',
+            evidence: 'Instruction layers have precedence, validation, and budget.',
           },
           {
             id: 'quality_gates',
             label: 'Quality gates',
             state: 'complete',
-            evidence: 'Cenários podem entrar em review ou restricted por histórico.',
+            evidence: 'Scenarios can move to review or restricted based on history.',
           },
           {
             id: 'runtime_evidence',
             label: 'Runtime evidence',
             state: 'complete',
-            evidence: 'Screenshots em branco são recusados e artifacts obrigatórios encerram o step.',
+            evidence: 'Blank screenshots are rejected and required artifacts close the step.',
           },
         ],
         signals: [
-          { label: 'Sessões finais', value: finalSessions.length, tone: 'neutral' },
-          { label: 'Contratos compliant', value: compliantContracts, tone: 'success' },
-          { label: 'Contratos violados', value: contractViolations, tone: contractViolations > 0 ? 'danger' : 'success' },
+          { label: 'Final sessions', value: finalSessions.length, tone: 'neutral' },
+          { label: 'Compliant contracts', value: compliantContracts, tone: 'success' },
+          { label: 'Violated contracts', value: contractViolations, tone: contractViolations > 0 ? 'danger' : 'success' },
           { label: 'Drift signals', value: contractDrift, tone: contractDrift > 0 ? 'warning' : 'success' },
           { label: 'Quality gates restricted', value: restrictedGates, tone: restrictedGates > 0 ? 'danger' : 'success' },
-          { label: 'Quality gates em review', value: reviewGates, tone: reviewGates > 0 ? 'warning' : 'neutral' },
+          { label: 'Quality gates in review', value: reviewGates, tone: reviewGates > 0 ? 'warning' : 'neutral' },
         ],
       },
       l5: {
@@ -174,19 +174,19 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
         status: l5Status,
         completion: l5Status === 'operational' ? 95 : activeMaterializations > 0 && independentAudits > 0 ? 80 : 70,
         verdict: l5Status === 'attention'
-          ? 'Governança requer revisão'
+          ? 'Governance needs review'
           : l5Status === 'operational'
-            ? 'Operacional governado'
-            : 'Beta controlado',
+            ? 'Governed operational'
+            : 'Controlled beta',
         summary: l5Status === 'operational'
-          ? 'Aprendizado, healing, auditoria, materialização verificada e fila meta-orquestrada estão governados.'
-          : 'Aprendizado, healing, auditoria independente e materialização existem, mas mudanças seguem governadas.',
+          ? 'Learning, healing, audit, verified materialization, and the meta-orchestrated queue are governed.'
+          : 'Learning, healing, independent audit, and materialization exist, but changes remain governed.',
         capabilities: [
           {
             id: 'learning_control',
             label: 'Learning control',
             state: 'guarded',
-            evidence: 'Propostas passam por aprovação antes de aplicação.',
+            evidence: 'Proposals require approval before they are applied.',
           },
           {
             id: 'independent_audit',
@@ -197,100 +197,100 @@ export function buildMaturityStatus(sessionService: SessionService): MaturitySta
                 ? 'complete'
                 : 'guarded',
             evidence: terminalSessionAudits.total > 0 || closedLoopIndependentAudits.total > 0
-              ? `${terminalSessionAudits.total} sessão(ões) e ${closedLoopIndependentAudits.total} closed-loop(s) receberam verificação independente; ${terminalSessionAudits.failed + closedLoopIndependentAudits.failed} falharam.`
-              : 'Decisões de governança recebem auditoria independente; auditoria terminal é registrada ao final das execuções.',
+              ? `${terminalSessionAudits.total} session(s) and ${closedLoopIndependentAudits.total} closed loop(s) received independent verification; ${terminalSessionAudits.failed + closedLoopIndependentAudits.failed} failed.`
+              : 'Governance decisions get an independent audit; a terminal audit is recorded at the end of each run.',
           },
           {
             id: 'self_healing',
             label: 'Self-healing',
             state: 'guarded',
-            evidence: 'Ações automáticas são limitadas por bounded policy.',
+            evidence: 'Automatic actions are limited by a bounded policy.',
           },
           {
             id: 'materialization',
             label: 'Materialization',
             state: verifiedMaterializations > 0 ? 'complete' : 'guarded',
             evidence: verifiedMaterializations > 0
-              ? 'Mudanças aplicadas geram artifacts duráveis com auditoria e checksum verificados.'
-              : 'Mudanças aplicadas geram artifacts duráveis e rastreáveis.',
+              ? 'Applied changes produce durable artifacts with verified audit and checksum.'
+              : 'Applied changes produce durable, traceable artifacts.',
           },
           {
             id: 'runtime_learning',
             label: 'Runtime learning',
             state: runtimeLearningUsage.loads > 0 ? 'complete' : verifiedMaterializations > 0 ? 'guarded' : 'beta',
             evidence: runtimeLearningUsage.loads > 0
-              ? `${runtimeLearningUsage.loads} execução(ões) carregaram ${runtimeLearningUsage.overlayLoads} overlay(s) L5 de ${runtimeLearningUsage.materializations} materialização(ões).`
+              ? `${runtimeLearningUsage.loads} run(s) loaded ${runtimeLearningUsage.overlayLoads} L5 overlay(s) from ${runtimeLearningUsage.materializations} materialization(s).`
               : verifiedMaterializations > 0
-                ? 'Overlays L5 verificados estão materializados e aguardam nova execução para entrar no prompt.'
-                : 'Runtime aceita somente overlays L5 aplicados, materializados e verificados.',
+                ? 'Verified L5 overlays are materialized and wait for the next run to enter the prompt.'
+                : 'Runtime only accepts applied, materialized, and verified L5 overlays.',
           },
           {
             id: 'learning_memory',
             label: 'Learning memory',
             state: learningSignals.retained > 0 ? 'complete' : 'beta',
             evidence: learningSignals.retained > 0
-              ? `${learningSignals.retained} sinal(is) L5 retido(s) com versão e fonte auditável.`
-              : 'Revisões e promoções governadas serão retidas como sinais versionados para próximas execuções.',
+              ? `${learningSignals.retained} L5 signal(s) retained with version and auditable source.`
+              : 'Governed reviews and promotions will be retained as versioned signals for future runs.',
           },
           {
             id: 'meta_orchestration',
             label: 'Meta-orchestration',
             state: queuedMetaRuns > 0 ? 'guarded' : 'beta',
             evidence: queuedMetaRuns > 0
-              ? 'Fila governada de execução ordena cenários por risco e respeita circuit breakers.'
-              : 'Priorização existe como recomendação, aguardando fila governada.',
+              ? 'The governed run queue orders scenarios by risk and respects circuit breakers.'
+              : 'Prioritization exists as a recommendation, awaiting a governed queue.',
           },
           {
             id: 'circuit_breakers',
             label: 'Circuit breakers',
             state: blockedLoops === 0 ? 'complete' : 'guarded',
-            evidence: 'Learning, geração de cenários, healing, materialização e meta-orchestration têm limites formais.',
+            evidence: 'Learning, scenario generation, healing, materialization, and meta-orchestration have formal limits.',
           },
           {
             id: 'closed_loop',
             label: 'Closed loop',
             state: closedLoopLifecycle.runsWithLifecycle > 0 ? 'complete' : latestClosedLoop ? 'guarded' : 'beta',
             evidence: latestClosedLoop
-              ? `Última iteração L5 registrada como ${latestClosedLoop.status}; lifecycle auditável em ${closedLoopLifecycle.runsWithLifecycle} run(s).`
-              : 'Iterações L5 podem ser executadas sob demanda com governança e verificação antes/depois.',
+              ? `Latest L5 iteration recorded as ${latestClosedLoop.status}; auditable lifecycle in ${closedLoopLifecycle.runsWithLifecycle} run(s).`
+              : 'L5 iterations can run on demand with governance and before/after verification.',
           },
         ],
         signals: [
-          { label: 'Revisões pendentes', value: pendingReviews, tone: pendingReviews > 0 ? 'warning' : 'success' },
-          { label: 'Decisões bloqueadas', value: blockedDecisions, tone: blockedDecisions > 0 ? 'danger' : 'success' },
-          { label: 'Loops bloqueados', value: blockedLoops, tone: blockedLoops > 0 ? 'danger' : 'success' },
+          { label: 'Pending reviews', value: pendingReviews, tone: pendingReviews > 0 ? 'warning' : 'success' },
+          { label: 'Blocked decisions', value: blockedDecisions, tone: blockedDecisions > 0 ? 'danger' : 'success' },
+          { label: 'Blocked loops', value: blockedLoops, tone: blockedLoops > 0 ? 'danger' : 'success' },
           {
             label: 'Runtime learning loads',
             value: runtimeLearningUsage.loads,
             tone: runtimeLearningUsage.loads > 0 ? 'success' : verifiedMaterializations > 0 ? 'warning' : 'neutral',
           },
-          { label: 'Auditorias independentes', value: independentAudits, tone: independentAudits > 0 ? 'success' : 'neutral' },
+          { label: 'Independent audits', value: independentAudits, tone: independentAudits > 0 ? 'success' : 'neutral' },
           {
-            label: 'Auditorias de sessão',
+            label: 'Session audits',
             value: terminalSessionAudits.total,
             tone: terminalSessionAudits.failed > 0 ? 'danger' : terminalSessionAudits.total > 0 ? 'success' : 'neutral',
           },
           {
-            label: 'Auditorias closed-loop',
+            label: 'Closed-loop audits',
             value: closedLoopIndependentAudits.total,
             tone: closedLoopIndependentAudits.failed > 0 ? 'danger' : closedLoopIndependentAudits.total > 0 ? 'success' : 'neutral',
           },
-          { label: 'Ações bounded', value: boundedAutomaticActions, tone: boundedAutomaticActions > 0 ? 'success' : 'neutral' },
-          { label: 'Materializações ativas', value: activeMaterializations, tone: activeMaterializations > 0 ? 'success' : 'neutral' },
-          { label: 'Materializações verificadas', value: verifiedMaterializations, tone: verifiedMaterializations > 0 ? 'success' : 'neutral' },
+          { label: 'Bounded actions', value: boundedAutomaticActions, tone: boundedAutomaticActions > 0 ? 'success' : 'neutral' },
+          { label: 'Active materializations', value: activeMaterializations, tone: activeMaterializations > 0 ? 'success' : 'neutral' },
+          { label: 'Verified materializations', value: verifiedMaterializations, tone: verifiedMaterializations > 0 ? 'success' : 'neutral' },
           {
-            label: 'Runtime overlays usados',
+            label: 'Runtime overlays used',
             value: runtimeLearningUsage.overlayLoads,
             tone: runtimeLearningUsage.overlayLoads > 0 ? 'success' : 'neutral',
           },
           {
-            label: 'Sinais L5 retidos',
+            label: 'Retained L5 signals',
             value: learningSignals.retained,
             tone: learningSignals.retained > 0 ? 'success' : 'neutral',
           },
-          { label: 'Fila meta-orquestrada', value: queuedMetaRuns, tone: queuedMetaRuns > 0 ? 'success' : 'neutral' },
-          { label: 'Closed loops completos', value: completedClosedLoops, tone: completedClosedLoops > 0 ? 'success' : 'neutral' },
-          { label: 'Closed loops em review', value: closedLoopsNeedingReview, tone: closedLoopsNeedingReview > 0 ? 'warning' : 'success' },
+          { label: 'Meta-orchestrated queue', value: queuedMetaRuns, tone: queuedMetaRuns > 0 ? 'success' : 'neutral' },
+          { label: 'Completed closed loops', value: completedClosedLoops, tone: completedClosedLoops > 0 ? 'success' : 'neutral' },
+          { label: 'Closed loops in review', value: closedLoopsNeedingReview, tone: closedLoopsNeedingReview > 0 ? 'warning' : 'success' },
           {
             label: 'Lifecycle L5 events',
             value: closedLoopLifecycle.events,

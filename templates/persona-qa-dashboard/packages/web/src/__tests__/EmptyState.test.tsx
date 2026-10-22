@@ -4,27 +4,27 @@ import { EmptyState } from '@/components/EmptyState'
 
 describe('EmptyState', () => {
   it('renders the title', () => {
-    render(<EmptyState title="Nenhuma execução encontrada" />)
-    expect(screen.getByText('Nenhuma execução encontrada')).toBeInTheDocument()
+    render(<EmptyState title="No runs found" />)
+    expect(screen.getByText('No runs found')).toBeInTheDocument()
   })
 
   it('renders the description when provided', () => {
     render(
       <EmptyState
-        title="Nenhum finding"
-        description="Execute testes com pnpm test:persona-qa"
+        title="No findings"
+        description="Run tests with pnpm test:persona-qa"
       />,
     )
-    expect(screen.getByText('Nenhum finding')).toBeInTheDocument()
-    expect(screen.getByText('Execute testes com pnpm test:persona-qa')).toBeInTheDocument()
+    expect(screen.getByText('No findings')).toBeInTheDocument()
+    expect(screen.getByText('Run tests with pnpm test:persona-qa')).toBeInTheDocument()
   })
 
   it('does not render description when omitted', () => {
-    const { container } = render(<EmptyState title="Vazio" />)
+    const { container } = render(<EmptyState title="Empty" />)
     // Only the title paragraph should exist
     const paragraphs = container.querySelectorAll('p')
     expect(paragraphs).toHaveLength(1)
-    expect(paragraphs[0].textContent).toBe('Vazio')
+    expect(paragraphs[0].textContent).toBe('Empty')
   })
 
   it('renders a custom icon when provided', () => {

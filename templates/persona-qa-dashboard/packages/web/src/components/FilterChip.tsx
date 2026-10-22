@@ -12,7 +12,7 @@ export function FilterChip({ label, onRemove }: FilterChipProps) {
       <button
         onClick={onRemove}
         className="flex h-4 w-4 items-center justify-center rounded-full transition-colors hover:bg-[var(--accent)]/20"
-        aria-label={`Remover filtro: ${label}`}
+        aria-label={`Remove filter: ${label}`}
       >
         <X className="h-3 w-3" />
       </button>

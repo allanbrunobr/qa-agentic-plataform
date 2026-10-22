@@ -15,7 +15,7 @@ describe('L5RunAuditPanel', () => {
     render(<L5RunAuditPanel run={null} />)
 
     expect(screen.getByText('L5 Run Audit')).toBeInTheDocument()
-    expect(screen.getByText('Nenhuma iteração L5 registrada para auditar.')).toBeInTheDocument()
+    expect(screen.getByText('No L5 iterations recorded to audit.')).toBeInTheDocument()
   })
 
   it('renders lifecycle, actions, verification, and governance evidence', () => {
@@ -44,18 +44,18 @@ describe('L5RunAuditPanel', () => {
     )
 
     expect(screen.getAllByText('needs review')).toHaveLength(2)
-    expect(screen.getByText('Lifecycle recente')).toBeInTheDocument()
+    expect(screen.getByText('Recent lifecycle')).toBeInTheDocument()
     expect(screen.getByText('loop completed - self healing')).toBeInTheDocument()
     expect(screen.getByText('self healing evaluated')).toBeInTheDocument()
-    expect(screen.getByText('Circuit breakers bloqueados')).toBeInTheDocument()
-    expect(screen.getByText('Auditor independente')).toBeInTheDocument()
+    expect(screen.getByText('Blocked circuit breakers')).toBeInTheDocument()
+    expect(screen.getByText('Independent auditor')).toBeInTheDocument()
     expect(screen.getAllByText('warning').length).toBeGreaterThan(0)
-    expect(screen.getByText('Sessões auditadas')).toBeInTheDocument()
-    expect(screen.getByText('Findings auditor')).toBeInTheDocument()
-    expect(screen.getByText('Governança recente')).toBeInTheDocument()
+    expect(screen.getByText('Audited sessions')).toBeInTheDocument()
+    expect(screen.getByText('Auditor findings')).toBeInTheDocument()
+    expect(screen.getByText('Recent governance')).toBeInTheDocument()
     expect(screen.getByText('apply - healing action')).toBeInTheDocument()
     expect(screen.getByText('Self-healing action permitted by bounded policy.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Exportar bundle' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Export bundle' })).toHaveAttribute(
       'href',
       '/api/p2/closed-loop/runs/run-1/audit-bundle',
     )
@@ -88,7 +88,7 @@ describe('L5RunAuditPanel', () => {
       />,
     )
 
-    expect(screen.getByText('Histórico L5')).toBeInTheDocument()
+    expect(screen.getByText('L5 history')).toBeInTheDocument()
     fireEvent.click(screen.getByText('reorder').closest('button')!)
 
     expect(onSelectRun).toHaveBeenCalledWith('run-historical')
@@ -125,12 +125,12 @@ describe('L5RunAuditPanel', () => {
       />,
     )
 
-    expect(screen.getByText('Auditoria independente failed; registre a revisão para liberar o circuit breaker L5.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Marcar auditoria revisada' })).toBeDisabled()
-    fireEvent.change(screen.getByPlaceholderText('Motivo da revisão'), {
+    expect(screen.getByText('Independent audit failed; record a review to release the L5 circuit breaker.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mark audit as reviewed' })).toBeDisabled()
+    fireEvent.change(screen.getByPlaceholderText('Review reason'), {
       target: { value: 'Finding accepted after manual triage.' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Marcar auditoria revisada' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mark audit as reviewed' }))
 
     expect(onReviewIndependentAudit).toHaveBeenCalledWith(run, 'Finding accepted after manual triage.')
   })
@@ -197,10 +197,10 @@ describe('L5RunAuditPanel', () => {
       />,
     )
 
-    expect(screen.getByText('Fila de revisão L5')).toBeInTheDocument()
+    expect(screen.getByText('L5 review queue')).toBeInTheDocument()
     expect(screen.getByText('quarterly reorder')).toBeInTheDocument()
-    expect(screen.getByText('Auditoria revisada por qa_lead: Warning reviewed.')).toBeInTheDocument()
-    expect(screen.getByText('Memória L5')).toBeInTheDocument()
+    expect(screen.getByText('Audit reviewed by qa_lead: Warning reviewed.')).toBeInTheDocument()
+    expect(screen.getByText('L5 memory')).toBeInTheDocument()
     expect(screen.getByText('audit reviewed')).toBeInTheDocument()
     expect(screen.getByText('Warning reviewed.')).toBeInTheDocument()
     expect(screen.getByText('replay verified')).toBeInTheDocument()
@@ -249,21 +249,21 @@ describe('L5RunAuditPanel', () => {
       />,
     )
 
-    expect(screen.getByText('Replay seguro')).toBeInTheDocument()
-    expect(screen.getByText('Replay bloqueia aplicação automática e geração de cenários; apenas reavalia o loop.')).toBeInTheDocument()
-    expect(screen.getByText('Promoção de conhecimento')).toBeInTheDocument()
+    expect(screen.getByText('Safe replay')).toBeInTheDocument()
+    expect(screen.getByText('Replay blocks automatic apply and scenario generation; it only re-evaluates the loop.')).toBeInTheDocument()
+    expect(screen.getByText('Knowledge promotion')).toBeInTheDocument()
     expect(screen.getByText('Prompt patch for register_customer')).toBeInTheDocument()
     expect(screen.getByText('next: approve')).toBeInTheDocument()
     expect(screen.getByText('v abc123def456')).toBeInTheDocument()
-    expect(screen.getByText('Histórico de promoções')).toBeInTheDocument()
+    expect(screen.getByText('Promotion history')).toBeInTheDocument()
     expect(screen.getByText('approve - learning proposal')).toBeInTheDocument()
     expect(screen.getByText('qa_lead / v abc123def456')).toBeInTheDocument()
     expect(screen.getByText('gate: passed')).toBeInTheDocument()
     expect(screen.getByText('2 checks')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Preparar replay' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Executar observe' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Aprovar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare replay' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Run observe' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
 
     expect(onLoadReplayPreview).toHaveBeenCalledTimes(1)
     expect(onRunSafeReplay).toHaveBeenCalledTimes(1)

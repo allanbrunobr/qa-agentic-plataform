@@ -139,7 +139,7 @@ export async function scenariosRoutes(app: FastifyInstance): Promise<void> {
     events.push({
       id: `${runId}-setup`,
       type: 'setup',
-      label: 'Setup iniciado',
+      label: 'Setup started',
       timestamp: run.started_at,
       durationFromPrev: null,
     });
@@ -163,7 +163,7 @@ export async function scenariosRoutes(app: FastifyInstance): Promise<void> {
       events.push({
         id: `${runId}-artifact`,
         type: 'artifact',
-        label: `Artefatos gerados (${run.total_tests} tests, ${run.findings_count} findings)`,
+        label: `Artifacts generated (${run.total_tests} tests, ${run.findings_count} findings)`,
         timestamp: artifactTs,
         durationFromPrev: durationFrom(artifactTs),
       });
@@ -179,7 +179,7 @@ export async function scenariosRoutes(app: FastifyInstance): Promise<void> {
       events.push({
         id: `${runId}-findings`,
         type: 'finding',
-        label: `${sortedFindings.length} finding${sortedFindings.length !== 1 ? 's' : ''} emitido${sortedFindings.length !== 1 ? 's' : ''}`,
+        label: `${sortedFindings.length} finding${sortedFindings.length !== 1 ? 's' : ''} emitted`,
         timestamp: firstFindingTs,
         durationFromPrev: durationFrom(firstFindingTs),
       });
@@ -192,8 +192,8 @@ export async function scenariosRoutes(app: FastifyInstance): Promise<void> {
         id: `${runId}-scenario`,
         type: isFailed ? 'scenario_failed' : 'scenario_complete',
         label: isFailed
-          ? `Cenário falhou${run.error_message ? `: ${run.error_message}` : ''}`
-          : 'Cenário concluído com sucesso',
+          ? `Scenario failed${run.error_message ? `: ${run.error_message}` : ''}`
+          : 'Scenario completed successfully',
         timestamp: run.completed_at,
         durationFromPrev: durationFrom(run.completed_at),
       });
@@ -202,7 +202,7 @@ export async function scenariosRoutes(app: FastifyInstance): Promise<void> {
       events.push({
         id: `${runId}-sync`,
         type: 'sync',
-        label: 'Sincronização finalizada',
+        label: 'Sync completed',
         timestamp: run.completed_at,
         durationFromPrev: 0,
       });

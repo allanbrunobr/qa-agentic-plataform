@@ -8,8 +8,8 @@ describe('DomainDiscoveryPanel', () => {
     render(<DomainDiscoveryPanel discovery={null} />)
 
     expect(screen.getByText('Domain Discovery')).toBeInTheDocument()
-    expect(screen.getByText('aguardando discovery')).toBeInTheDocument()
-    expect(screen.getByText(/Rode `discover-local`/)).toBeInTheDocument()
+    expect(screen.getByText('awaiting discovery')).toBeInTheDocument()
+    expect(screen.getByText(/Run `discover-local`/)).toBeInTheDocument()
   })
 
   it('renders domain candidates with gated status and evidence summary', () => {
@@ -57,10 +57,10 @@ describe('DomainDiscoveryPanel', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Criar draft' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create draft' }))
 
     await waitFor(() => expect(onCreateScenarioDraft).toHaveBeenCalledWith('place_order'))
-    expect(await screen.findByText('Draft criado')).toBeInTheDocument()
+    expect(await screen.findByText('Draft created')).toBeInTheDocument()
   })
 })
 

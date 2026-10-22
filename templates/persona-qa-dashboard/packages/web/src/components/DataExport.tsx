@@ -88,7 +88,7 @@ export function DataExport({ filterParams }: DataExportProps) {
         loading={exportingSummary}
         onClick={handleExportSummary}
       >
-        Relatório
+        Report
       </Button>
     </div>
   )

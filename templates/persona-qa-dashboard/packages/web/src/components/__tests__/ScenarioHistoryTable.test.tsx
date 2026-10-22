@@ -58,13 +58,13 @@ describe('ScenarioHistoryTable', () => {
     render(<ScenarioHistoryTable scenarioId="s1" />)
 
     await waitFor(() => {
-      expect(screen.getByText('Histórico de Execuções')).toBeDefined()
+      expect(screen.getByText('Run history')).toBeDefined()
     })
 
     expect(screen.getByText('Run')).toBeDefined()
     expect(screen.getByText(/Data/)).toBeDefined()
     expect(screen.getByText(/Status/)).toBeDefined()
-    expect(screen.getByText(/Duração/)).toBeDefined()
+    expect(screen.getByText(/Duration/)).toBeDefined()
   })
 
   it('renders status badges (pass/fail)', async () => {
@@ -127,7 +127,7 @@ describe('ScenarioHistoryTable', () => {
     render(<ScenarioHistoryTable scenarioId="s1" />)
 
     await waitFor(() => {
-      expect(screen.getByText('Nenhuma execução encontrada')).toBeDefined()
+      expect(screen.getByText('No runs found')).toBeDefined()
     })
   })
 

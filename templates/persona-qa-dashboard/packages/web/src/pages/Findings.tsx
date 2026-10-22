@@ -8,7 +8,7 @@ import { api } from '@/lib/api'
 import { EmptyState as ReusableEmptyState } from '@/components/EmptyState'
 
 const SEVERITY_OPTIONS: Array<{ value: Severity | 'all'; label: string }> = [
-  { value: 'all', label: 'All Severities' },
+  { value: 'all', label: 'All severities' },
   { value: 'critical', label: 'Critical' },
   { value: 'high', label: 'High' },
   { value: 'medium', label: 'Medium' },
@@ -80,7 +80,7 @@ export function Findings() {
   const agentOptions = useMemo(() => {
     const agents = Array.from(new Set(findings.map(f => f.agent))).sort()
     return [
-      { value: 'all', label: 'All Agents' },
+      { value: 'all', label: 'All agents' },
       ...agents.map(a => ({ value: a, label: a })),
     ]
   }, [findings])
@@ -106,8 +106,8 @@ export function Findings() {
   if (loading) return <LoadingState />
   if (findings.length === 0) return (
     <ReusableEmptyState
-      title="Nenhum finding encontrado"
-      description="Execute testes com pnpm test:persona-qa"
+      title="No findings found"
+      description="Run tests with pnpm test:persona-qa"
     />
   )
 
@@ -176,8 +176,8 @@ export function Findings() {
         {filtered.length === 0 ? (
           <div className="py-4">
             <ReusableEmptyState
-              title="Nenhum finding para os filtros selecionados"
-              description="Tente ajustar os filtros"
+              title="No findings match the selected filters"
+              description="Try adjusting the filters"
             />
           </div>
         ) : (

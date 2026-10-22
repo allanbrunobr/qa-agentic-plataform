@@ -21,7 +21,7 @@ const mockRuns: ApiRun[] = [
 describe('RecentRuns', () => {
   it('renders the last 5 runs header', () => {
     render(<RecentRuns runs={mockRuns} />)
-    expect(screen.getByText('Últimas 5 Execuções')).toBeDefined()
+    expect(screen.getByText('Last 5 runs')).toBeDefined()
   })
 
   it('renders run IDs', () => {
@@ -39,6 +39,6 @@ describe('RecentRuns', () => {
 
   it('shows empty state when no runs', () => {
     render(<RecentRuns runs={[]} />)
-    expect(screen.getByText('Nenhuma execução registrada')).toBeDefined()
+    expect(screen.getByText('No runs recorded')).toBeDefined()
   })
 })

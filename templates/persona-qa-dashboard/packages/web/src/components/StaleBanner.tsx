@@ -14,11 +14,11 @@ interface StalenessResponse {
 
 function formatTimeAgo(ms: number): string {
   const minutes = Math.floor(ms / 60000)
-  if (minutes < 60) return `${minutes}m atrás`
+  if (minutes < 60) return `${minutes}m ago`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h atrás`
+  if (hours < 24) return `${hours}h ago`
   const days = Math.floor(hours / 24)
-  return `${days}d atrás`
+  return `${days}d ago`
 }
 
 export function StaleBanner() {
@@ -66,12 +66,12 @@ export function StaleBanner() {
         <div className="flex items-center gap-3 rounded-lg border border-[var(--warning)]/30 bg-[var(--warning)]/10 px-4 py-2.5">
           <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--warning)]" />
           <p className="flex-1 text-sm text-[var(--warning)]">
-            Dados podem estar desatualizados — última atividade: {formatTimeAgo(staleness.age_ms)}
+            Data may be stale — last activity: {formatTimeAgo(staleness.age_ms)}
           </p>
           <button
             onClick={() => setDismissed('stale')}
             className="shrink-0 text-[var(--warning)] hover:text-[var(--text-primary)] transition-colors"
-            aria-label="Fechar alerta"
+            aria-label="Dismiss alert"
           >
             <X className="h-4 w-4" />
           </button>
@@ -83,7 +83,7 @@ export function StaleBanner() {
         <div className="flex items-center gap-3 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-2.5">
           <RefreshCw className="h-4 w-4 shrink-0 text-[var(--accent)]" />
           <p className="flex-1 text-sm text-[var(--accent)]">
-            Novos dados disponíveis — clique em Sincronizar
+            New data available — click Sync
           </p>
           <Button
             variant="primary"
@@ -92,12 +92,12 @@ export function StaleBanner() {
             loading={syncing}
             onClick={handleSync}
           >
-            Sincronizar
+            Sync
           </Button>
           <button
             onClick={() => setDismissed('new-data')}
             className="shrink-0 text-[var(--accent)] hover:text-[var(--text-primary)] transition-colors"
-            aria-label="Fechar alerta"
+            aria-label="Dismiss alert"
           >
             <X className="h-4 w-4" />
           </button>

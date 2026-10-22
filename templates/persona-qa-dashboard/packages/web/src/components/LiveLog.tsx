@@ -36,9 +36,9 @@ const ICON_MAP: Record<LogEvent['type'], { icon: typeof Play; color: string }> =
 }
 
 const FILTER_BUTTONS: { id: LogFilter; label: string }[] = [
-  { id: 'all', label: 'Todos' },
-  { id: 'system', label: 'Sistema' },
-  { id: 'errors', label: 'Erros' },
+  { id: 'all', label: 'All' },
+  { id: 'system', label: 'System' },
+  { id: 'errors', label: 'Errors' },
   { id: 'findings', label: 'Findings' },
 ]
 
@@ -196,8 +196,8 @@ export function LiveLog({ events, className, totalExpected, runStatus }: LiveLog
           </button>
         ))}
         <span className="ml-auto text-[10px] text-[var(--text-muted)] tabular-nums">
-          {events.length}{totalExpected ? ` de ${totalExpected}` : ''} evento{events.length !== 1 ? 's' : ''}
-          {filter !== 'all' && ` (${filtered.length} visíve${filtered.length !== 1 ? 'is' : 'l'})`}
+          {events.length}{totalExpected ? ` of ${totalExpected}` : ''} event{events.length !== 1 ? 's' : ''}
+          {filter !== 'all' && ` (${filtered.length} visible)`}
         </span>
       </div>
 
@@ -210,7 +210,7 @@ export function LiveLog({ events, className, totalExpected, runStatus }: LiveLog
       >
         {filtered.length === 0 ? (
           <div className="flex items-center justify-center py-6 text-[10px] text-[var(--text-muted)]">
-            Nenhum evento corresponde ao filtro
+            No events match the filter
           </div>
         ) : (
           <div className="divide-y divide-[var(--border)]/50">
@@ -293,8 +293,8 @@ export function LiveLog({ events, className, totalExpected, runStatus }: LiveLog
           )}
         >
           {runStatus === 'complete'
-            ? 'Execução concluída com sucesso'
-            : 'Execução falhou'}
+            ? 'Run completed successfully'
+            : 'Run failed'}
         </motion.div>
       )}
     </div>

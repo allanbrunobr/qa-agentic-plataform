@@ -21,7 +21,7 @@ describe('RecentFindings', () => {
   it('renders findings count', () => {
     render(<RecentFindings totalFindings={5} lastFinding={mockFinding} />)
     expect(screen.getByText('5')).toBeDefined()
-    expect(screen.getByText(/findings recentes/)).toBeDefined()
+    expect(screen.getByText(/recent findings/)).toBeDefined()
   })
 
   it('renders last finding title and severity', () => {
@@ -33,6 +33,6 @@ describe('RecentFindings', () => {
   it('shows no findings message when null', () => {
     render(<RecentFindings totalFindings={0} lastFinding={null} />)
     expect(screen.getByText('0')).toBeDefined()
-    expect(screen.getByText('Nenhum finding registrado')).toBeDefined()
+    expect(screen.getByText('No findings recorded')).toBeDefined()
   })
 })

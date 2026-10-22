@@ -19,12 +19,12 @@ describe('DataExport', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders JSON, CSV, and Relatório buttons', () => {
+  it('renders JSON, CSV, and Report buttons', () => {
     render(<DataExport />)
 
     expect(screen.getByText('JSON')).toBeInTheDocument()
     expect(screen.getByText('CSV')).toBeInTheDocument()
-    expect(screen.getByText('Relatório')).toBeInTheDocument()
+    expect(screen.getByText('Report')).toBeInTheDocument()
   })
 
   it('fetches /api/runs/export?format=json with filter params on JSON click', async () => {
@@ -56,10 +56,10 @@ describe('DataExport', () => {
     expect(calledUrl).toContain('format=csv')
   })
 
-  it('fetches /api/runs/export-summary with filter params on Relatório click', async () => {
+  it('fetches /api/runs/export-summary with filter params on Report click', async () => {
     render(<DataExport filterParams={{ status: 'failed' }} />)
 
-    await userEvent.click(screen.getByText('Relatório'))
+    await userEvent.click(screen.getByText('Report'))
 
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalled()

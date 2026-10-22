@@ -25,12 +25,12 @@ describe('EvidenceSummary', () => {
   it('shows artifacts count badge', () => {
     render(<EvidenceSummary findingsCount={0} artifactsCount={2} />);
     expect(screen.getByText('2')).toBeDefined();
-    expect(screen.getByTitle('Artefatos')).toBeDefined();
+    expect(screen.getByTitle('Artifacts')).toBeDefined();
   });
 
   it('shows context available indicator', () => {
     render(<EvidenceSummary findingsCount={0} contextAvailable={true} />);
-    expect(screen.getByTitle('Contexto disponível')).toBeDefined();
+    expect(screen.getByTitle('Context available')).toBeDefined();
   });
 
   it('shows multiple badges simultaneously', () => {
@@ -44,7 +44,7 @@ describe('EvidenceSummary', () => {
     );
     expect(screen.getByTitle('Findings')).toBeDefined();
     expect(screen.getByTitle('Screenshots')).toBeDefined();
-    expect(screen.getByTitle('Artefatos')).toBeDefined();
-    expect(screen.getByTitle('Contexto disponível')).toBeDefined();
+    expect(screen.getByTitle('Artifacts')).toBeDefined();
+    expect(screen.getByTitle('Context available')).toBeDefined();
   });
 });
